@@ -1,0 +1,12 @@
+﻿Sourdough sensor box - print notes (3 parts, 1 plate)
+
+Files: base.stl, lid.stl, collar.stl (collar = flat rim plate)
+Printer: Bambu Lab P2S (256 x 256 x 256 mm). All three parts fit on one plate (about 245 x 191 mm). If the slicer complains, print the collar on its own plate.
+Material: PETG (ABS/ASA also ok). Do NOT use PLA: it sits near an oven and a heat mat.
+Layer height 0.2 mm, 0.4 mm nozzle, 3 walls, 20% infill, no supports.
+Orientation: base floor down; lid top face down; collar plate top down with tabs pointing up (STL files are already oriented).
+Estimate: about 84-104 g of PETG, about 2.5-4.5 h, roughly 1.70-2.60 USD of filament.
+Optional: if the LED hole should glow, print the lid in natural/translucent PETG.
+
+Hardware (not printed): 4x M3x20 countersunk (flat head) hex screws, 8x M2x4 and 4x M2x5 button head hex screws (M2x4 also works for the 4 on the distance sensor), 5 zip ties 2.5-3 mm, 1-2 Velcro straps, 5 US quarters, tape, a toothpick.
+Dimensions assumed, not measured: see README.md in the project folder. Print the collar first as a fit test.
