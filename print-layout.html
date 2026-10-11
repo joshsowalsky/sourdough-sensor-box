@@ -1,4 +1,4 @@
-<title>Sourdough Sensor Box</title>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Sourdough Sensor Box</title>
 <style>
 /* Layout: full-height 3D stage with a slim control bar beneath; model colors come from tokens. */
 :root{
@@ -11,7 +11,7 @@
 :root[data-theme="dark"]{
   --bg:#141917; --fg:#e8ede9; --muted:#9aa59e; --panel:#1f2623; --line:#33403a;
   --accent:#6fc2a8; --part-base:#d9a05a; --part-lid:#79a9c4; --part-collar:#a5bb70; color-scheme:dark}
-html,body{height:100%}
+html,body{height:100%;margin:0}body{overscroll-behavior:none}
 body{background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   display:flex;flex-direction:column;padding-inline:16px;padding-block:12px;gap:10px;box-sizing:border-box}
 header{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px}
@@ -28,7 +28,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .dims{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .dims b{color:var(--fg);font-weight:600}
 .hint{font-size:.8rem;color:var(--muted)}
-</style>
+</style></head><body>
 
 <header>
   <h1>Sourdough Sensor Box</h1>
@@ -110,3 +110,4 @@ try{
   (function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,camera)})();
 }catch(e){msg.hidden=false;msg.textContent='The 3D view could not start on this device. '+e.message}
 </script>
+</body></html>

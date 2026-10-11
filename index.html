@@ -1,4 +1,4 @@
-<title>Sensor Box Assembly</title>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Sensor Box Assembly</title>
 <style>
 /* Layout: full-height 3D stage, a wrap of layer toggles beneath. Part colors are tokens. */
 :root{
@@ -14,7 +14,7 @@
   --bg:#141917; --fg:#e8ede9; --muted:#9aa59e; --panel:#1f2623; --line:#33403a; --accent:#6fc2a8;
   --c-base:#d9a05a; --c-lid:#79a9c4; --c-plate:#a5bb70; --c-boards:#3fae72; --c-cables:#f08a45;
   --c-probe:#e0584a; --c-hardware:#aeb4b9; --c-vessel:#9fc4d6; color-scheme:dark}
-html,body{height:100%}
+html,body{height:100%;margin:0}body{overscroll-behavior:none}
 body{background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   display:flex;flex-direction:column;padding-inline:16px;padding-block:12px;gap:10px;box-sizing:border-box}
 h1{font-size:1.25rem;margin:0;letter-spacing:-.01em}
@@ -29,7 +29,7 @@ button[aria-pressed="false"]{opacity:.55}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .sw{display:inline-block;width:.7em;height:.7em;border-radius:50%;margin-right:6px}
 .hint{font-size:.8rem;color:var(--muted)}
-</style>
+</style></head><body>
 
 <h1>Sensor Box Assembly</h1>
 <div class="sub">Everything in place on the 250 mL beaker. Tap a name to show or hide that layer.</div>
@@ -107,3 +107,4 @@ try{
   (function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,camera)})();
 }catch(e){msg.hidden=false;msg.textContent='The 3D view could not start on this device. '+e.message}
 </script>
+</body></html>
