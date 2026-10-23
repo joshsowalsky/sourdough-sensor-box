@@ -1,0 +1,15 @@
+﻿Sourdough sensor box - print set (collar v4, base v5, lid v4)
+
+Two ways to print:
+A) 0-all-three-parts-one-plate.stl = all three parts already laid out on one 256 mm plate (tight: use a small brim, about 3 mm, or let Bambu Studio re-arrange; right-click > Split > To objects to move parts separately).
+B) The same parts as separate files, in this order:
+1-collar.stl  first, on its own (about 1-2 h). Test-fit it on the beakers and jars before printing the rest.
+2-base.stl    (v5: same as v4 except deeper screw holes for the circuit boards)
+3-lid.stl
+
+Printer: Bambu Lab P2S. Material: PETG (ABS/ASA also fine). Not PLA - it sits near an oven.
+0.2 mm layers, 0.4 mm nozzle, 3 walls, 20% infill, no supports. Files are already oriented for printing.
+Add a brim on the collar and the base (large flat parts). Clean plate, Bambu PETG profile.
+Please do a quick slice preview in Bambu Studio before printing; the files were checked by model, not by a slicer.
+Estimate: about 85-105 g PETG for all three, about 2.5-4.5 h.
+
