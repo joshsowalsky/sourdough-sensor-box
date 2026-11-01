@@ -1,1 +1,3 @@
 settings.toml
+firmware/sourdough_box/build/
+__pycache__/

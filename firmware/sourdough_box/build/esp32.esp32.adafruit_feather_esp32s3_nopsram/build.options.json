@@ -1,9 +1,0 @@
-{
-  "additionalFiles": "..\\..,..\\..",
-  "compiler.optimization_flags": "-Os",
-  "customBuildProperties": "",
-  "fqbn": "esp32:esp32:adafruit_feather_esp32s3_nopsram",
-  "hardwareFolders": "D:\\Arduino15\\packages\\esp32\\hardware\\esp32\\3.3.12,D:\\Arduino15\\packages\\esp32\\hardware\\esp32\\3.3.12",
-  "otherLibrariesFolders": "C:\\Users\\techstyle\\Documents\\Arduino\\libraries",
-  "sketchLocation": "C:\\Users\\techstyle\\sourdough-sensor-box-repo\\firmware\\sourdough_box"
-}
