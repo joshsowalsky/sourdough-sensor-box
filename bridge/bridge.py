@@ -15,6 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import collections
 import json as _json
 import queue
 import socket
@@ -50,6 +51,7 @@ setInterval(tick,250);tick();
 
 
 LINES = queue.Queue()  # sensor lines from USB serial and from the Feather over Wi-Fi
+SERIAL_LOG = Path(__file__).with_name("feather-serial.log")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -61,6 +63,8 @@ class Handler(BaseHTTPRequestHandler):
         text = self.rfile.read(min(n, 16384)).decode("utf-8", "ignore")
         for line in text.splitlines():
             LINES.put(line)
+            if not line.startswith(("distance:", "github: ok")):
+                feather_log(line)
         if not WIFI_SEEN.get("t"):
             log("Feather is sending over Wi-Fi from " + self.client_address[0])
         WIFI_SEEN["t"] = time.time()
@@ -102,10 +106,17 @@ VID = 0x239A           # Adafruit
 
 DIST = re.compile(r"distance:\s*([0-9.]+)\s*cm")
 TEMP = re.compile(r"temp:\s*(-?[0-9.]+)\s*C")
+STATUS = re.compile(r"status:\s*(\d+)")  # Arduino build: VL53L4CD range status, 0 = valid
 
 
 def log(msg):
     print(datetime.now().strftime("%H:%M:%S"), msg, flush=True)
+
+
+def feather_log(line, when=None):
+    """Append one of the Feather's messages to feather-serial.log."""
+    with SERIAL_LOG.open("a", encoding="utf-8") as f:
+        f.write((when or datetime.now()).strftime("%m-%d %H:%M:%S ") + line.rstrip() + "\n")
 
 
 def find_port():
@@ -120,6 +131,9 @@ def read_serial():
     While the Feather is also posting over Wi-Fi, USB lines are dropped so
     readings aren't counted twice."""
     ser, waiting_logged = None, False
+    # Everything the Feather printed lately, step markers included. If it goes
+    # quiet, these go into feather-serial.log to show where it stopped.
+    recent, last_heard, dumped = collections.deque(maxlen=60), time.time(), True
     while True:
         if ser is None:
             port = find_port()
@@ -151,9 +165,23 @@ def read_serial():
             ser = None
             time.sleep(3)
             continue
+        if not line.strip():
+            if not dumped and time.time() - last_heard > 20:
+                feather_log("--- Feather quiet on USB for 20 s; its last lines were:")
+                for when, old in recent:
+                    feather_log("    " + old, when)
+                log("Feather went quiet on USB; last lines saved to " + SERIAL_LOG.name)
+                dumped = True
+            continue
+        recent.append((datetime.now(), line.rstrip()))
+        last_heard, dumped = time.time(), False
         if line.startswith("wifi:") or "bridge failed" in line:
             log("feather " + line.strip())
-        if WIFI_SEEN["t"] and time.time() - WIFI_SEEN["t"] < 10:
+        wifi_recent = WIFI_SEEN["t"] and time.time() - WIFI_SEEN["t"] < 10
+        if not line.startswith(("distance:", "@")) and not wifi_recent:
+            # Over Wi-Fi the same messages arrive by POST and are logged there.
+            feather_log(line)
+        if wifi_recent:
             continue
         LINES.put(line)
 
@@ -205,6 +233,9 @@ def main():
                 log("feather " + line.strip())
             continue
         m = DIST.search(line)
+        s = STATUS.search(line)
+        if m and s and s.group(1) != "0":
+            m = None  # the sensor flagged this one as not a clean reading
         if m:
             try:
                 dists.append(float(m.group(1)))

@@ -85,6 +85,14 @@ def parse_history(data, since):
         i += 5
 
 
+log = print  # code.py points this at its note(), which also sends to the PC
+
+
+def step(*what):
+    """One line per network step, so a stall shows which call it stopped in."""
+    log("gh step:", *what, "| free", gc.mem_free(), "| up", int(time.monotonic()))
+
+
 def _num(v):
     return "null" if v == NO_TEMP else "%.2f" % (v / 100)
 
@@ -120,11 +128,12 @@ class Publisher:
     def load(self):
         """Fetch the clock and the recent history already on GitHub."""
         url = "%s/contents/latest.json?ref=%s" % (self.api, self.branch)
+        step("load")
         with self.session.get(url, headers=self._headers("application/vnd.github.raw+json"),
                               stream=True) as r:
             self._note_clock(r)
             if r.status_code == 401:
-                print("github: token rejected (401)")
+                log("github: token rejected (401)")
                 self.enabled = False
                 return
             if not self.clock:
@@ -146,7 +155,7 @@ class Publisher:
                     carry = buf[cut + 1:]
         self._trim()
         self.loaded = True
-        print("github: clock set, loaded", len(self.t), "recent points, free", gc.mem_free())
+        log("github: clock set, loaded", len(self.t), "recent points, free", gc.mem_free())
 
     def _trim(self):
         if len(self.t) > MAX_POINTS:
@@ -209,14 +218,19 @@ class Publisher:
         if not self.t:
             return False
         gc.collect()
+        step("building", len(self.t), "points")
         body = self._blob_body()
+        step("blob", len(body), "bytes")
         blob = self._post("/git/blobs", body=body)
         del body
         gc.collect()
+        step("tree")
         tree = self._post("/git/trees", json={"tree": [
             {"path": "latest.json", "mode": "100644", "type": "blob", "sha": blob}]})
+        step("commit")
         commit = self._post("/git/commits", json={"message": "sensor data", "tree": tree, "parents": []})
         url = "%s/git/refs/heads/%s" % (self.api, self.branch)
+        step("ref")
         with self.session.request("PATCH", url, json={"sha": commit, "force": True},
                                   headers=self._headers()) as r:
             if r.status_code != 200:

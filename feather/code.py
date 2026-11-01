@@ -2,11 +2,41 @@ import os
 import time
 import board
 import digitalio
+import gc
+import microcontroller
 import supervisor
 
 # If this program ever stops on an error, CircuitPython runs it again
 # instead of sitting halted until someone unplugs the board.
 supervisor.set_next_code_file(None, reload_on_error=True)
+
+# Messages worth keeping (startup, errors, GitHub steps) go to the PC over
+# Wi-Fi as well as to USB, so a problem in the kitchen still leaves a record
+# in feather-serial.log next to the bridge.
+notes = []
+
+
+def note(*what):
+    text = " ".join(str(w) for w in what)
+    print(text)
+    notes.append(text)
+    del notes[:-100]
+
+
+# Why did it last restart? safemode.py leaves a note in the last 64 bytes of
+# nvm when it had to recover from a crash or a watchdog timeout.
+note("started, reset reason:", microcontroller.cpu.reset_reason)
+_off = len(microcontroller.nvm) - 64
+_tag = bytes(microcontroller.nvm[_off:_off + 64]).split(b"\0")[0]
+if _tag:
+    note("recovered from", _tag.decode("utf-8", "ignore"))
+    microcontroller.nvm[_off:_off + 64] = bytes(64)
+
+
+def trace(what):
+    """Markers around calls that could block, USB only (too chatty for Wi-Fi)."""
+    if supervisor.runtime.usb_connected:
+        print(what)
 
 try:
     _pwr = digitalio.DigitalInOut(board.I2C_POWER)
@@ -18,7 +48,7 @@ except Exception as e:
 i2c = board.STEMMA_I2C()
 while not i2c.try_lock():
     pass
-print("I2C devices found:", [hex(a) for a in i2c.scan()])
+note("I2C devices found:", [hex(a) for a in i2c.scan()])
 i2c.unlock()
 
 tof = None
@@ -28,9 +58,9 @@ try:
     tof.inter_measurement = 0
     tof.timing_budget = 200
     tof.start_ranging()
-    print("Distance sensor: OK")
+    note("Distance sensor: OK")
 except Exception as e:
-    print("Distance sensor not ready:", e)
+    note("Distance sensor not ready:", e)
 
 from adafruit_ds248x import Adafruit_DS248x
 ds = None
@@ -48,8 +78,6 @@ bridge = None
 gh = None
 try:
     import adafruit_connection_manager
-    import microcontroller
-    import supervisor
     import wifi
     import wifisetup
     pool = adafruit_connection_manager.get_radio_socketpool(wifi.radio)
@@ -57,13 +85,13 @@ try:
     if host:
         bridge = (host, int(port or 8765))
     if wifisetup.connect():
-        print("wifi:", wifi.radio.ap_info.ssid if wifi.radio.ap_info else "?", wifi.radio.ipv4_address)
+        note("wifi:", wifi.radio.ap_info.ssid if wifi.radio.ap_info else "?", wifi.radio.ipv4_address)
     elif not supervisor.runtime.usb_connected:
         wifisetup.setup_mode(pool)
     else:
-        print("wifi: no known network; plugged into a computer, so staying on USB")
+        note("wifi: no known network; plugged into a computer, so staying on USB")
 except Exception as e:
-    print("wifi not available:", e)
+    note("wifi not available:", e)
 
 # GitHub: once a minute, the minute's median distance and the latest temperature
 # go straight to latest.json on GitHub (ghpublish.py), so the live page works
@@ -71,28 +99,31 @@ except Exception as e:
 if pool is not None:
     try:
         import ghpublish
+        ghpublish.log = note
         gh = ghpublish.Publisher(pool, adafruit_connection_manager.get_radio_ssl_context(wifi.radio))
-        print("github:", "on" if gh.enabled else "off (no GITHUB_TOKEN in settings.toml)")
+        note("github:", "on" if gh.enabled else "off (no GITHUB_TOKEN in settings.toml)")
     except Exception as e:
-        print("github: not available:", e)
+        note("github: not available:", e)
 minute_d = []
 minute_start = time.monotonic()
 gh_failures = 0
 
-# Watchdog: restarts the board if the loop below stops coming round for 5
-# minutes (say, a network call that hangs). Not used while on USB, so a
-# paused or debugged program doesn't get reset from under you.
+# Watchdog: restarts the board if the loop below stops coming round for 2
+# minutes (say, a call that hangs). Set WATCHDOG_ON_USB = False to pause or
+# debug the program over USB without it being reset from under you.
+WATCHDOG_ON_USB = True  # on while chasing the freezes of 2026-11-01
 dog = None
-if not supervisor.runtime.usb_connected:
+if WATCHDOG_ON_USB or not supervisor.runtime.usb_connected:
     try:
         from microcontroller import watchdog as dog
         from watchdog import WatchDogMode
-        dog.timeout = 300
+        dog.timeout = 120
         dog.mode = WatchDogMode.RESET
         dog.feed()
+        note("watchdog: on, 120 s")
     except Exception as e:
         dog = None
-        print("watchdog not available:", e)
+        note("watchdog not available:", e)
 outbox = []
 last_send = 0
 send_backoff = 1
@@ -103,12 +134,14 @@ offline_since = None
 def connect_probe():
     """Find the 1-Wire adapter and the probe. Safe to call again and again."""
     global ds, rom
-    try:
-        ds = Adafruit_DS248x(i2c)
-    except Exception:
-        ds = None
-        rom = None
-        return "1-Wire adapter: no probe connected yet (wires not in the terminals?)"
+    rom = None
+    if ds is None:
+        try:
+            ds = Adafruit_DS248x(i2c)
+        except Exception as e:
+            # The library resets the 1-Wire bus while starting up, and fails
+            # when no probe answers; try again on the next round.
+            return "1-Wire adapter: no probe answering ({})".format(e)
     found = bytearray(8)
     if ds.onewire_search(found):
         rom = found
@@ -125,26 +158,38 @@ def send_lines(lines):
     s = pool.socket(pool.AF_INET, pool.SOCK_STREAM)
     s.settimeout(2)
     try:
+        trace("@connect")
         s.connect(bridge)
+        trace("@send")
         data = head + body
         while data:
             n = s.send(data)
             data = data[n:]
+        trace("@recv")
         buf = bytearray(32)
         n = s.recv_into(buf)
         return bytes(buf[:n]).startswith(b"HTTP/1.0 2") or bytes(buf[:n]).startswith(b"HTTP/1.1 2")
     finally:
         s.close()
+        trace("@closed")
 
 
+last_probe_msg = None
 while True:
     now = time.monotonic()
-    if rom is None and now - last_try > 5:
+    # Every 30 s while no probe is answering: each try is a burst of 1-Wire
+    # work on the I2C bus, and there's no need to hammer it.
+    if rom is None and now - last_try > 30:
         last_try = now
-        print(connect_probe())
+        trace("@probe")
+        msg = connect_probe()
+        if msg != last_probe_msg:
+            note(msg)
+            last_probe_msg = msg
     line = []
     if tof is not None:
         try:
+            trace("@tof")
             if tof.data_ready:
                 tof.clear_interrupt()
                 dist = tof.distance
@@ -156,9 +201,10 @@ while True:
     if ds is not None and rom is not None and now - last_temp_read >= 5:
         last_temp_read = now
         try:
+            trace("@temp")
             last_temp = ds.ds18b20_temperature(rom)
         except Exception as e:
-            print("temp error:", e)
+            note("temp error:", e)
             rom = None
     if last_temp is not None and rom is not None:
         line.append("temp: {:.2f} C".format(last_temp))
@@ -168,12 +214,13 @@ while True:
         if bridge:
             outbox.append(text)
             del outbox[:-40]
-    if bridge and outbox and now - last_send >= send_backoff:
+    if bridge and (outbox or notes) and now - last_send >= send_backoff:
         last_send = now
         if wifi.radio.connected:
             try:
-                if send_lines(outbox):
+                if send_lines(notes + outbox):
                     outbox = []
+                    notes.clear()
                     send_backoff = 1
             except Exception as e:
                 print("send to bridge failed:", e)
@@ -181,7 +228,7 @@ while True:
         if now - last_wifi_note >= 60:
             last_wifi_note = now
             print("wifi:", wifi.radio.ipv4_address if wifi.radio.connected else "not connected",
-                  "-> bridge", bridge)
+                  "-> bridge", bridge, "| free", gc.mem_free())
     if now - minute_start >= 60:
         minute_start = now
         if gh is not None and gh.enabled and minute_d and wifi.radio.connected:
@@ -195,12 +242,10 @@ while True:
                         outbox.append("github: ok")  # tells the bridge it needn't publish
             except Exception as e:
                 gh_failures += 1
-                print("github: publish failed:", e)
-                if bridge:
-                    outbox.append("github: failed {}".format(e)[:150])
+                note("github: publish failed:", e)
                 # A fresh start clears fragmented memory; history reloads from GitHub.
                 if gh_failures >= 5 and not supervisor.runtime.usb_connected:
-                    print("github: 5 failures in a row, restarting")
+                    note("github: 5 failures in a row, restarting")
                     microcontroller.reset()
         minute_d = []
     # Off Wi-Fi for 5 minutes on a charger: restart, which rejoins or opens setup.
@@ -208,10 +253,11 @@ while True:
         if offline_since is None:
             offline_since = now
         elif now - offline_since > 300:
-            print("wifi: offline 5 minutes, restarting")
+            note("wifi: offline 5 minutes, restarting")
             microcontroller.reset()
     else:
         offline_since = None
     if dog is not None:
         dog.feed()
+    trace("@sleep")
     time.sleep(0.15)
