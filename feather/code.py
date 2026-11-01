@@ -2,6 +2,11 @@ import os
 import time
 import board
 import digitalio
+import supervisor
+
+# If this program ever stops on an error, CircuitPython runs it again
+# instead of sitting halted until someone unplugs the board.
+supervisor.set_next_code_file(None, reload_on_error=True)
 
 try:
     _pwr = digitalio.DigitalInOut(board.I2C_POWER)
@@ -72,6 +77,22 @@ if pool is not None:
         print("github: not available:", e)
 minute_d = []
 minute_start = time.monotonic()
+gh_failures = 0
+
+# Watchdog: restarts the board if the loop below stops coming round for 5
+# minutes (say, a network call that hangs). Not used while on USB, so a
+# paused or debugged program doesn't get reset from under you.
+dog = None
+if not supervisor.runtime.usb_connected:
+    try:
+        from microcontroller import watchdog as dog
+        from watchdog import WatchDogMode
+        dog.timeout = 300
+        dog.mode = WatchDogMode.RESET
+        dog.feed()
+    except Exception as e:
+        dog = None
+        print("watchdog not available:", e)
 outbox = []
 last_send = 0
 send_backoff = 1
@@ -168,13 +189,19 @@ while True:
             temp = last_temp if rom is not None else None
             try:
                 if gh.add(minute_d[len(minute_d) // 2], temp) and gh.publish():
+                    gh_failures = 0
                     print("github: ok")
                     if bridge:
                         outbox.append("github: ok")  # tells the bridge it needn't publish
             except Exception as e:
+                gh_failures += 1
                 print("github: publish failed:", e)
                 if bridge:
                     outbox.append("github: failed {}".format(e)[:150])
+                # A fresh start clears fragmented memory; history reloads from GitHub.
+                if gh_failures >= 5 and not supervisor.runtime.usb_connected:
+                    print("github: 5 failures in a row, restarting")
+                    microcontroller.reset()
         minute_d = []
     # Off Wi-Fi for 5 minutes on a charger: restart, which rejoins or opens setup.
     if pool is not None and not wifi.radio.connected and not supervisor.runtime.usb_connected:
@@ -185,4 +212,6 @@ while True:
             microcontroller.reset()
     else:
         offline_since = None
+    if dog is not None:
+        dog.feed()
     time.sleep(0.15)
