@@ -1,0 +1,10 @@
+# Copy to settings.toml on the CIRCUITPY drive and fill in. Never commit the real one.
+# Wi-Fi must be 2.4 GHz. With these set, CircuitPython also runs its browser
+# editor at http://<feather address> on that network (log in with the editor password).
+CIRCUITPY_WIFI_SSID = "PUT-WIFI-NAME-HERE"
+CIRCUITPY_WIFI_PASSWORD = "PUT-WIFI-PASSWORD-HERE"
+CIRCUITPY_WEB_API_PASSWORD = "MAKE-UP-A-PASSWORD"
+CIRCUITPY_WEB_INSTANCE_NAME = "sourdough"
+
+# Where readings are sent: the PC running bridge/bridge.py (ip:port).
+SOURDOUGH_BRIDGE = "192.168.1.238:8765"
