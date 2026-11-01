@@ -27,6 +27,7 @@ from serial.tools import list_ports
 PORT = 8765            # fast local page: http://<this PC's address>:8765
 NOW = {"distance_cm": None, "temp_c": None, "t": None}
 WIFI_SEEN = {"t": None}  # when the Feather last posted over Wi-Fi
+FEATHER_GH = {"t": 0}  # when the Feather last said it published to GitHub itself
 
 LOCAL_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Sourdough Fast View</title>
@@ -195,6 +196,14 @@ def main():
             line = LINES.get(timeout=1)
         except queue.Empty:
             line = ""
+        if line.startswith("github:"):
+            if line.startswith("github: ok"):
+                if time.time() - FEATHER_GH["t"] > 180:
+                    log("Feather is publishing to GitHub itself; the PC will stand by")
+                FEATHER_GH["t"] = time.time()
+            else:
+                log("feather " + line.strip())
+            continue
         m = DIST.search(line)
         if m:
             try:
@@ -215,7 +224,10 @@ def main():
             }
             history.append(point)
             history = history[-MAX_POINTS:]
-            publish(history)
+            # The Feather writes the same file when it can reach GitHub; only
+            # publish when it hasn't reported doing so in the last 3 minutes.
+            if time.time() - FEATHER_GH["t"] > 180:
+                publish(history)
             dists, last_pub = [], time.time()
 
 

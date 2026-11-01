@@ -40,13 +40,14 @@ last_temp = None
 # Readings go to the bridge on the PC at SOURDOUGH_BRIDGE ("ip:port").
 pool = None
 bridge = None
+gh = None
 try:
+    import adafruit_connection_manager
     import microcontroller
-    import socketpool
     import supervisor
     import wifi
     import wifisetup
-    pool = socketpool.SocketPool(wifi.radio)
+    pool = adafruit_connection_manager.get_radio_socketpool(wifi.radio)
     host, _, port = (os.getenv("SOURDOUGH_BRIDGE") or "").partition(":")
     if host:
         bridge = (host, int(port or 8765))
@@ -58,6 +59,19 @@ try:
         print("wifi: no known network; plugged into a computer, so staying on USB")
 except Exception as e:
     print("wifi not available:", e)
+
+# GitHub: once a minute, the minute's median distance and the latest temperature
+# go straight to latest.json on GitHub (ghpublish.py), so the live page works
+# from anywhere. Needs GITHUB_TOKEN in settings.toml.
+if pool is not None:
+    try:
+        import ghpublish
+        gh = ghpublish.Publisher(pool, adafruit_connection_manager.get_radio_ssl_context(wifi.radio))
+        print("github:", "on" if gh.enabled else "off (no GITHUB_TOKEN in settings.toml)")
+    except Exception as e:
+        print("github: not available:", e)
+minute_d = []
+minute_start = time.monotonic()
 outbox = []
 last_send = 0
 send_backoff = 1
@@ -112,7 +126,10 @@ while True:
         try:
             if tof.data_ready:
                 tof.clear_interrupt()
-                line.append("distance: {} cm".format(tof.distance))
+                dist = tof.distance
+                line.append("distance: {} cm".format(dist))
+                if len(minute_d) < 600:
+                    minute_d.append(dist)
         except Exception as e:
             line.append("distance error: {}".format(e))
     if ds is not None and rom is not None and now - last_temp_read >= 5:
@@ -144,6 +161,21 @@ while True:
             last_wifi_note = now
             print("wifi:", wifi.radio.ipv4_address if wifi.radio.connected else "not connected",
                   "-> bridge", bridge)
+    if now - minute_start >= 60:
+        minute_start = now
+        if gh is not None and gh.enabled and minute_d and wifi.radio.connected:
+            minute_d.sort()
+            temp = last_temp if rom is not None else None
+            try:
+                if gh.add(minute_d[len(minute_d) // 2], temp) and gh.publish():
+                    print("github: ok")
+                    if bridge:
+                        outbox.append("github: ok")  # tells the bridge it needn't publish
+            except Exception as e:
+                print("github: publish failed:", e)
+                if bridge:
+                    outbox.append("github: failed {}".format(e)[:150])
+        minute_d = []
     # Off Wi-Fi for 5 minutes on a charger: restart, which rejoins or opens setup.
     if pool is not None and not wifi.radio.connected and not supervisor.runtime.usb_connected:
         if offline_since is None:

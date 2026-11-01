@@ -8,3 +8,8 @@ CIRCUITPY_WEB_INSTANCE_NAME = "sourdough"
 
 # Where readings are sent: the PC running bridge/bridge.py (ip:port).
 SOURDOUGH_BRIDGE = "192.168.1.238:8765"
+
+# GitHub publishing (optional): a fine-grained token with Contents read/write
+# on this repo only. The Feather then writes latest.json to the data branch itself.
+GITHUB_TOKEN = "PASTE-TOKEN-HERE"
+GITHUB_REPO = "joshsowalsky/sourdough-sensor-box"
