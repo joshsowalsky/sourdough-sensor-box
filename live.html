@@ -43,6 +43,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change">Set a start level below</div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
   <div class="card wide" id="runcard" hidden><div class="label" id="runlabel">This run</div><div class="big"><span id="runrise">–</span><span class="unit" id="rununit">cm risen</span></div><div class="small" id="runnote"></div><canvas id="runchart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> growth since the feed (1x = just fed) <span style="color:var(--chart-t)">&#9632;</span> room °F <span style="color:var(--muted)">┆</span> fed, 2x, 3x</div></div>
+  <div class="card wide" id="seriescard" hidden><div class="label" id="serieslabel">Every feed</div><canvas id="serieschart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> growth after each feed (back to 1x at every feed) <span style="color:var(--muted)">┆</span> feeds, 2x</div></div>
   <div class="card wide" id="lastcard"><div class="label">Last 6 hours</div><canvas id="chart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> temperature</div></div>
   <div class="card wide" id="startcard">
     <div class="label">Start level</div>
@@ -92,9 +93,9 @@ async function loadRun(){
 // Starter depth at the feed, from grams fed and the vessel's cm per 10 g
 // (catalog inside diameters, see README). null if the vessel isn't known.
 const CM_PER_10G={karter:0.33,pyrex:0.24,yilihcia:0.15};
-function startDepth(){
-  const v=(run.vessel||'').toLowerCase(),k=Object.keys(CM_PER_10G).find(k=>v.includes(k));
-  const g=(run.feed_g||'').split(':').reduce((a,b)=>a+Number(b),0);
+function startDepth(r=run){
+  const v=(r.vessel||'').toLowerCase(),k=Object.keys(CM_PER_10G).find(k=>v.includes(k));
+  const g=(r.feed_g||'').split(':').reduce((a,b)=>a+Number(b),0);
   return k&&g>0?g/10*CM_PER_10G[k]:null;
 }
 function runStats(){
@@ -174,6 +175,35 @@ function renderRun(){
   $('verdict').className='verdict '+cls;$('verdict').hidden=false;
   $('nextstep').textContent=ps||cls==='feed'||cls==='near'?nextFeed(/no rise|dead/i.test(head)):'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
   runChart(s);
+  seriesChart();
+}
+// Every feed of this starter since it came out of the fridge (run.history from
+// the logger, plus this run), end to end: flat, up, feed, flat, up. Each feed
+// is measured against its own start level and vessel, so it restarts at 1x.
+function seriesChart(){
+  const segs=[...(run.history||[]),run].map(r=>{
+    const fed=new Date(r.fed_at).getTime(),depth=startDepth(r);
+    const pts=r.points.map(p=>({t:new Date(p.t).getTime(),d:p.d})).filter(p=>p.t>=fed);
+    const start=median(pts.filter(p=>p.t-fed<=15*60e3).map(p=>p.d));
+    return {fed,pts:depth&&!isNaN(start)?pts.map(p=>({t:p.t,x:1+(start-p.d)/depth})):[]};
+  });
+  if(segs.length<2||segs.some(z=>!z.pts.length)){$('seriescard').hidden=true;return}
+  $('seriescard').hidden=false;
+  $('serieslabel').textContent='Every feed since '+new Date(segs[0].fed).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+' · '+segs.length+' feeds';
+  const c=$('serieschart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
+  const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
+  const t0=segs[0].fed,span=Math.max(3600e3,Date.now()-t0),hrs=span/3600e3,step=Math.max(1,Math.ceil(hrs/8));
+  const L=34,R=12,T=8,B=20,W=w-L-R,H=h-T-B,X=t=>L+W*(t-t0)/span;
+  const xs=segs.flatMap(z=>z.pts.map(p=>p.x)),lo=Math.min(...xs,0.9)-0.1,hi=Math.max(...xs,2)+0.2,Y=v=>T+H*(1-(v-lo)/(hi-lo));
+  g.font='11px system-ui';g.lineWidth=1;g.strokeStyle=css('--line');g.fillStyle=css('--muted');
+  for(let i=0;i<=hrs;i+=step)g.fillText(i+'h',X(t0+i*3600e3)-6,h-5);
+  g.textAlign='right';for(let i=0;i<=3;i++){const v=hi-(hi-lo)*i/3;g.fillText(v.toFixed(1)+'x',L-4,T+H*i/3+4)}g.textAlign='left';
+  g.setLineDash([3,4]);g.strokeStyle=css('--muted');
+  [1,2].forEach(v=>{g.beginPath();g.moveTo(L,Y(v));g.lineTo(w-R,Y(v));g.stroke()});
+  g.fillText('2x',w-R-16,Y(2)-3);
+  segs.forEach(z=>{g.beginPath();g.moveTo(X(z.fed),T);g.lineTo(X(z.fed),T+H);g.stroke();g.fillText('fed',X(z.fed)+3,T+10)});
+  g.setLineDash([]);g.strokeStyle=css('--chart-d');g.lineWidth=2;
+  segs.forEach(z=>{g.beginPath();z.pts.forEach((p,i)=>i?g.lineTo(X(p.t),Y(p.x)):g.moveTo(X(p.t),Y(p.x)));g.stroke()});
 }
 function runChart(s){
   const c=$('runchart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
