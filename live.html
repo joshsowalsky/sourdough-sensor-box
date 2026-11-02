@@ -37,7 +37,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 </style></head><body><main>
 <h1>Sourdough Live</h1>
 <div class="status"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
-<div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div></div>
+<div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div id="nextstep" style="margin-top:8px"></div></div>
 <div class="grid">
   <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change">Set a start level below</div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
@@ -113,6 +113,16 @@ function runVerdict(s){
   if(now!=null&&now<0.15&&now<=fastest/2)return ['near','Feed soon','Near its peak: only '+(Math.max(now,0)*10).toFixed(0)+' mm up in the last hour, down from '+(fastest*10).toFixed(0)+' mm at its fastest. Feeding now is fine.'];
   return ['ok','Not yet: rising','Up '+(now!=null?(Math.max(now,0)*10).toFixed(0)+' mm in the last hour.':'and climbing.')];
 }
+// The feed to do next: this run's recipe, in run.next_vessel if the runs file
+// names one (switching beakers), else the same vessel.
+function nextFeed(warm){
+  const [st,fl,wa]=(run.feed_g||'').split(':'),who=(run.starter||'starter').replace(/^./,c=>c.toUpperCase());
+  const v=run.next_vessel||run.vessel||'jar',same=!run.next_vessel||run.next_vessel===run.vessel;
+  if(!st)return 'Feed it the usual way, then tell Claude the time.';
+  return 'Next: put '+st+' g of '+who+' into '+(same?'a clean '+v:'the clean '+v+' (switching from the '+run.vessel+')')+
+    '. Add '+(run.flour||fl+' g flour')+' and '+wa+' g water, stir, scrape the sides down, put the box on'+
+    (warm?', and keep it somewhere warm (76–80°F)':'')+'. Then tell Claude the time you fed.';
+}
 function renderRun(){
   if(!run)return;
   const s=runStats();
@@ -129,7 +139,8 @@ function renderRun(){
   if(s.best&&s.start-s.best.d>=0.3)t+=' Most risen so far: '+(s.start-s.best.d).toFixed(1)+' cm at '+clock(s.best.t)+' ('+((s.best.t-s.fed)/3600e3).toFixed(1)+' h after feeding).';
   $('runnote').textContent=t;
   const [cls,head,note]=runVerdict(s);
-  $('verdict').className='verdict '+cls;$('verdict').hidden=false;$('verdicthead').textContent=head;$('verdictnote').textContent=note;
+  $('verdict').className='verdict '+cls;$('verdict').hidden=false;
+  $('nextstep').textContent=cls==='feed'||cls==='near'?nextFeed(/no rise|dead/i.test(head)):'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
   runChart(s);
 }
 function runChart(s){
