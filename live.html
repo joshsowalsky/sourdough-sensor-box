@@ -34,6 +34,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 <div class="grid">
   <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change">Set a start level below</div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
+  <div class="card wide" id="runcard" hidden><div class="label" id="runlabel">This run</div><div class="big"><span id="runrise">–</span><span class="unit">cm risen</span></div><div class="small" id="runnote"></div><canvas id="runchart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> room °F <span style="color:var(--muted)">┆</span> start level</div></div>
   <div class="card wide"><div class="label">Last 6 hours</div><canvas id="chart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> temperature</div></div>
   <div class="card wide">
     <div class="label">Start level</div>
@@ -46,9 +47,71 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 </main>
 <script>
 const URL_='https://api.github.com/repos/joshsowalsky/sourdough-sensor-box/contents/latest.json?ref=data';
+// The PC publishes the current feed and every reading since it here (tof_logger.py).
+const RUN_URL='https://raw.githubusercontent.com/joshsowalsky/sourdough-sensor-box/runs/run.json';
 const $=id=>document.getElementById(id);
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-let doc=null,etag=null;
+let doc=null,etag=null,run=null;
+const clock=t=>new Date(t).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+const median=a=>{const s=[...a].sort((x,y)=>x-y);return s.length?s[Math.floor(s.length/2)]:NaN};
+async function loadRun(){
+  try{
+    const r=await fetch(RUN_URL+'?'+Math.floor(Date.now()/60000));
+    if(!r.ok)return;
+    const j=await r.json();
+    if(j.fed_at&&j.points&&j.points.length){run=j;renderRun()}
+  }catch(e){}
+}
+// Start level = median of the first 10 minutes after the feed; "best" = lowest
+// 5-reading median so far, so one noisy reading can't fake a peak.
+function runStats(){
+  const fed=new Date(run.fed_at).getTime();
+  const pts=run.points.map(p=>({t:new Date(p.t).getTime(),d:p.d,f:p.f})).filter(p=>p.t>=fed);
+  const start=median(pts.filter(p=>p.t-fed<=600e3).map(p=>p.d));
+  let best=null;
+  for(let i=2;i<pts.length-2;i++){const m=median(pts.slice(i-2,i+3).map(p=>p.d));if(!best||m<best.d)best={d:m,t:pts[i].t}}
+  const now=doc&&doc.distance_cm!=null?doc.distance_cm:pts[pts.length-1].d;
+  return {fed,pts,start,best,now};
+}
+function renderRun(){
+  if(!run)return;
+  const s=runStats();
+  $('runcard').hidden=false;
+  $('runlabel').textContent='This run · '+(run.starter||'starter')+(run.feed_g?' · '+run.feed_g:'');
+  const rise=s.start-s.now;
+  $('runrise').textContent=(rise>=0?'':'−')+Math.abs(rise).toFixed(1);
+  let t='Fed '+clock(s.fed)+', '+((Date.now()-s.fed)/3600e3).toFixed(1)+' h ago. Start '+s.start.toFixed(1)+' cm from the sensor, now '+s.now.toFixed(1)+'.';
+  if(s.best&&s.start-s.best.d>=0.3)t+=' Most risen so far: '+(s.start-s.best.d).toFixed(1)+' cm at '+clock(s.best.t)+' ('+((s.best.t-s.fed)/3600e3).toFixed(1)+' h after feeding).';
+  $('runnote').textContent=t;
+  runChart(s);
+}
+function runChart(s){
+  const c=$('runchart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
+  const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
+  const pts=s.pts,t0=s.fed,span=Math.max(3600e3,Date.now()-t0);
+  g.font='11px system-ui';g.fillStyle=css('--muted');g.strokeStyle=css('--line');g.lineWidth=1;
+  const L=34,R=34,T=8,B=20,W=w-L-R,H=h-T-B,hrs=span/3600e3,step=hrs<=6?1:2;
+  for(let i=0;i<=3;i++){const y=T+H*i/3;g.beginPath();g.moveTo(L,y);g.lineTo(w-R,y);g.stroke()}
+  for(let i=0;i<=hrs;i+=step){g.fillText(i+'h',L+W*i/hrs-6,h-5)}
+  if(pts.length<2){g.fillText('Collecting data…',L+8,T+H/2);return}
+  const x=t=>L+W*(t-t0)/span;
+  function line(key,color,lo,hi,side){
+    const vals=pts.filter(p=>p[key]!=null);if(vals.length<2)return;
+    g.strokeStyle=color;g.lineWidth=2;g.beginPath();
+    vals.forEach((p,i)=>{const y=T+H*(1-(p[key]-lo)/(hi-lo));i?g.lineTo(x(p.t),y):g.moveTo(x(p.t),y)});g.stroke();
+    g.fillStyle=color;g.textAlign=side==='l'?'right':'left';
+    for(let i=0;i<=3;i++){const v=hi-(hi-lo)*i/3;g.fillText(v.toFixed(1),side==='l'?L-4:w-R+4,T+H*i/3+4)}
+    g.textAlign='left';
+  }
+  const ds=pts.map(p=>p.d),fs=pts.filter(p=>p.f!=null).map(p=>p.f);
+  // At least 2 cm of axis, so millimetre sensor noise doesn't look like rising.
+  let dmin=Math.min(...ds,s.start)-0.3,dmax=Math.max(...ds,s.start)+0.3;
+  if(dmax-dmin<2){const mid=(dmax+dmin)/2;dmin=mid-1;dmax=mid+1}
+  const ys=T+H*(1-(s.start-dmin)/(dmax-dmin));
+  g.setLineDash([3,4]);g.strokeStyle=css('--muted');g.beginPath();g.moveTo(L,ys);g.lineTo(w-R,ys);g.stroke();g.setLineDash([]);
+  line('d',css('--chart-d'),dmin,dmax,'l');
+  if(fs.length>1){const fmin=Math.floor(Math.min(...fs))-3,fmax=fmin+Math.max(6,Math.ceil(Math.max(...fs)+3-fmin));line('f',css('--chart-t'),fmin,fmax,'r')}
+}
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
 function ago(s){if(s<90)return Math.round(s)+' s ago';if(s<5400)return Math.round(s/60)+' min ago';return (s/3600).toFixed(1)+' h ago'}
 async function load(){
@@ -80,6 +143,7 @@ function render(){
     $('startnote').textContent='Start level: '+start.toFixed(1)+' cm from the sensor'+(isNaN(depth)?'. Add the dough depth to see a percent.':'');
   }else{$('change').textContent='Set a start level below';$('startnote').textContent=''}
   chart();
+  renderRun();
 }
 function chart(){
   const c=$('chart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
@@ -108,7 +172,8 @@ $('mark').onclick=()=>{if(doc){store.set('start',String(doc.distance_cm));render
 $('clear').onclick=()=>{store.del('start');render()};
 $('depth').value=store.get('depth')||'';
 $('depth').oninput=e=>{const v=parseFloat(e.target.value);v>0?store.set('depth',String(v)):store.del('depth');render()};
-addEventListener('resize',chart);
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change',chart);
+addEventListener('resize',()=>{chart();renderRun()});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{chart();renderRun()});
 load();setInterval(load,60000);setInterval(render,15000);
+loadRun();setInterval(loadRun,300000);
 </script></body></html>
