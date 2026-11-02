@@ -9,6 +9,24 @@ A 3D-printable housing for a sourdough rise monitor: an ESP32-S3 Feather, a VL53
 
 Dimensions for the beakers and jars are assumed, not measured. Print the rim plate (`collar.stl`) first as a fit test.
 
+## The setup in use (Nov 2026)
+
+The printed housing above isn't what's on the jar. In use instead:
+
+- **Box:** a Zulkit IP65 ABS project box, 100 × 68 × 50 mm, set on the vessel's rim. The VL53L4CD is mounted inside at the top and aims down through the full 50 mm of the box, then out a hole in the bottom into the vessel.
+- **Offset:** so every distance includes about 5 cm of box before the beam reaches the rim. Empty Karter beaker: 17.1 cm, about 11.8 cm of beaker plus about 5.3 cm of box. The offset is constant, so rise is read as the *change* from the fed level and the offset cancels out.
+- **Hole:** the sensor's cone (18° field of view) is about 1.6 cm wide where it leaves the box. Keep the hole at least 2 cm across and centred over the vessel. Starter on the hole or the sensor window blocks the reading.
+- **Vessels**, as depth of starter per 10 g fed (0.854 mL per g of starter; inside diameters from catalog specs, not measured):
+
+  | Vessel | Size (catalog) | cm per 10 g |
+  | --- | --- | --- |
+  | Karter 250 mL tall-form beaker | 60 mm OD × 120 mm (ISO 3819 tall form), ~57 mm ID | 0.33 |
+  | Pyrex 400 mL tall-form beaker | 70 mm OD × 130 mm, ~67 mm ID | 0.24 |
+  | 34 oz starter jar | ~100 mm ID, a guess, measure before relying on it | ~0.11 |
+
+  Check, 2026-11-01: 50 g of Gus in the Karter read 15.6 cm against 17.1 cm empty, 1.5 cm deep against 1.7 cm predicted. So in that beaker 2x ≈ 14.0 cm, 3x ≈ 12.4 cm.
+- **Logging:** `tof_logger.py` in the claude repo (`sourdough/`, scheduled task `\sourdough\tof`) saves every reading plus room temperature to `~/sourdough-tracker/tof_log.csv`. It also publishes the current run (the last row of `tof_runs.csv` and every reading since that feed) to `run.json` on the `runs` branch, which `live.html` shows as **This run**.
+
 ## Electronics code
 
 - **`firmware/sourdough_box/`** — what the Feather runs now: an Arduino (C++) sketch for the ESP32-S3 Feather (no PSRAM), built with arduino-cli and the esp32 core 3.3 (`esp32:esp32:adafruit_feather_esp32s3_nopsram`, libraries Adafruit DS248x and STM32duino VL53L4CD). It sends the same `distance: X cm | temp: Y C | status: S | signal: N` lines to the bridge, publishes `latest.json` to the `data` branch once a minute, and serves its own live page at `http://<board address>/` (`/status` is JSON). If no saved Wi-Fi is in range it opens **Sourdough-Setup** (http://192.168.4.1) to add one, and optionally a new GitHub token. A 60-second hardware watchdog restarts it if it ever hangs, and the next start logs what it was doing.
