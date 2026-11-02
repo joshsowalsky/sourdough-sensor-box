@@ -114,13 +114,14 @@ function runStats(){
 // "past due" 4 h after the peak; "looks dead" when flat at 24 h.
 function runVerdict(s){
   const h=(Date.now()-s.fed)/3600e3,ds=s.pts.map(p=>p.d),W=15;
-  if(ds.length<2*W)return ['','Not yet: just fed','Settling in. Status shows after half an hour.'];
+  if(ds.length<2*W)return ['','Just fed','Settling in. Status shows after half an hour.'];
   const m=[];for(let i=W;i<=ds.length;i++)m.push(median(ds.slice(i-W,i)));
-  const top=Math.min(...m),rise=s.start-top,fallen=m[m.length-1]-top;
-  if(rise<0.3){
+  // Rising = 1.15x its fed size in this vessel, at least 0.2 cm (2 sensor steps).
+  const top=Math.min(...m),rise=+(s.start-top).toFixed(2),fallen=+(m[m.length-1]-top).toFixed(2),d=startDepth();
+  if(rise<(d?Math.max(0.2,0.15*d):0.3)){
     if(h>=24)return ['feed','Looks dead','No rise in '+h.toFixed(0)+' h. Feed once more somewhere warm; if that doesn\'t rise either, throw it out.'];
     if(h>=14)return ['feed','Feed again: no rise','Nothing '+h.toFixed(0)+' h after the feed. Keep 10 g and feed it again, somewhere warm.'];
-    return ['','Not yet: waking up','No rise yet, '+h.toFixed(1)+' h after the feed. A starved starter can take hours to start.'];
+    return ['','Waking up: not rising yet','No rise yet, '+h.toFixed(1)+' h after the feed. A starved starter can take hours to start.'];
   }
   if(fallen>=0.2){
     const peakAt=s.pts[m.indexOf(top)+W-1].t,since=(Date.now()-peakAt)/3600e3;
@@ -130,7 +131,7 @@ function runVerdict(s){
   const rate=i=>i>=60?m[i-60]-m[i]:null,now=rate(m.length-1);
   let fastest=0;for(let i=60;i<m.length;i++)fastest=Math.max(fastest,rate(i));
   if(now!=null&&now<0.15&&now<=fastest/2)return ['near','Feed soon','Near its peak: only '+(Math.max(now,0)*10).toFixed(0)+' mm up in the last hour, down from '+(fastest*10).toFixed(0)+' mm at its fastest. Feeding now is fine.'];
-  return ['ok','Not yet: rising','Up '+(now!=null?(Math.max(now,0)*10).toFixed(0)+' mm in the last hour.':'and climbing.')];
+  return ['ok','Rising: not ready yet','Up '+(now!=null?(Math.max(now,0)*10).toFixed(0)+' mm in the last hour.':'and climbing.')];
 }
 // The feed to do next: this run's recipe, in run.next_vessel if the runs file
 // names one (switching beakers), else the same vessel.
