@@ -35,8 +35,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change">Set a start level below</div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
   <div class="card wide" id="runcard" hidden><div class="label" id="runlabel">This run</div><div class="big"><span id="runrise">–</span><span class="unit">cm risen</span></div><div class="small" id="runnote"></div><canvas id="runchart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> room °F <span style="color:var(--muted)">┆</span> start level</div></div>
-  <div class="card wide"><div class="label">Last 6 hours</div><canvas id="chart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> temperature</div></div>
-  <div class="card wide">
+  <div class="card wide" id="lastcard"><div class="label">Last 6 hours</div><canvas id="chart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> temperature</div></div>
+  <div class="card wide" id="startcard">
     <div class="label">Start level</div>
     <div class="row" style="margin-top:6px"><button id="mark">Mark start now</button><button id="clear">Clear</button></div>
     <div class="row" style="margin-top:8px"><label for="depth" class="note">Dough depth at start (cm)</label><input id="depth" type="number" inputmode="decimal" step="0.1" min="0" placeholder="optional"></div>
@@ -76,7 +76,10 @@ function runStats(){
 function renderRun(){
   if(!run)return;
   const s=runStats();
-  $('runcard').hidden=false;
+  // During a run, nothing from before the feed is shown: the box records while
+  // it's being handled, and those readings aren't the starter.
+  $('runcard').hidden=false;$('lastcard').hidden=true;$('startcard').hidden=true;
+  $('change').textContent='Run started '+clock(s.fed);
   $('runlabel').textContent='This run · '+(run.starter||'starter')+(run.feed_g?' · '+run.feed_g:'');
   const rise=s.start-s.now;
   $('runrise').textContent=(rise>=0?'':'−')+Math.abs(rise).toFixed(1);
