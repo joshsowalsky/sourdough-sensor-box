@@ -28,13 +28,18 @@ button{cursor:pointer}
 button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .wide{grid-column:1/-1}
 .note{font-size:.8rem;color:var(--muted)}
+.verdict{border-left:4px solid var(--muted);padding:2px 0 2px 10px;margin:6px 0 10px}
+.verdict b{display:block;font-size:1.25rem}
+.verdict.ok{border-color:var(--ok)}.verdict.ok b{color:var(--ok)}
+.verdict.near{border-color:var(--accent)}.verdict.near b{color:var(--accent)}
+.verdict.feed{border-color:var(--warn)}.verdict.feed b{color:var(--warn)}
 </style></head><body><main>
 <h1>Sourdough Live</h1>
 <div class="status"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
 <div class="grid">
   <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change">Set a start level below</div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
-  <div class="card wide" id="runcard" hidden><div class="label" id="runlabel">This run</div><div class="big"><span id="runrise">–</span><span class="unit" id="rununit">cm risen</span></div><div class="small" id="runnote"></div><canvas id="runchart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> rise since the feed (higher = risen) <span style="color:var(--chart-t)">&#9632;</span> room °F <span style="color:var(--muted)">┆</span> start, 2x, 3x</div></div>
+  <div class="card wide" id="runcard" hidden><div class="label" id="runlabel">This run</div><div class="verdict" id="verdict"><b id="verdicthead">–</b><span class="small" id="verdictnote"></span></div><div class="big"><span id="runrise">–</span><span class="unit" id="rununit">cm risen</span></div><div class="small" id="runnote"></div><canvas id="runchart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> rise since the feed (higher = risen) <span style="color:var(--chart-t)">&#9632;</span> room °F <span style="color:var(--muted)">┆</span> start, 2x, 3x</div></div>
   <div class="card wide" id="lastcard"><div class="label">Last 6 hours</div><canvas id="chart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> temperature</div></div>
   <div class="card wide" id="startcard">
     <div class="label">Start level</div>
@@ -81,6 +86,23 @@ function runStats(){
   const now=doc&&doc.distance_cm!=null?doc.distance_cm:pts[pts.length-1].d;
   return {fed,pts,start,best,now};
 }
+// What to do now. Same thresholds as the phone pushes in tof_logger.py, judged
+// on 15-reading medians: risen = 0.3 cm up, past peak = 0.2 cm back down from
+// the top, still flat = no rise 14 h in. "Near peak" is extra: the last hour's
+// climb has slowed to half its fastest and under 1.5 mm/h.
+function runVerdict(s){
+  const h=(Date.now()-s.fed)/3600e3,ds=s.pts.map(p=>p.d),W=15;
+  if(ds.length<2*W)return ['','Just fed','Settling in. Status shows after half an hour.'];
+  const m=[];for(let i=W;i<=ds.length;i++)m.push(median(ds.slice(i-W,i)));
+  const top=Math.min(...m),rise=s.start-top,fallen=m[m.length-1]-top;
+  if(rise<0.3)return h>=14?['feed','Still flat: feed again','No rise '+h.toFixed(0)+' h after the feed. Keep 10 g and feed it again, somewhere warm.']
+    :['','Waking up','No clear rise yet, '+h.toFixed(1)+' h after the feed. A starter that was starved can take hours to start.'];
+  if(fallen>=0.2)return ['feed','Past peak: feed now','It has dropped '+fallen.toFixed(1)+' cm from its highest point.'];
+  const rate=i=>i>=60?m[i-60]-m[i]:null,now=rate(m.length-1);
+  let fastest=0;for(let i=60;i<m.length;i++)fastest=Math.max(fastest,rate(i));
+  if(now!=null&&now<0.15&&now<=fastest/2)return ['near','Near peak: feed any time','Still rising, but only '+(Math.max(now,0)*10).toFixed(0)+' mm in the last hour, down from '+(fastest*10).toFixed(0)+' mm at its fastest.'];
+  return ['ok','Rising','Up '+(now!=null?(Math.max(now,0)*10).toFixed(0)+' mm in the last hour.':'and climbing.')+' Not ready yet.'];
+}
 function renderRun(){
   if(!run)return;
   const s=runStats();
@@ -96,6 +118,8 @@ function renderRun(){
   let t='Fed '+clock(s.fed)+', '+((Date.now()-s.fed)/3600e3).toFixed(1)+' h ago. Start '+s.start.toFixed(1)+' cm from the sensor, now '+s.now.toFixed(1)+'.';
   if(s.best&&s.start-s.best.d>=0.3)t+=' Most risen so far: '+(s.start-s.best.d).toFixed(1)+' cm at '+clock(s.best.t)+' ('+((s.best.t-s.fed)/3600e3).toFixed(1)+' h after feeding).';
   $('runnote').textContent=t;
+  const [cls,head,note]=runVerdict(s);
+  $('verdict').className='verdict '+cls;$('verdicthead').textContent=head;$('verdictnote').textContent=note;
   runChart(s);
 }
 function runChart(s){
