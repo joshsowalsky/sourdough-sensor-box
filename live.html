@@ -38,7 +38,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 </style></head><body><main>
 <h1>Sourdough Live</h1>
 <div class="status"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
-<div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div id="nextstep" style="margin-top:8px"></div><a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
+<div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><table id="kpis" class="small" style="margin-top:6px;border-collapse:collapse"></table><a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
 <div class="grid">
   <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change">Set a start level below</div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
@@ -108,7 +108,7 @@ function runStats(){
   return {fed,pts,start,best,now};
 }
 // The starter status banner. Same thresholds as the phone pushes in
-// tof_logger.py, judged on 15-reading medians: risen = 0.3 cm up, past peak =
+// tof_logger.py, judged on 15-reading medians: risen = 1.15x (at least 0.2 cm), past peak =
 // 0.2 cm back down from the top, flat = no rise 14 h in. Extra here: "feed
 // soon" once the last hour's climb is under 1.5 mm and half its fastest;
 // "past due" 4 h after the peak; "looks dead" when flat at 24 h.
@@ -177,17 +177,47 @@ function renderRun(){
   $('nextstep').textContent=ps||cls==='feed'||cls==='near'?nextFeed(/no rise|dead/i.test(head)):'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
   runChart(s);
   seriesChart();
+  readiness();
 }
 // Every feed of this starter since it came out of the fridge (run.history from
 // the logger, plus this run), end to end: flat, up, feed, flat, up. Each feed
 // is measured against its own start level and vessel, so it restarts at 1x.
-function seriesChart(){
-  const segs=[...(run.history||[]),run].map(r=>{
+function feedSegs(){
+  return [...(run.history||[]),run].map(r=>{
     const fed=new Date(r.fed_at).getTime(),depth=startDepth(r);
     const pts=r.points.map(p=>({t:new Date(p.t).getTime(),d:p.d})).filter(p=>p.t>=fed);
     const start=median(pts.filter(p=>p.t-fed<=15*60e3).map(p=>p.d));
-    return {fed,pts:depth&&!isNaN(start)?pts.map(p=>({t:p.t,x:1+(start-p.d)/depth})):[]};
+    return {fed,vessel:r.vessel,pts:depth&&!isNaN(start)?pts.map(p=>({t:p.t,x:1+(start-p.d)/depth})):[]};
   });
+}
+// Per-feed numbers on 15-minute medians (history is already 5-min medians):
+// highest growth and when, and when it first doubled.
+function feedKpis(z){
+  const m=z.pts.map((p,i)=>({t:p.t,x:median(z.pts.filter(q=>q.t<=p.t&&q.t>p.t-15*60e3).map(q=>q.x))}));
+  let peak=null,dbl=null;
+  m.forEach(p=>{if(!peak||p.x>peak.x)peak=p;if(!dbl&&p.x>=2)dbl=p});
+  const hrs=p=>p?(p.t-z.fed)/3600e3:null;
+  return {fed:z.fed,vessel:z.vessel,peak:peak&&peak.x,peakH:hrs(peak),dblH:hrs(dbl),last:m.length?m[m.length-1].x:null};
+}
+// Ready to bake: doubled within READY_H of the feed, two feeds in a row.
+// Then use it for the dough near its peak (Feed soon / Feed now on the banner).
+const READY_H=8,READY_RUNS=2;
+function readiness(){
+  const ks=feedSegs().filter(z=>z.pts.length).map(feedKpis);if(!ks.length)return;
+  const good=k=>k.dblH!=null&&k.dblH<=READY_H;
+  let streak=0;for(let i=ks.length-1;i>=0;i--){const cur=i===ks.length-1;if(good(ks[i]))streak++;else if(!cur)break}
+  const cur=ks[ks.length-1],curH=(Date.now()-cur.fed)/3600e3;
+  let txt;
+  if(streak>=READY_RUNS&&good(cur))txt='<b style="font-size:1.1rem;display:inline">Ready to bake.</b> Doubled within '+READY_H+' h, '+streak+' feeds in a row. Mix your dough with it now, while it is near the top.';
+  else txt='<b style="font-size:1.1rem;display:inline">Ready to bake: not yet</b> ('+Math.min(streak,READY_RUNS)+' of '+READY_RUNS+'). Ready once it doubles within '+READY_H+' h of a feed, '+READY_RUNS+' feeds in a row.'+
+    (!good(cur)&&curH<READY_H?' This feed has '+(READY_H-curH).toFixed(1)+' h left to double.':'');
+  $('ready').innerHTML=txt;
+  const f=v=>v==null?'–':v.toFixed(1),day=t=>new Date(t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
+  $('kpis').innerHTML='<tr style="color:var(--muted)"><td>Feed</td><td>Highest</td><td>at</td><td>Doubled at</td></tr>'+
+    ks.slice(-4).map(k=>'<tr><td style="padding-right:10px">'+day(k.fed)+'</td><td style="padding-right:10px">'+f(k.peak)+'x</td><td style="padding-right:10px">'+f(k.peakH)+' h</td><td>'+(k.dblH==null?'not yet':f(k.dblH)+' h')+(good(k)?' ✓':'')+'</td></tr>').join('');
+}
+function seriesChart(){
+  const segs=feedSegs();
   if(segs.length<2||segs.some(z=>!z.pts.length)){$('seriescard').hidden=true;return}
   $('seriescard').hidden=false;
   $('serieslabel').textContent='Every feed since '+new Date(segs[0].fed).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+' · '+segs.length+' feeds';
