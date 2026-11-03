@@ -41,7 +41,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 </style></head><body><main>
 <h1>Sourdough Live</h1>
 <div class="status"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
-<div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><table id="kpis" class="small" style="margin-top:6px;border-collapse:collapse"></table><a class="btn" id="calbtn" href="#" hidden>Calibrate empty jar</a> <a class="btn" id="startbtn" href="#" hidden>Starter in</a> <a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
+<div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div class="small" id="outlook" hidden></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><table id="kpis" class="small" style="margin-top:6px;border-collapse:collapse"></table><a class="btn" id="calbtn" href="#" hidden>Calibrate empty jar</a> <a class="btn" id="startbtn" href="#" hidden>Starter in</a> <a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
 <div class="grid">
   <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change">Set a start level below</div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
@@ -225,6 +225,7 @@ function renderRun(){
   if(!store.get('pausekey')&&!$('pausenote').textContent)$('pausenote').textContent='home Wi-Fi only on this device (no pause key)';
   $('verdict').className='verdict '+cls;$('verdict').hidden=false;
   $('nextstep').textContent=started?'':ps||cls==='feed'||cls==='near'?nextFeed(/no rise|dead/i.test(head)):'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
+  const ol=!started&&!ps&&cls==='ok'?peakOutlook():null;$('outlook').hidden=!ol;$('outlook').innerHTML=ol||'';if(ol)$('outlook').style.marginTop='6px';
   runChart(s);
   seriesChart();
   readiness();
@@ -288,8 +289,42 @@ function feedSegs(){
     const pts=r.points.map(p=>({t:new Date(p.t).getTime(),d:p.d})).filter(p=>p.t>=fed);
     const start=median(pts.filter(p=>p.t-fed<=15*60e3).map(p=>p.d)),depth=startDepth(r,start);
     const fs=r.points.filter(p=>p.f!=null).map(p=>p.f),f=r.room_f_avg??(fs.length?fs.reduce((a,b)=>a+b)/fs.length:null);
-    return {fed,vessel:r.vessel,feed_g:r.feed_g,f,pts:depth&&!isNaN(start)?pts.map(p=>({t:p.t,x:1+(start-p.d)/depth})):[]};
+    return {fed,vessel:r.vessel,feed_g:r.feed_g,f,depth,pts:depth&&!isNaN(start)?pts.map(p=>({t:p.t,x:1+(start-p.d)/depth})):[]};
   });
+}
+// When a feed started rising: the smoothed line first 2 mm (two sensor steps)
+// above its start. Before that the wait varies a lot (8 h, then 3.5, then
+// 2.5 as Gus woke up); after it, past feeds climbed at a similar pace.
+const ONSET_CM=0.2,OUTLOOK_AFTER_H=2,RISE_TO_PEAK_H=8;
+function riseOnset(z){
+  if(!z.depth||!z.pts.length)return null;
+  const sm=smooth(z.pts,'x'),i=sm.findIndex(x=>(x-1)*z.depth>=ONSET_CM);
+  return i<0?null:{t:z.pts[i].t,sm};
+}
+// Peak estimate while rising, once there are OUTLOOK_AFTER_H hours of climb
+// to measure. Two takes, shown as a range: (1) past feeds' hours from onset
+// to an observed peak (RISE_TO_PEAK_H until there is one), (2) the last 2 h
+// climb rate carried on to 2x. The climb slows near the top, so (2) runs early.
+function peakOutlook(){
+  const segs=feedSegs(),z=segs[segs.length-1],on=riseOnset(z);if(!on)return null;
+  const now=Date.now(),h=(now-on.t)/3600e3;
+  if(h<OUTLOOK_AFTER_H)return 'Started rising at '+clock(on.t)+'. Peak estimate from '+clock(on.t+OUTLOOK_AFTER_H*3600e3)+', once it has '+OUTLOOK_AFTER_H+' h of climb to measure.';
+  const past=segs.slice(0,-1).map(p=>{
+    const o=riseOnset(p),k=feedKpis(p);if(!o||k.peakH==null)return null;
+    const peakT=p.fed+k.peakH*3600e3;
+    return peakT<p.pts[p.pts.length-1].t-30*60e3?(peakT-o.t)/3600e3:null;  // peak seen, not cut off by the next feed
+  }).filter(v=>v!=null&&v>0);
+  const toPeak=past.length?past.sort((a,b)=>a-b)[Math.floor(past.length/2)]:RISE_TO_PEAK_H;
+  // Least-squares climb over the last 2 h, in cm/h.
+  const w=z.pts.filter(p=>p.t>=now-2*3600e3),n=w.length,mt=w.reduce((s,p)=>s+p.t,0)/n,mx=w.reduce((s,p)=>s+p.x,0)/n;
+  const slope=w.reduce((s,p)=>s+(p.t-mt)*(p.x-mx),0)/(w.reduce((s,p)=>s+(p.t-mt)**2,0)||1)*3600e3;
+  const cmh=slope*z.depth,xNow=on.sm[on.sm.length-1];
+  const a=on.t+toPeak*3600e3,b=xNow<2&&slope>0?now+(2-xNow)/slope*3600e3:null;
+  const lo=Math.min(a,b??a),hi=Math.max(a,b??a);
+  let t='<b>Peak estimate: '+(hi-lo<20*60e3?'around '+clock((lo+hi)/2):clock(lo)+' to '+clock(hi))+'.</b> Rising since '+clock(on.t)+', '+(cmh*10).toFixed(1)+' mm/h over the last 2 h. ';
+  t+=(past.length?'Past feeds peaked '+toPeak.toFixed(1)+' h after they started rising':'Assumes it peaks about '+RISE_TO_PEAK_H+' h after it started rising')+' ('+clock(a)+')';
+  t+=b?'; at this pace it reaches 2x by '+clock(b)+', but the climb usually slows near the top.':'.';
+  return t;
 }
 // Per-feed numbers on 15-minute medians (history is already 5-min medians):
 // highest growth and when, and when it first doubled.
