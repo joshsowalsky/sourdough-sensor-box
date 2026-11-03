@@ -24,6 +24,8 @@ canvas{width:100%;height:190px;display:block}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 button,input,a.btn{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-height:42px}
 input{width:7.5em}
+button.chip{min-height:34px;padding:4px 10px;font-size:.85rem}
+button.chip.on{border-color:var(--accent);color:var(--accent);font-weight:600}
 input[type=range]{width:100%;padding:0;min-height:32px;border:0;background:none;accent-color:var(--accent)}
 button{cursor:pointer}
 a.btn{display:inline-flex;align-items:center;text-decoration:none;margin-top:10px;font-weight:600}
@@ -52,7 +54,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <div id="planout" style="margin-top:6px"></div>
     <table id="plantable" class="small" style="margin-top:6px;border-collapse:collapse"></table>
     <div class="note" id="planbasis" style="margin-top:6px"></div></div>
-  <div class="card wide" id="seriescard" hidden><div class="label" id="serieslabel">Every feed</div><canvas id="serieschart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> growth after each feed (back to 1x at every feed) <span style="color:var(--muted)">┆</span> feeds, 2x</div></div>
+  <div class="card wide" id="seriescard" hidden><div class="label" id="serieslabel">Every feed</div>
+    <div class="row" id="serieswin" style="margin:6px 0 4px;gap:6px"><button class="chip" data-h="12">12 h</button><button class="chip" data-h="24">1 day</button><button class="chip" data-h="72">3 days</button><button class="chip" data-h="0">All</button><button class="chip" id="seriesnow" hidden>Back to now</button></div>
+    <div class="small" id="seriesread" style="min-height:1.4em">Drag to scroll · pinch to zoom · tap a point</div>
+    <canvas id="serieschart" width="560" height="190" style="touch-action:pan-y;cursor:grab"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> growth after each feed (back to 1x at every feed) <span style="color:var(--muted)">┆</span> feeds, 2x</div></div>
   <div class="card wide" id="lastcard"><div class="label">Last 6 hours</div><canvas id="chart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> temperature</div></div>
   <div class="card wide" id="startcard">
     <div class="label">Start level</div>
@@ -335,19 +340,94 @@ function seriesChart(){
   $('serieslabel').textContent='Every feed since '+new Date(all[0].fed).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+' · '+all.length+' feeds';
   const c=$('serieschart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
   const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
-  const t0=all[0].fed,span=Math.max(3600e3,Date.now()-t0),hrs=span/3600e3,step=Math.max(1,Math.ceil(hrs/8));
+  // The window: sv.win hours wide (0 = everything), ending at sv.end (null =
+  // now, following new readings). Drag, pinch and the chips change it.
+  const now=Date.now(),first=all[0].fed,full=Math.max(3600e3,now-first);
+  const span=sv.win?Math.min(sv.win*3600e3,full):full;
+  if(sv.end!=null&&sv.end>=now-60e3)sv.end=null;
+  const t1=sv.end==null?now:Math.max(first+span,sv.end),t0=t1-span;
   const L=34,R=12,T=8,B=20,W=w-L-R,H=h-T-B,X=t=>L+W*(t-t0)/span;
-  const xs=segs.flatMap(z=>z.pts.map(p=>p.x)),lo=Math.min(...xs,0.9)-0.1,hi=Math.max(...xs,2)+0.2,Y=v=>T+H*(1-(v-lo)/(hi-lo));
+  sv.view={t0,t1,span,full,first,now,L,W};
+  document.querySelectorAll('#serieswin .chip[data-h]').forEach(b=>b.classList.toggle('on',sv.custom?false:+b.dataset.h===sv.win));
+  $('seriesnow').hidden=sv.end==null;
+  const vis=segs.flatMap(z=>z.pts.filter(p=>p.t>=t0&&p.t<=t1).map(p=>p.x)),xs=vis.length?vis:segs.flatMap(z=>z.pts.map(p=>p.x));
+  const lo=Math.min(...xs,0.9)-0.1,hi=Math.max(...xs,2)+0.2,Y=v=>T+H*(1-(v-lo)/(hi-lo));
   g.font='11px system-ui';g.lineWidth=1;g.strokeStyle=css('--line');g.fillStyle=css('--muted');
-  for(let i=0;i<=hrs;i+=step)g.fillText(i+'h',X(t0+i*3600e3)-6,h-5);
+  // Clock-time ticks on whole hours, as many as fit; midnight shows the day.
+  const step=[1,2,3,6,12,24].find(s=>span/(s*3600e3)<=W/62)||24,d=new Date(t0);d.setMinutes(0,0,0);
+  while(d.getTime()<t0||d.getHours()%step)d.setHours(d.getHours()+1);
+  g.textAlign='center';
+  for(;d.getTime()<=t1;d.setHours(d.getHours()+step)){
+    const x=X(d.getTime()),lab=d.getHours()?d.toLocaleTimeString([],{hour:'numeric'}).replace(/\s/g,'').toLowerCase():d.toLocaleDateString([],{weekday:'short'});
+    g.beginPath();g.moveTo(x,T);g.lineTo(x,T+H);g.stroke();g.fillText(lab,Math.min(Math.max(x,L+12),w-R-12),h-5);
+  }
   g.textAlign='right';for(let i=0;i<=3;i++){const v=hi-(hi-lo)*i/3;g.fillText(v.toFixed(1)+'x',L-4,T+H*i/3+4)}g.textAlign='left';
+  g.save();g.beginPath();g.rect(L,0,W,h);g.clip();
   g.setLineDash([3,4]);g.strokeStyle=css('--muted');
   [1,2].forEach(v=>{g.beginPath();g.moveTo(L,Y(v));g.lineTo(w-R,Y(v));g.stroke()});
   g.fillText('2x',w-R-16,Y(2)-3);
   all.forEach(z=>{g.beginPath();g.moveTo(X(z.fed),T);g.lineTo(X(z.fed),T+H);g.stroke();g.fillText('fed',X(z.fed)+3,T+10)});
   g.setLineDash([]);g.strokeStyle=css('--chart-d');g.lineWidth=2;
   segs.forEach(z=>{g.beginPath();z.pts.forEach((p,i)=>i?g.lineTo(X(p.t),Y(p.x)):g.moveTo(X(p.t),Y(p.x)));g.stroke()});
+  // Tapped / hovered point: crosshair, dot and the numbers above the chart.
+  let hit=null;
+  if(sv.cursor!=null)segs.forEach(z=>z.pts.forEach(p=>{if(p.t>=t0&&p.t<=t1&&(!hit||Math.abs(p.t-sv.cursor)<Math.abs(hit.p.t-sv.cursor)))hit={z,p}}));
+  if(hit){
+    const x=X(hit.p.t),y=Y(hit.p.x);
+    g.strokeStyle=css('--fg');g.lineWidth=1;g.beginPath();g.moveTo(x,T);g.lineTo(x,T+H);g.stroke();
+    g.fillStyle=css('--chart-d');g.beginPath();g.arc(x,y,4.5,0,7);g.fill();
+    $('seriesread').innerHTML='<b>'+hit.p.x.toFixed(2)+'x</b> · '+new Date(hit.p.t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+
+      ' · '+((hit.p.t-hit.z.fed)/3600e3).toFixed(1)+' h after the '+clock(hit.z.fed)+' feed';
+  }else $('seriesread').textContent='Drag to scroll · pinch to zoom · tap a point';
+  g.restore();
 }
+const sv={win:(()=>{try{const v=localStorage.getItem('serieswin');return v==null?24:+v}catch(e){return 24}})(),end:null,cursor:null,custom:false,view:null};
+(function seriesControls(){
+  const c=$('serieschart'),ptrs=new Map();let drag=null,pinch=null;
+  const redraw=()=>{if(run)seriesChart()};
+  const tAt=x=>{const v=sv.view,r=c.getBoundingClientRect();return v.t0+(x-r.left-v.L)/v.W*v.span};
+  document.querySelectorAll('#serieswin .chip[data-h]').forEach(b=>b.onclick=()=>{sv.win=+b.dataset.h;sv.custom=false;sv.end=null;store.set('serieswin',sv.win);redraw()});
+  $('seriesnow').onclick=()=>{sv.end=null;redraw()};
+  c.addEventListener('pointerdown',e=>{
+    if(!sv.view)return;c.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,e.clientX);
+    if(ptrs.size===1)drag={x:e.clientX,t1:sv.view.t1,moved:false};
+    else if(ptrs.size===2){const [a,b]=[...ptrs.values()];pinch={dist:Math.abs(a-b)||1,span:sv.view.span,tMid:tAt((a+b)/2)};drag=null}
+  });
+  c.addEventListener('pointermove',e=>{
+    const v=sv.view;if(!v)return;
+    if(!ptrs.has(e.pointerId)){if(e.pointerType==='mouse'){sv.cursor=tAt(e.clientX);redraw()}return}
+    ptrs.set(e.pointerId,e.clientX);
+    if(pinch&&ptrs.size===2){
+      const [a,b]=[...ptrs.values()],mid=(a+b)/2,r=c.getBoundingClientRect();
+      const span=Math.min(v.full,Math.max(3600e3,pinch.span*pinch.dist/(Math.abs(a-b)||1)));
+      const t0=pinch.tMid-(mid-r.left-v.L)/v.W*span;
+      sv.win=span/3600e3;sv.custom=true;sv.end=Math.min(v.now,Math.max(v.first+span,t0+span));redraw();
+    }else if(drag){
+      const dx=e.clientX-drag.x;if(Math.abs(dx)>6)drag.moved=true;
+      if(drag.moved){sv.end=Math.min(v.now,drag.t1-dx/v.W*v.span);c.style.cursor='grabbing';redraw()}
+    }
+  });
+  const up=e=>{
+    if(!ptrs.has(e.pointerId))return;ptrs.delete(e.pointerId);
+    if(drag&&!drag.moved&&e.type==='pointerup')sv.cursor=sv.cursor!=null&&e.pointerType!=='mouse'&&Math.abs(tAt(e.clientX)-sv.cursor)<sv.view.span/40?null:tAt(e.clientX);
+    if(!ptrs.size){drag=null;pinch=null;c.style.cursor='grab'}
+    redraw();
+  };
+  c.addEventListener('pointerup',up);c.addEventListener('pointercancel',up);
+  c.addEventListener('pointerleave',e=>{if(e.pointerType==='mouse'&&!ptrs.size){sv.cursor=null;redraw()}});
+  // Trackpad: pinch (ctrl+wheel) zooms around the pointer, sideways swipe
+  // scrolls. A plain vertical wheel is left to scroll the page.
+  c.addEventListener('wheel',e=>{
+    const v=sv.view;if(!v)return;
+    if(e.ctrlKey){
+      e.preventDefault();
+      const tm=tAt(e.clientX),span=Math.min(v.full,Math.max(3600e3,v.span*Math.exp(e.deltaY/100)));
+      sv.win=span/3600e3;sv.custom=true;sv.end=Math.min(v.now,Math.max(v.first+span,tm+(v.t1-tm)*span/v.span));redraw();
+    }else if(Math.abs(e.deltaX)>Math.abs(e.deltaY)){
+      e.preventDefault();sv.end=Math.min(v.now,v.t1+e.deltaX/v.W*v.span);redraw();
+    }
+  },{passive:false});
+})();
 function runChart(s){
   const c=$('runchart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
   const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
