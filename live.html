@@ -125,7 +125,8 @@ function runStats(){
   const start=median(pts.filter(p=>p.t-fed<=600e3).map(p=>p.d));
   let best=null;
   for(let i=2;i<pts.length-2;i++){const m=median(pts.slice(i-2,i+3).map(p=>p.d));if(!best||m<best.d)best={d:m,t:pts[i].t}}
-  const now=doc&&doc.distance_cm!=null?doc.distance_cm:pts[pts.length-1].d;
+  // While paused the box is off the jar: hold the last tracked reading.
+  const now=doc&&doc.distance_cm!=null&&!pausedSince()?doc.distance_cm:pts[pts.length-1].d;
   return {fed,pts,start,best,now};
 }
 // The starter status banner. Same thresholds as the phone pushes in
