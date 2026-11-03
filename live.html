@@ -282,7 +282,8 @@ function feedSegs(){
     const fed=new Date(r.fed_at).getTime();
     const pts=r.points.map(p=>({t:new Date(p.t).getTime(),d:p.d})).filter(p=>p.t>=fed);
     const start=median(pts.filter(p=>p.t-fed<=15*60e3).map(p=>p.d)),depth=startDepth(r,start);
-    return {fed,vessel:r.vessel,pts:depth&&!isNaN(start)?pts.map(p=>({t:p.t,x:1+(start-p.d)/depth})):[]};
+    const fs=r.points.filter(p=>p.f!=null).map(p=>p.f),f=r.room_f_avg??(fs.length?fs.reduce((a,b)=>a+b)/fs.length:null);
+    return {fed,vessel:r.vessel,feed_g:r.feed_g,f,pts:depth&&!isNaN(start)?pts.map(p=>({t:p.t,x:1+(start-p.d)/depth})):[]};
   });
 }
 // Per-feed numbers on 15-minute medians (history is already 5-min medians):
@@ -292,25 +293,40 @@ function feedKpis(z){
   let peak=null,dbl=null;
   m.forEach(p=>{if(!peak||p.x>peak.x)peak=p;if(!dbl&&p.x>=2)dbl=p});
   const hrs=p=>p?(p.t-z.fed)/3600e3:null;
-  return {fed:z.fed,vessel:z.vessel,peak:peak&&peak.x,peakH:hrs(peak),dblH:hrs(dbl),last:m.length?m[m.length-1].x:null};
+  return {fed:z.fed,vessel:z.vessel,feed_g:z.feed_g,f:z.f,peak:peak&&peak.x,peakH:hrs(peak),dblH:hrs(dbl),last:m.length?m[m.length-1].x:null};
 }
-// Ready to bake: doubled within READY_H of the feed, two feeds in a row.
-// Then use it for the dough near its peak (Feed soon / Feed now on the banner).
+// A feed's hours scaled to the standard feed, 1:2:2 at 75°F, with the planner's
+// model (time ~ log2(dilution) + lag; 2x faster per PLAN_F_PER_2X warmer), so
+// feeds at different ratios and temps compare: a 1:1:1 doubles sooner by
+// itself, and that shouldn't count as a stronger starter.
+const STD_F=75,STD_DIL=5;
+function stdFactor(k){
+  const [st,fl,wa]=(k.feed_g||'').split(':').map(Number);
+  const dil=st&&fl?(st+fl+(wa||0))/st:STD_DIL;
+  return (Math.log2(STD_DIL)+PLAN_LAG)/(Math.log2(dil)+PLAN_LAG)*Math.pow(2,((k.f??STD_F)-STD_F)/PLAN_F_PER_2X);
+}
+const fedAs=k=>{const [st,fl,wa]=(k.feed_g||'').split(':').map(Number);return (st&&fl?'1:'+(+(fl/st).toFixed(1))+':'+(+((wa||0)/st).toFixed(1)):'?')+(k.f!=null?', '+k.f.toFixed(0)+'°F':'')};
+// Ready to bake: doubles within READY_H as a standard feed, two feeds in a
+// row. Then use it for the dough near its peak (Feed soon / Feed now).
 const READY_H=8,READY_RUNS=2;
 function readiness(){
   const ks=feedSegs().map(feedKpis);if(!ks.length)return;
-  const good=k=>k.dblH!=null&&k.dblH<=READY_H;
+  const good=k=>k.dblH!=null&&k.dblH*stdFactor(k)<=READY_H;
   let streak=0;for(let i=ks.length-1;i>=0;i--){const cur=i===ks.length-1;if(good(ks[i]))streak++;else if(!cur)break}
   const cur=ks[ks.length-1],curH=(Date.now()-cur.fed)/3600e3;
   let txt;
   if(streak>=READY_RUNS&&good(cur))txt='<b style="font-size:1.1rem;display:inline">Ready to bake.</b> Doubled within '+READY_H+' h, '+streak+' feeds in a row. Mix your dough with it now, while it is near the top.';
-  else txt='<b style="font-size:1.1rem;display:inline">Ready to bake: not yet</b> ('+Math.min(streak,READY_RUNS)+' of '+READY_RUNS+'). Ready once it doubles within '+READY_H+' h of a feed, '+READY_RUNS+' feeds in a row.'+
-    (!good(cur)&&curH<READY_H?' This feed has '+(READY_H-curH).toFixed(1)+' h left to double.':'');
+  else{
+    const by=cur.fed+READY_H/stdFactor(cur)*3600e3;
+    txt='<b style="font-size:1.1rem;display:inline">Ready to bake: not yet</b> ('+Math.min(streak,READY_RUNS)+' of '+READY_RUNS+'). Ready once it doubles within '+READY_H+' h as a standard feed (1:2:2 at '+STD_F+'°F), '+READY_RUNS+' feeds in a row.'+
+      (!good(cur)&&Date.now()<by?' This feed ('+fedAs(cur)+') counts if it doubles by '+clock(by)+'.':'');
+  }
   $('ready').innerHTML=txt;
   const f=v=>v==null?'–':v.toFixed(1),day=t=>new Date(t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
   const td='<td style="padding:0 14px 2px 0">';
-  $('kpis').innerHTML='<tr style="color:var(--muted)">'+td+'Feed</td>'+td+'Peak (hours after feed)</td><td>Doubled</td></tr>'+
-    ks.slice(-4).map(k=>'<tr>'+td+day(k.fed)+'</td>'+td+(k.peak==null?'–':(k.peak>=2?k.peak.toFixed(1):Math.min(k.peak,1.99).toFixed(2))+'x at '+f(k.peakH)+' h')+'</td><td>'+(k.dblH==null?(k===ks[ks.length-1]?'not yet':'never'):f(k.dblH)+' h')+(good(k)?' ✓':'')+'</td></tr>').join('');
+  $('kpis').innerHTML='<tr style="color:var(--muted)">'+td+'Feed</td>'+td+'Fed as</td>'+td+'Peak (hours after feed)</td><td>Doubled (as standard)</td></tr>'+
+    ks.slice(-4).map(k=>'<tr>'+td+day(k.fed)+'</td>'+td+fedAs(k)+'</td>'+td+(k.peak==null?'–':(k.peak>=2?k.peak.toFixed(1):Math.min(k.peak,1.99).toFixed(2))+'x at '+f(k.peakH)+' h')+'</td><td>'+
+      (k.dblH==null?(k===ks[ks.length-1]?'not yet':'never'):f(k.dblH)+' h ('+f(k.dblH*stdFactor(k))+' h)')+(good(k)?' ✓':'')+'</td></tr>').join('');
 }
 function seriesChart(){
   const all=feedSegs(),segs=all.filter(z=>z.pts.length);
