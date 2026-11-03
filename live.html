@@ -35,6 +35,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .verdict{background:var(--panel);border:1px solid var(--line);border-left:8px solid var(--muted);border-radius:12px;padding:12px 14px}
 .verdict b{display:block;font-size:2rem;line-height:1.15}
 .verdict .small{font-size:.95rem}
+#outlook b{display:inline;font-size:1.1rem}
 .verdict.ok{border-color:var(--ok)}.verdict.ok b{color:var(--ok)}
 .verdict.near{border-color:var(--accent)}.verdict.near b{color:var(--accent)}
 .verdict.feed{border-color:var(--warn)}.verdict.feed b{color:var(--warn)}
@@ -324,6 +325,13 @@ function peakOutlook(){
   let t='<b>Peak estimate: '+(hi-lo<20*60e3?'around '+clock((lo+hi)/2):clock(lo)+' to '+clock(hi))+'.</b> Rising since '+clock(on.t)+', '+(cmh*10).toFixed(1)+' mm/h over the last 2 h. ';
   t+=(past.length?'Past feeds peaked '+toPeak.toFixed(1)+' h after they started rising':'Assumes it peaks about '+RISE_TO_PEAK_H+' h after it started rising')+' ('+clock(a)+')';
   t+=b?'; at this pace it reaches 2x by '+clock(b)+', but the climb usually slows near the top.':'.';
+  // Slowing down: the last hour's climb against its fastest hour, both on the
+  // smoothed line. ("Feed soon" takes over under 1.5 mm and half the fastest.)
+  const ix=t=>{let i=z.pts.findIndex(p=>p.t>=t);return i<0?z.pts.length-1:i};
+  const hr=i=>(on.sm[i]-on.sm[ix(z.pts[i].t-3600e3)])*z.depth*10;
+  let fast=0;for(let i=ix(on.t+3600e3);i<z.pts.length;i++)fast=Math.max(fast,hr(i));
+  const last=hr(z.pts.length-1);
+  if(fast>0&&last<0.75*fast)t+=' <span style="color:var(--fg)">Slowing: '+last.toFixed(1)+' mm in the last hour, down from '+fast.toFixed(1)+' at its fastest, so the peak is probably close.</span>';
   return t;
 }
 // Per-feed numbers on 15-minute medians (history is already 5-min medians):
