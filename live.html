@@ -163,7 +163,7 @@ function nextFeed(warm){
   if(!st)return 'Feed it the usual way, then tell Claude the time.';
   return 'Next: put '+st+' g of '+who+' into '+(same?'a clean '+v:'the clean '+v+' (switching from the '+run.vessel+')')+
     '. Add '+(run.flour||fl+' g flour')+' and '+wa+' g water, stir, scrape the sides down, put the box on'+
-    (warm?', and keep it somewhere warm (76–80°F)':'')+'. Then tell Claude the time you fed.';
+    (warm?', and keep it somewhere warm (76–80°F)':'')+'. Then tap Starter in (or tell Claude the time you fed).';
 }
 // Paused per run.json, or per the button just pressed: the logger sends you
 // back with ?ctl=pause|resume&at=<s>, which wins until run.json is newer.
@@ -247,8 +247,9 @@ function readiness(){
     (!good(cur)&&curH<READY_H?' This feed has '+(READY_H-curH).toFixed(1)+' h left to double.':'');
   $('ready').innerHTML=txt;
   const f=v=>v==null?'–':v.toFixed(1),day=t=>new Date(t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
-  $('kpis').innerHTML='<tr style="color:var(--muted)"><td>Feed</td><td>Highest</td><td>at</td><td>Doubled at</td></tr>'+
-    ks.slice(-4).map(k=>'<tr><td style="padding-right:10px">'+day(k.fed)+'</td><td style="padding-right:10px">'+(k.peak==null?'–':(k.peak>=2?k.peak.toFixed(1):Math.min(k.peak,1.99).toFixed(2)))+'x</td><td style="padding-right:10px">'+f(k.peakH)+' h</td><td>'+(k.dblH==null?(k===ks[ks.length-1]?'not yet':'never'):f(k.dblH)+' h')+(good(k)?' ✓':'')+'</td></tr>').join('');
+  const td='<td style="padding:0 14px 2px 0">';
+  $('kpis').innerHTML='<tr style="color:var(--muted)">'+td+'Feed</td>'+td+'Peak (hours after feed)</td><td>Doubled</td></tr>'+
+    ks.slice(-4).map(k=>'<tr>'+td+day(k.fed)+'</td>'+td+(k.peak==null?'–':(k.peak>=2?k.peak.toFixed(1):Math.min(k.peak,1.99).toFixed(2))+'x at '+f(k.peakH)+' h')+'</td><td>'+(k.dblH==null?(k===ks[ks.length-1]?'not yet':'never'):f(k.dblH)+' h')+(good(k)?' ✓':'')+'</td></tr>').join('');
 }
 function seriesChart(){
   const segs=feedSegs();
