@@ -24,6 +24,7 @@ canvas{width:100%;height:190px;display:block}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 button,input,a.btn{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-height:42px}
 input{width:7.5em}
+input[type=range]{width:100%;padding:0;min-height:32px;border:0;background:none;accent-color:var(--accent)}
 button{cursor:pointer}
 a.btn{display:inline-flex;align-items:center;text-decoration:none;margin-top:10px;font-weight:600}
 button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -43,6 +44,14 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change">Set a start level below</div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
   <div class="card wide" id="runcard" hidden><div class="label" id="runlabel">This run</div><div class="big"><span id="runrise">–</span><span class="unit" id="rununit">cm risen</span></div><div class="small" id="runnote"></div><canvas id="runchart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> growth since the feed (1x = just fed) <span style="color:var(--chart-t)">&#9632;</span> room °F <span style="color:var(--muted)">┆</span> fed, 2x, 3x</div></div>
+  <div class="card wide" id="plancard" hidden><div class="label">Feed planner · if you fed it now</div>
+    <label for="planpeak" class="small">Peak wanted at <b id="plantime">–</b> <span class="note" id="planh"></span></label>
+    <input type="range" id="planpeak" min="3" max="24" step="0.5">
+    <label for="plantemp" class="small">Room temp <b id="planf">–</b> <span class="note">(now: <span id="plannow">–</span>)</span></label>
+    <input type="range" id="plantemp" min="64" max="84" step="1">
+    <div id="planout" style="margin-top:6px"></div>
+    <table id="plantable" class="small" style="margin-top:6px;border-collapse:collapse"></table>
+    <div class="note" id="planbasis" style="margin-top:6px"></div></div>
   <div class="card wide" id="seriescard" hidden><div class="label" id="serieslabel">Every feed</div><canvas id="serieschart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> growth after each feed (back to 1x at every feed) <span style="color:var(--muted)">┆</span> feeds, 2x</div></div>
   <div class="card wide" id="lastcard"><div class="label">Last 6 hours</div><canvas id="chart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> temperature</div></div>
   <div class="card wide" id="startcard">
@@ -214,6 +223,55 @@ function renderRun(){
   runChart(s);
   seriesChart();
   readiness();
+  renderPlan();
+}
+// Feed planner. Hours to peak ~ D x (log2(1/p) + PLAN_LAG): the starter has to
+// grow back by 1/p (p = its share of the jar after feeding) plus about one
+// doubling of lag, at D hours a doubling. D comes from this starter's last
+// finished feed that rose, corrected to the chosen room temp: twice as fast
+// per PLAN_F_PER_2X warmer. Ratios keep that feed's flour:water.
+const PLAN_LAG=1,PLAN_F_PER_2X=15,PLAN_RATIOS=[0.5,1,1.5,2,2.5,3,4,5,6,8,10,12,15];
+let planSet=false;
+function planBasis(){
+  const segs=feedSegs(),hist=run.history||[];
+  for(let i=hist.length-1;i>=0;i--){
+    const k=feedKpis(segs[i]),[st,fl,wa]=(hist[i].feed_g||'').split(':').map(Number);
+    if(k.peakH==null||k.peak<1.3||!st||!fl)continue;  // never really rose
+    const p=st/(st+fl+(wa||0)),f=hist[i].room_f_avg||75;
+    return {fed:k.fed,peak:k.peak,peakH:k.peakH,f,st,fl,wa:wa||0,hyd:(wa||0)/fl,D:k.peakH/(Math.log2(1/p)+PLAN_LAG)};
+  }
+  return null;
+}
+function renderPlan(){
+  const b=planBasis();if(!b){$('plancard').hidden=true;return}
+  $('plancard').hidden=false;
+  const pts=run.points.filter(p=>p.f!=null),fNow=pts.length?pts[pts.length-1].f:b.f;
+  const [st0,fl0,wa0]=(run.feed_g||'').split(':').map(Number),st=st0||b.st;
+  const hrsAt=(r,f)=>b.D*Math.pow(2,(b.f-f)/PLAN_F_PER_2X)*(Math.log2(1+r+r*b.hyd)+PLAN_LAG);
+  // First time: the feed you just did, at today's temp. Unchanged = same ratio.
+  if(!planSet){
+    $('plantemp').value=Math.round(fNow);
+    $('planpeak').value=Math.min(24,Math.max(3,Math.round(2*hrsAt(st0&&fl0?fl0/st0:2,Math.round(fNow)))/2));
+    planSet=true;
+  }
+  const H=Number($('planpeak').value),F=Number($('plantemp').value),at=Date.now()+H*3600e3;
+  $('plantime').textContent=new Date(at).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
+  $('planh').textContent='('+H+' h from now)';$('planf').textContent=F+'°F';$('plannow').textContent=fNow.toFixed(0)+'°F';
+  let best=PLAN_RATIOS[0];PLAN_RATIOS.forEach(r=>{if(Math.abs(hrsAt(r,F)-H)<Math.abs(hrsAt(best,F)-H))best=r});
+  const g=v=>Math.round(v*st)+' g',clockAt=h=>clock(Date.now()+h*3600e3);
+  const lbl=r=>'1:'+r+':'+(+(r*b.hyd).toFixed(1));
+  const same=st0&&fl0&&Math.abs(fl0/st0-best)<0.01;
+  let out='<b style="font-size:1.3rem;display:inline">Feed '+lbl(best)+'</b>: '+g(1)+' of '+(run.starter||'starter').replace(/^./,c=>c.toUpperCase())+
+    ' + '+g(best)+' flour + '+g(best*b.hyd)+' water. Peaks around '+clockAt(hrsAt(best,F))+'.'+(same?' <span class="note">(the ratio you just fed)</span>':'');
+  if(hrsAt(PLAN_RATIOS[0],F)>H+0.75)out+='<div class="note">Even '+lbl(PLAN_RATIOS[0])+' won\'t peak that soon at '+F+'°F. Somewhere warmer, or a later peak.</div>';
+  if(hrsAt(PLAN_RATIOS[PLAN_RATIOS.length-1],F)<H-0.75)out+='<div class="note">That\'s further out than '+lbl(PLAN_RATIOS[PLAN_RATIOS.length-1])+' reaches at '+F+'°F. Feed later, or somewhere cooler.</div>';
+  $('planout').innerHTML=out;
+  const td='<td style="padding:0 14px 2px 0">';
+  $('plantable').innerHTML='<tr style="color:var(--muted)">'+td+'Ratio</td><td>Peaks around</td></tr>'+
+    [1,2,3,5,10].map(r=>'<tr'+(r===best?' style="font-weight:700"':'')+'>'+td+lbl(r)+'</td><td>'+clockAt(hrsAt(r,F))+' ('+hrsAt(r,F).toFixed(1)+' h)</td></tr>').join('');
+  $('planbasis').textContent='Estimate from the '+new Date(b.fed).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+' feed: '+
+    lbl(b.fl/b.st)+' at '+b.f.toFixed(0)+'°F peaked '+b.peakH.toFixed(1)+' h after feeding. '+
+    'Gus is getting stronger each feed, so expect earlier peaks than this; it updates after every feed.';
 }
 // Every feed of this starter since it came out of the fridge (run.history from
 // the logger, plus this run), end to end: flat, up, feed, flat, up. Each feed
@@ -368,6 +426,7 @@ function chart(){
 $('mark').onclick=()=>{if(doc){store.set('start',String(doc.distance_cm));render()}};
 $('clear').onclick=()=>{store.del('start');render()};
 $('depth').value=store.get('depth')||'';
+$('planpeak').oninput=$('plantemp').oninput=()=>{if(run)renderPlan()};
 $('depth').oninput=e=>{const v=parseFloat(e.target.value);v>0?store.set('depth',String(v)):store.del('depth');render()};
 addEventListener('resize',()=>{chart();renderRun()});
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{chart();renderRun()});
