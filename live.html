@@ -246,7 +246,7 @@ function renderPlan(){
   const b=planBasis();if(!b){$('plancard').hidden=true;return}
   $('plancard').hidden=false;
   const pts=run.points.filter(p=>p.f!=null),fNow=pts.length?pts[pts.length-1].f:b.f;
-  const [st0,fl0,wa0]=(run.feed_g||'').split(':').map(Number),st=st0||b.st;
+  const [st0,fl0,wa0]=(run.feed_g||'').split(':').map(Number),total=st0+fl0+(wa0||0)||b.st+b.fl+b.wa;
   const hrsAt=(r,f)=>b.D*Math.pow(2,(b.f-f)/PLAN_F_PER_2X)*(Math.log2(1+r+r*b.hyd)+PLAN_LAG);
   // First time: the feed you just did, at today's temp. Unchanged = same ratio.
   if(!planSet){
@@ -258,7 +258,8 @@ function renderPlan(){
   $('plantime').textContent=new Date(at).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
   $('planh').textContent='('+H+' h from now)';$('planf').textContent=F+'°F';$('plannow').textContent=fNow.toFixed(0)+'°F';
   let best=PLAN_RATIOS[0];PLAN_RATIOS.forEach(r=>{if(Math.abs(hrsAt(r,F)-H)<Math.abs(hrsAt(best,F)-H))best=r});
-  const g=v=>Math.round(v*st)+' g',clockAt=h=>clock(Date.now()+h*3600e3);
+  // Same total in the jar at any ratio: less starter as the ratio goes up.
+  const st=Math.max(2,Math.round(total/(1+best+best*b.hyd))),g=v=>Math.round(v*st)+' g',clockAt=h=>clock(Date.now()+h*3600e3);
   const lbl=r=>'1:'+r+':'+(+(r*b.hyd).toFixed(1));
   const same=st0&&fl0&&Math.abs(fl0/st0-best)<0.01;
   let out='<b style="font-size:1.3rem;display:inline">Feed '+lbl(best)+'</b>: '+g(1)+' of '+(run.starter||'starter').replace(/^./,c=>c.toUpperCase())+
