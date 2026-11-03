@@ -38,7 +38,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 </style></head><body><main>
 <h1>Sourdough Live</h1>
 <div class="status"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
-<div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><table id="kpis" class="small" style="margin-top:6px;border-collapse:collapse"></table><a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
+<div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><table id="kpis" class="small" style="margin-top:6px;border-collapse:collapse"></table><a class="btn" id="calbtn" href="#" hidden>Calibrate empty jar</a> <a class="btn" id="startbtn" href="#" hidden>Starter in</a> <a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
 <div class="grid">
   <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change">Set a start level below</div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
@@ -63,7 +63,24 @@ const URL_='https://api.github.com/repos/joshsowalsky/sourdough-sensor-box/conte
 // no key here, the button falls back to the PC's LAN address (home Wi-Fi only).
 const CTL='http://192.168.1.238:8766';
 (()=>{const m=location.hash.match(/pausekey=([\w-]+)/);if(m){try{localStorage.setItem('pausekey',m[1])}catch(e){}history.replaceState(null,'',location.pathname+location.search)}})();
-let ctlNow=null;  // {c:'pause'|'resume',at:ms} from a button press in this page
+let ctlNow=null;  // {c:'pause'|'resume'|'calibrate'|'start',at:ms} from a button press in this page
+// The empty-jar measurement: {at:ms, cm:number|null, failed:bool}. The logger
+// answers "empty <cm>" (or "empty failed") on the same private topic, ~10 s in.
+let calib=null;
+async function awaitCalib(key,at){
+  for(let i=0;i<20&&calib&&calib.at===at&&calib.cm==null&&!calib.failed;i++){
+    await new Promise(r=>setTimeout(r,3000));
+    try{
+      const t=await fetch('https://ntfy.sh/'+key+'/json?poll=1&since='+Math.floor(at/1000)).then(r=>r.text());
+      t.split('\n').filter(Boolean).map(l=>JSON.parse(l)).forEach(m=>{
+        const w=(m.message||'').split(' ');if(w[0]!=='empty')return;
+        if(w[1]==='failed')calib.failed=true;else calib.cm=Number(w[1]);
+      });
+    }catch(e){}
+  }
+  if(calib&&calib.at===at&&calib.cm==null&&!calib.failed)calib.failed=true;
+  renderRun();
+}
 async function sendCtl(c){
   const key=store.get('pausekey');
   if(!key){location.href=CTL+'/'+c;return}
@@ -71,7 +88,10 @@ async function sendCtl(c){
   try{
     const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:c});
     if(!r.ok)throw new Error('HTTP '+r.status);
-    ctlNow={c,at:Date.now()};$('pausenote').textContent='';renderRun();
+    ctlNow={c,at:Date.now()};$('pausenote').textContent='';
+    if(c==='calibrate'){calib={at:ctlNow.at,cm:null,failed:false};awaitCalib(key,ctlNow.at)}
+    if(c==='start'||c==='resume')calib=null;
+    renderRun();
   }catch(e){$('pausenote').textContent='Could not send ('+e.message+'). Try again.'}
 }
 const RUN_URL='https://raw.githubusercontent.com/joshsowalsky/sourdough-sensor-box/runs/run.json';
@@ -93,7 +113,8 @@ async function loadRun(){
 // Starter depth at the feed, from grams fed and the vessel's cm per 10 g
 // (catalog inside diameters, see README). null if the vessel isn't known.
 const CM_PER_10G={karter:0.33,pyrex:0.24,yilihcia:0.15};
-function startDepth(r=run){
+function startDepth(r=run,start){
+  if(r.empty_cm&&start!=null&&r.empty_cm-start>0.2)return r.empty_cm-start;
   const v=(r.vessel||'').toLowerCase(),k=Object.keys(CM_PER_10G).find(k=>v.includes(k));
   const g=(r.feed_g||'').split(':').reduce((a,b)=>a+Number(b),0);
   return k&&g>0?g/10*CM_PER_10G[k]:null;
@@ -117,7 +138,7 @@ function runVerdict(s){
   if(ds.length<2*W)return ['','Just fed','Settling in. Status shows after half an hour.'];
   const m=[];for(let i=W;i<=ds.length;i++)m.push(median(ds.slice(i-W,i)));
   // Rising = 1.15x its fed size in this vessel, at least 0.2 cm (2 sensor steps).
-  const top=Math.min(...m),rise=+(s.start-top).toFixed(2),fallen=+(m[m.length-1]-top).toFixed(2),d=startDepth();
+  const top=Math.min(...m),rise=+(s.start-top).toFixed(2),fallen=+(m[m.length-1]-top).toFixed(2),d=startDepth(run,s.start);
   if(rise<(d?Math.max(0.2,0.15*d):0.3)){
     if(h>=24)return ['feed','Looks dead','No rise in '+h.toFixed(0)+' h. Feed once more somewhere warm; if that doesn\'t rise either, throw it out.'];
     if(h>=14)return ['feed','Feed again: no rise','Nothing '+h.toFixed(0)+' h after the feed. Keep 10 g and feed it again, somewhere warm.'];
@@ -149,7 +170,7 @@ function pausedSince(){
   const q=new URLSearchParams(location.search);
   let c=q.get('ctl'),at=Number(q.get('at'))*1000;
   if(ctlNow){c=ctlNow.c;at=ctlNow.at}
-  if(c&&Date.now()-at<10*60e3&&!(new Date(run.updated).getTime()>at+60e3))return c==='pause'?at:null;
+  if(c&&Date.now()-at<10*60e3&&!(new Date(run.updated).getTime()>at+60e3))return c==='pause'||c==='calibrate'?at:null;
   return run.paused?new Date(run.paused).getTime():null;
 }
 function renderRun(){
@@ -161,7 +182,7 @@ function renderRun(){
   $('change').textContent='Run started '+clock(s.fed);
   $('runlabel').textContent='This run · '+(run.starter||'starter')+(run.feed_g?' · '+run.feed_g:'');
   const rise=s.start-s.now;
-  const depth=startDepth(),cm=(rise>=0?'':'−')+Math.abs(rise).toFixed(1);
+  const depth=startDepth(run,s.start),cm=(rise>=0?'':'−')+Math.abs(rise).toFixed(1);
   // Headline in times-risen, which reads the same in any vessel; cm if unknown.
   $('runrise').textContent=depth?(1+rise/depth).toFixed(1)+'x':cm;
   $('rununit').textContent=depth?'its starting size · '+cm+' cm up':'cm risen';
@@ -169,12 +190,24 @@ function renderRun(){
   if(s.best&&s.start-s.best.d>=0.3)t+=' Most risen so far: '+(s.start-s.best.d).toFixed(1)+' cm at '+clock(s.best.t)+' ('+((s.best.t-s.fed)/3600e3).toFixed(1)+' h after feeding).';
   $('runnote').textContent=t;
   const ps=pausedSince();
-  const [cls,head,note]=ps?['near','Paused','Tracking paused since '+clock(ps)+'. Swap the starter, put the box back on, then tap Resume.']:runVerdict(s);
-  $('pausebtn').textContent=ps?'Resume tracking':'Pause tracking';$('pausebtn').href=CTL+(ps?'/resume':'/pause');
+  // A new feed from Starter in shows up once the logger republishes run.json.
+  const started=!ps&&ctlNow&&ctlNow.c==='start'&&new Date(run.fed_at).getTime()<ctlNow.at-90e3;
+  const pc=run.pause||{},ecm=calib?calib.cm:(pc.empty_cm||null);
+  const swap=calib&&calib.cm==null&&!calib.failed?'Measuring the empty jar. Keep the box still on it, about 10 seconds.'
+    :calib&&calib.failed?'Couldn\'t measure the empty jar. Check the box sits flat on it and tap Calibrate again.'
+    :ecm?'Empty jar: '+Number(ecm).toFixed(1)+' cm to the bottom. Now pour in the starter, put the box back on, and tap Starter in.'
+    :'Swapping jars? Put the box on the clean, empty jar and tap Calibrate. Then pour in the starter, put the box back on, and tap Starter in.';
+  const [cls,head,note]=started?['ok','New feed started','Fed '+clock(ctlNow.at)+'. The page switches to the new run within a few minutes.']
+    :ps?['near',calib&&calib.cm==null&&!calib.failed?'Calibrating…':ecm?'Jar calibrated':'Paused','Tracking paused since '+clock(ps)+'. '+swap]:runVerdict(s);
+  $('calbtn').hidden=$('startbtn').hidden=!ps;
+  $('calbtn').textContent=ecm?'Calibrate again':'Calibrate empty jar';
+  $('calbtn').href=CTL+'/calibrate';$('calbtn').onclick=e=>{e.preventDefault();sendCtl('calibrate')};
+  $('startbtn').href=CTL+'/start';$('startbtn').onclick=e=>{e.preventDefault();sendCtl('start')};
+  $('pausebtn').textContent=ps?'Resume (same starter)':'Pause tracking';$('pausebtn').href=CTL+(ps?'/resume':'/pause');
   $('pausebtn').onclick=e=>{e.preventDefault();sendCtl(ps?'resume':'pause')};
   if(!store.get('pausekey')&&!$('pausenote').textContent)$('pausenote').textContent='home Wi-Fi only on this device (no pause key)';
   $('verdict').className='verdict '+cls;$('verdict').hidden=false;
-  $('nextstep').textContent=ps||cls==='feed'||cls==='near'?nextFeed(/no rise|dead/i.test(head)):'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
+  $('nextstep').textContent=started?'':ps||cls==='feed'||cls==='near'?nextFeed(/no rise|dead/i.test(head)):'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
   runChart(s);
   seriesChart();
   readiness();
@@ -184,9 +217,9 @@ function renderRun(){
 // is measured against its own start level and vessel, so it restarts at 1x.
 function feedSegs(){
   return [...(run.history||[]),run].map(r=>{
-    const fed=new Date(r.fed_at).getTime(),depth=startDepth(r);
+    const fed=new Date(r.fed_at).getTime();
     const pts=r.points.map(p=>({t:new Date(p.t).getTime(),d:p.d})).filter(p=>p.t>=fed);
-    const start=median(pts.filter(p=>p.t-fed<=15*60e3).map(p=>p.d));
+    const start=median(pts.filter(p=>p.t-fed<=15*60e3).map(p=>p.d)),depth=startDepth(r,start);
     return {fed,vessel:r.vessel,pts:depth&&!isNaN(start)?pts.map(p=>({t:p.t,x:1+(start-p.d)/depth})):[]};
   });
 }
@@ -242,7 +275,7 @@ function runChart(s){
   // Plotted as growth: times its starting size (1x = just fed), from the rise
   // (start minus distance) over the starter's depth. That reads the same in
   // every vessel. Without a known vessel, plain cm of rise.
-  const depth=startDepth(),grow=r=>depth?1+r/depth:r;
+  const depth=startDepth(run,s.start),grow=r=>depth?1+r/depth:r;
   const pts=s.pts.map(p=>({...p,r:grow(s.start-p.d)})),t0=s.fed,span=Math.max(3600e3,Date.now()-t0);
   g.font='11px system-ui';g.fillStyle=css('--muted');g.strokeStyle=css('--line');g.lineWidth=1;
   const L=34,R=34,T=8,B=20,W=w-L-R,H=h-T-B,hrs=span/3600e3,step=hrs<=6?1:2;
