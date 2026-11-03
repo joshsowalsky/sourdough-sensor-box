@@ -9,6 +9,32 @@ A 3D-printable housing for a sourdough rise monitor: an ESP32-S3 Feather, a VL53
 
 Dimensions for the beakers and jars are assumed, not measured. Print the rim plate (`collar.stl`) first as a fit test.
 
+## Parts bought
+
+**Adafruit** ($58.80 in parts)
+
+| Qty | Part | Adafruit ID | Price | Role |
+| --- | --- | --- | --- | --- |
+| 1 | ESP32-S3 Feather, 8 MB flash, no PSRAM | 5323 | $17.50 | the board |
+| 1 | VL53L4CD time-of-flight sensor (~1–1300 mm) | 5396 | $14.95 | distance to the starter |
+| 1 | DS2484 I2C-to-1-Wire adapter | 5976 | $7.50 | connects the probe |
+| 1 | Waterproof DS18B20 temperature probe | 381 | $9.95 | starter temp (not answering, see below) |
+| 2 | STEMMA QT cable, 200 mm | 4401 | $2.50 total | sensor chain |
+| 1 | STEMMA QT cable, 100 mm | 4210 | $0.95 | sensor chain |
+| 1 | STEMMA QT cable, 400 mm | 5385 | $1.50 | sensor chain |
+| 1 | Food-grade heat shrink, 3/8" × 12" | 1020 | $3.95 | probe sealing |
+
+**Amazon**
+
+| Qty | Part | ASIN | Price | Role |
+| --- | --- | --- | --- | --- |
+| 1 | Zulkit IP65 ABS project box, 100 × 68 × 50 mm, black | B07RQMJXK6 | $6.49 | the enclosure |
+| 1 | Karter Scientific 250 mL tall-form beaker | B006VYY09Q | $7.31 | vessel |
+| 1 | Pyrex 400 mL tall-form (Berzelius) beaker | – | $9.99 | vessel |
+| 2 | YILIHCIA 34 oz sourdough starter jar kit (printed 100–900 mL scale, ~86 mm ID) | B0GZDCMDM8 | $7.98 each | vessels |
+
+Room temperature comes from a SwitchBot Meter Plus that was already on hand.
+
 ## The setup in use (Nov 2026)
 
 The printed housing above isn't what's on the jar. In use instead:
@@ -22,7 +48,7 @@ The printed housing above isn't what's on the jar. In use instead:
   | --- | --- | --- |
   | Karter 250 mL tall-form beaker | 60 mm OD × 120 mm (ISO 3819 tall form), ~57 mm ID | 0.33 |
   | Pyrex 400 mL tall-form beaker | 70 mm OD × 130 mm, ~67 mm ID | 0.24 |
-  | 34 oz starter jar | ~100 mm ID, a guess, measure before relying on it | ~0.11 |
+  | YILIHCIA 34 oz starter jar | ~86 mm ID (from earlier camera-session notes) | 0.15 |
 
   Check, 2026-11-01: 50 g of Gus in the Karter read 15.6 cm against 17.1 cm empty, 1.5 cm deep against 1.7 cm predicted. So in that beaker 2x ≈ 14.0 cm, 3x ≈ 12.4 cm.
 - **Logging:** `tof_logger.py` in the claude repo (`sourdough/`, scheduled task `\sourdough\tof`) saves every reading plus room temperature to `~/sourdough-tracker/tof_log.csv`. It also publishes the current run (the last row of `tof_runs.csv` and every reading since that feed) to `run.json` on the `runs` branch, which `live.html` shows as **This run**.

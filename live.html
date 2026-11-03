@@ -214,7 +214,7 @@ function readiness(){
   $('ready').innerHTML=txt;
   const f=v=>v==null?'–':v.toFixed(1),day=t=>new Date(t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
   $('kpis').innerHTML='<tr style="color:var(--muted)"><td>Feed</td><td>Highest</td><td>at</td><td>Doubled at</td></tr>'+
-    ks.slice(-4).map(k=>'<tr><td style="padding-right:10px">'+day(k.fed)+'</td><td style="padding-right:10px">'+f(k.peak)+'x</td><td style="padding-right:10px">'+f(k.peakH)+' h</td><td>'+(k.dblH==null?'not yet':f(k.dblH)+' h')+(good(k)?' ✓':'')+'</td></tr>').join('');
+    ks.slice(-4).map(k=>'<tr><td style="padding-right:10px">'+day(k.fed)+'</td><td style="padding-right:10px">'+(k.peak==null?'–':(k.peak>=2?k.peak.toFixed(1):Math.min(k.peak,1.99).toFixed(2)))+'x</td><td style="padding-right:10px">'+f(k.peakH)+' h</td><td>'+(k.dblH==null?(k===ks[ks.length-1]?'not yet':'never'):f(k.dblH)+' h')+(good(k)?' ✓':'')+'</td></tr>').join('');
 }
 function seriesChart(){
   const segs=feedSegs();
