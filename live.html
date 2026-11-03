@@ -105,7 +105,7 @@ async function loadRun(){
     const r=await fetch(RUN_URL+'?'+Math.floor(Date.now()/60000));
     if(!r.ok)return;
     const j=await r.json();
-    if(j.fed_at&&j.points&&j.points.length){run=j;renderRun()}
+    if(j.fed_at&&j.points){run=j;renderRun()}
   }catch(e){}
 }
 // Start level = median of the first 10 minutes after the feed; "best" = lowest
@@ -122,11 +122,13 @@ function startDepth(r=run,start){
 function runStats(){
   const fed=new Date(run.fed_at).getTime();
   const pts=run.points.map(p=>({t:new Date(p.t).getTime(),d:p.d,f:p.f})).filter(p=>p.t>=fed);
-  const start=median(pts.filter(p=>p.t-fed<=600e3).map(p=>p.d));
+  // Before the first logged reading, the live one stands in (box on the jar).
+  const live=doc&&doc.distance_cm!=null&&!pausedSince()?doc.distance_cm:null;
+  const start=pts.length?median(pts.filter(p=>p.t-fed<=600e3).map(p=>p.d)):(live??NaN);
   let best=null;
   for(let i=2;i<pts.length-2;i++){const m=median(pts.slice(i-2,i+3).map(p=>p.d));if(!best||m<best.d)best={d:m,t:pts[i].t}}
   // While paused the box is off the jar: hold the last tracked reading.
-  const now=doc&&doc.distance_cm!=null&&!pausedSince()?doc.distance_cm:pts[pts.length-1].d;
+  const now=live??(pts.length?pts[pts.length-1].d:NaN);
   return {fed,pts,start,best,now};
 }
 // The starter status banner. Same thresholds as the phone pushes in
@@ -182,12 +184,12 @@ function renderRun(){
   $('runcard').hidden=false;$('lastcard').hidden=true;$('startcard').hidden=true;
   $('change').textContent='Run started '+clock(s.fed);
   $('runlabel').textContent='This run · '+(run.starter||'starter')+(run.feed_g?' · '+run.feed_g:'');
-  const rise=s.start-s.now;
+  const rise=isFinite(s.start-s.now)?s.start-s.now:0;
   const depth=startDepth(run,s.start),cm=(rise>=0?'':'−')+Math.abs(rise).toFixed(1);
   // Headline in times-risen, which reads the same in any vessel; cm if unknown.
   $('runrise').textContent=depth?(1+rise/depth).toFixed(1)+'x':cm;
   $('rununit').textContent=depth?'its starting size · '+cm+' cm up':'cm risen';
-  let t='Fed '+clock(s.fed)+', '+((Date.now()-s.fed)/3600e3).toFixed(1)+' h ago. Start '+s.start.toFixed(1)+' cm from the sensor, now '+s.now.toFixed(1)+'.';
+  let t='Fed '+clock(s.fed)+', '+((Date.now()-s.fed)/3600e3).toFixed(1)+' h ago. '+(s.pts.length&&isFinite(s.now)?'Start '+s.start.toFixed(1)+' cm from the sensor, now '+s.now.toFixed(1)+'.':'Collecting the first readings.');
   if(s.best&&s.start-s.best.d>=0.3)t+=' Most risen so far: '+(s.start-s.best.d).toFixed(1)+' cm at '+clock(s.best.t)+' ('+((s.best.t-s.fed)/3600e3).toFixed(1)+' h after feeding).';
   $('runnote').textContent=t;
   const ps=pausedSince();
@@ -252,13 +254,13 @@ function readiness(){
     ks.slice(-4).map(k=>'<tr>'+td+day(k.fed)+'</td>'+td+(k.peak==null?'–':(k.peak>=2?k.peak.toFixed(1):Math.min(k.peak,1.99).toFixed(2))+'x at '+f(k.peakH)+' h')+'</td><td>'+(k.dblH==null?(k===ks[ks.length-1]?'not yet':'never'):f(k.dblH)+' h')+(good(k)?' ✓':'')+'</td></tr>').join('');
 }
 function seriesChart(){
-  const segs=feedSegs();
-  if(segs.length<2||segs.some(z=>!z.pts.length)){$('seriescard').hidden=true;return}
+  const all=feedSegs(),segs=all.filter(z=>z.pts.length);
+  if(all.length<2||!segs.length){$('seriescard').hidden=true;return}
   $('seriescard').hidden=false;
-  $('serieslabel').textContent='Every feed since '+new Date(segs[0].fed).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+' · '+segs.length+' feeds';
+  $('serieslabel').textContent='Every feed since '+new Date(all[0].fed).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+' · '+all.length+' feeds';
   const c=$('serieschart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
   const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
-  const t0=segs[0].fed,span=Math.max(3600e3,Date.now()-t0),hrs=span/3600e3,step=Math.max(1,Math.ceil(hrs/8));
+  const t0=all[0].fed,span=Math.max(3600e3,Date.now()-t0),hrs=span/3600e3,step=Math.max(1,Math.ceil(hrs/8));
   const L=34,R=12,T=8,B=20,W=w-L-R,H=h-T-B,X=t=>L+W*(t-t0)/span;
   const xs=segs.flatMap(z=>z.pts.map(p=>p.x)),lo=Math.min(...xs,0.9)-0.1,hi=Math.max(...xs,2)+0.2,Y=v=>T+H*(1-(v-lo)/(hi-lo));
   g.font='11px system-ui';g.lineWidth=1;g.strokeStyle=css('--line');g.fillStyle=css('--muted');
@@ -267,7 +269,7 @@ function seriesChart(){
   g.setLineDash([3,4]);g.strokeStyle=css('--muted');
   [1,2].forEach(v=>{g.beginPath();g.moveTo(L,Y(v));g.lineTo(w-R,Y(v));g.stroke()});
   g.fillText('2x',w-R-16,Y(2)-3);
-  segs.forEach(z=>{g.beginPath();g.moveTo(X(z.fed),T);g.lineTo(X(z.fed),T+H);g.stroke();g.fillText('fed',X(z.fed)+3,T+10)});
+  all.forEach(z=>{g.beginPath();g.moveTo(X(z.fed),T);g.lineTo(X(z.fed),T+H);g.stroke();g.fillText('fed',X(z.fed)+3,T+10)});
   g.setLineDash([]);g.strokeStyle=css('--chart-d');g.lineWidth=2;
   segs.forEach(z=>{g.beginPath();z.pts.forEach((p,i)=>i?g.lineTo(X(p.t),Y(p.x)):g.moveTo(X(p.t),Y(p.x)));g.stroke()});
 }
