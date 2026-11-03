@@ -239,7 +239,7 @@ function feedKpis(z){
 // Then use it for the dough near its peak (Feed soon / Feed now on the banner).
 const READY_H=8,READY_RUNS=2;
 function readiness(){
-  const ks=feedSegs().filter(z=>z.pts.length).map(feedKpis);if(!ks.length)return;
+  const ks=feedSegs().map(feedKpis);if(!ks.length)return;
   const good=k=>k.dblH!=null&&k.dblH<=READY_H;
   let streak=0;for(let i=ks.length-1;i>=0;i--){const cur=i===ks.length-1;if(good(ks[i]))streak++;else if(!cur)break}
   const cur=ks[ks.length-1],curH=(Date.now()-cur.fed)/3600e3;
