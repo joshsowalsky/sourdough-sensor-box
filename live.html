@@ -333,6 +333,20 @@ function readiness(){
     ks.slice(-4).map(k=>'<tr>'+td+day(k.fed)+'</td>'+td+fedAs(k)+'</td>'+td+(k.peak==null?'–':(k.peak>=2?k.peak.toFixed(1):Math.min(k.peak,1.99).toFixed(2))+'x at '+f(k.peakH)+' h')+'</td><td>'+
       (k.dblH==null?(k===ks[ks.length-1]?'not yet':'never'):f(k.dblH)+' h ('+f(k.dblH*stdFactor(k))+' h)')+(good(k)?' ✓':'')+'</td></tr>').join('');
 }
+// Readings come in whole millimetres and jitter a step or two, which in a
+// 1-2 cm layer is ±0.05-0.1x. Charts draw that raw line faintly and, on top,
+// a trimmed mean over ±SMOOTH_MS (middle 60% of the window, so a stray
+// reading doesn't pull it). Time-based, so 1-minute and 5-minute data match.
+const SMOOTH_MS=10*60e3;
+function smooth(pts,key){
+  let a=0,b=0;
+  return pts.map(p=>{
+    while(pts[a].t<p.t-SMOOTH_MS)a++;
+    while(b<pts.length&&pts[b].t<=p.t+SMOOTH_MS)b++;
+    const v=pts.slice(a,b).map(q=>q[key]).filter(x=>x!=null).sort((x,y)=>x-y),cut=Math.floor(v.length*0.2),m=v.slice(cut,v.length-cut);
+    return m.length?m.reduce((s,x)=>s+x,0)/m.length:p[key];
+  });
+}
 function seriesChart(){
   const all=feedSegs(),segs=all.filter(z=>z.pts.length);
   if(all.length<2||!segs.length){$('seriescard').hidden=true;return}
@@ -367,11 +381,15 @@ function seriesChart(){
   [1,2].forEach(v=>{g.beginPath();g.moveTo(L,Y(v));g.lineTo(w-R,Y(v));g.stroke()});
   g.fillText('2x',w-R-16,Y(2)-3);
   all.forEach(z=>{g.beginPath();g.moveTo(X(z.fed),T);g.lineTo(X(z.fed),T+H);g.stroke();g.fillText('fed',X(z.fed)+3,T+10)});
-  g.setLineDash([]);g.strokeStyle=css('--chart-d');g.lineWidth=2;
+  g.setLineDash([]);g.strokeStyle=css('--chart-d');
+  const sm=segs.map(z=>smooth(z.pts,'x'));
+  g.globalAlpha=0.3;g.lineWidth=1;
   segs.forEach(z=>{g.beginPath();z.pts.forEach((p,i)=>i?g.lineTo(X(p.t),Y(p.x)):g.moveTo(X(p.t),Y(p.x)));g.stroke()});
-  // Tapped / hovered point: crosshair, dot and the numbers above the chart.
+  g.globalAlpha=1;g.lineWidth=2.5;
+  segs.forEach((z,k)=>{g.beginPath();z.pts.forEach((p,i)=>i?g.lineTo(X(p.t),Y(sm[k][i])):g.moveTo(X(p.t),Y(sm[k][i])));g.stroke()});
+  // Tapped / hovered point: crosshair, dot and the (smoothed) numbers above the chart.
   let hit=null;
-  if(sv.cursor!=null)segs.forEach(z=>z.pts.forEach(p=>{if(p.t>=t0&&p.t<=t1&&(!hit||Math.abs(p.t-sv.cursor)<Math.abs(hit.p.t-sv.cursor)))hit={z,p}}));
+  if(sv.cursor!=null)segs.forEach((z,k)=>z.pts.forEach((p,i)=>{if(p.t>=t0&&p.t<=t1&&(!hit||Math.abs(p.t-sv.cursor)<Math.abs(hit.p.t-sv.cursor)))hit={z,p:{t:p.t,x:sm[k][i]}}}));
   if(hit){
     const x=X(hit.p.t),y=Y(hit.p.x);
     g.strokeStyle=css('--fg');g.lineWidth=1;g.beginPath();g.moveTo(x,T);g.lineTo(x,T+H);g.stroke();
@@ -461,7 +479,9 @@ function runChart(s){
     if(v==null||v>rmax)return;const y=T+H*(1-(v-rmin)/(rmax-rmin));
     g.beginPath();g.moveTo(L,y);g.lineTo(w-R,y);g.stroke();g.fillText(lab,w-R-4,y-3)});
   g.setLineDash([]);g.textAlign='left';
-  line('r',css('--chart-d'),rmin,rmax,'l',depth?'x':'');
+  const rsm=smooth(pts,'r');pts.forEach((p,i)=>p.rs=rsm[i]);
+  g.globalAlpha=0.3;line('r',css('--chart-d'),rmin,rmax,'l',depth?'x':'');g.globalAlpha=1;
+  line('rs',css('--chart-d'),rmin,rmax,'l',depth?'x':'');
   if(fs.length>1){const fmin=Math.floor(Math.min(...fs))-3,fmax=fmin+Math.max(6,Math.ceil(Math.max(...fs)+3-fmin));line('f',css('--chart-t'),fmin,fmax,'r')}
 }
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
