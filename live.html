@@ -24,6 +24,8 @@ canvas{width:100%;height:190px;display:block}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 button,input,a.btn{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-height:42px}
 input{width:7.5em}
+input.g{width:4.8em;margin-left:4px}
+input.wide-in{width:100%;margin-top:2px}
 button.chip{min-height:34px;padding:4px 10px;font-size:.85rem}
 button.chip.on{border-color:var(--accent);color:var(--accent);font-weight:600}
 input[type=range]{width:100%;padding:0;min-height:32px;border:0;background:none;accent-color:var(--accent)}
@@ -42,7 +44,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 </style></head><body><main>
 <h1>Sourdough Live</h1>
 <div class="status"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
-<div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div class="small" id="outlook" hidden></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><table id="kpis" class="small" style="margin-top:6px;border-collapse:collapse"></table><a class="btn" id="calbtn" href="#" hidden>Calibrate empty jar</a> <a class="btn" id="startbtn" href="#" hidden>Starter in</a> <a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
+<div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div class="small" id="outlook" hidden></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><table id="kpis" class="small" style="margin-top:6px;border-collapse:collapse"></table><div id="recipe" hidden style="margin-top:10px"><div class="label">What you fed</div>
+<div class="row" style="margin-top:4px;gap:6px"><label class="note">Starter <input id="rg_s" type="number" inputmode="decimal" min="0" step="any" class="g"></label><label class="note">Flour <input id="rg_f" type="number" inputmode="decimal" min="0" step="any" class="g"></label><label class="note">Water <input id="rg_w" type="number" inputmode="decimal" min="0" step="any" class="g"></label><span class="note">grams</span></div>
+<label class="note" style="display:block;margin-top:6px">Flour type <input id="rflour" type="text" maxlength="120" class="wide-in"></label>
+<label class="note" style="display:block;margin-top:6px">Note <input id="rnote" type="text" maxlength="120" class="wide-in" placeholder="optional"></label></div>
+<a class="btn" id="calbtn" href="#" hidden>Calibrate empty jar</a> <a class="btn" id="startbtn" href="#" hidden>Starter in</a> <a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
 <div class="grid">
   <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change">Set a start level below</div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
@@ -96,12 +102,27 @@ async function awaitCalib(key,at){
   if(calib&&calib.at===at&&calib.cm==null&&!calib.failed)calib.failed=true;
   renderRun();
 }
+// The recipe typed above Starter in; the logger keeps the last feed's for
+// anything blank or not grams.
+function recipeIn(){
+  const g=[$('rg_s'),$('rg_f'),$('rg_w')].map(e=>Number(e.value)),r={};
+  if(g.every(v=>v>=0)&&g[0]>0&&g[1]>0)r.feed_g=g.join(':');
+  if($('rflour').value.trim())r.flour=$('rflour').value.trim();
+  if($('rnote').value.trim())r.note=$('rnote').value.trim();
+  return r;
+}
+let recipeFor=null;
+function fillRecipe(ps){
+  if(recipeFor===ps)return;recipeFor=ps;
+  const [s,f,w]=(run.feed_g||'').split(':');
+  $('rg_s').value=s||'';$('rg_f').value=f||'';$('rg_w').value=w||'';$('rflour').value=run.flour||'';$('rnote').value='';
+}
 async function sendCtl(c){
-  const key=store.get('pausekey');
-  if(!key){location.href=CTL+'/'+c;return}
+  const key=store.get('pausekey'),rec=c==='start'?recipeIn():null;
+  if(!key){location.href=CTL+'/'+c+(rec?'?'+new URLSearchParams(rec):'');return}
   $('pausenote').textContent='Sending…';
   try{
-    const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:c});
+    const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:rec?'start '+JSON.stringify(rec):c});
     if(!r.ok)throw new Error('HTTP '+r.status);
     ctlNow={c,at:Date.now()};$('pausenote').textContent='';
     if(c==='calibrate'){calib={at:ctlNow.at,cm:null,failed:false};awaitCalib(key,ctlNow.at)}
@@ -213,11 +234,12 @@ function renderRun(){
   const pc=run.pause||{},ecm=calib?calib.cm:(pc.empty_cm||null);
   const swap=calib&&calib.cm==null&&!calib.failed?'Measuring the empty jar. Keep the box still on it, about 10 seconds.'
     :calib&&calib.failed?'Couldn\'t measure the empty jar. Check the box sits flat on it and tap Calibrate again.'
-    :ecm?'Empty jar: '+Number(ecm).toFixed(1)+' cm to the bottom. Now pour in the starter, put the box back on, and tap Starter in.'
+    :ecm?'Empty jar: '+Number(ecm).toFixed(1)+' cm to the bottom. Now pour in the starter, put the box back on, check the grams below, and tap Starter in.'
     :'Swapping jars? Put the box on the clean, empty jar and tap Calibrate. Then pour in the starter, put the box back on, and tap Starter in.';
   const [cls,head,note]=started?['ok','New feed started','Fed '+clock(ctlNow.at)+'. The page switches to the new run within a few minutes.']
     :ps?['near',calib&&calib.cm==null&&!calib.failed?'Calibrating…':ecm?'Jar calibrated':'Paused','Tracking paused since '+clock(ps)+'. '+swap]:runVerdict(s);
-  $('calbtn').hidden=$('startbtn').hidden=!ps;
+  $('calbtn').hidden=$('startbtn').hidden=$('recipe').hidden=!ps;
+  if(ps)fillRecipe(ps);
   $('calbtn').textContent=ecm?'Calibrate again':'Calibrate empty jar';
   $('calbtn').href=CTL+'/calibrate';$('calbtn').onclick=e=>{e.preventDefault();sendCtl('calibrate')};
   $('startbtn').href=CTL+'/start';$('startbtn').onclick=e=>{e.preventDefault();sendCtl('start')};
