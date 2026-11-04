@@ -62,9 +62,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <table id="plantable" class="small" style="margin-top:6px;border-collapse:collapse"></table>
     <div class="note" id="planbasis" style="margin-top:6px"></div></div>
   <div class="card wide" id="seriescard" hidden><div class="label" id="serieslabel">Every feed</div>
+    <div class="row" style="margin:6px 0 0;gap:6px"><button class="chip" data-mode="overlay">Compare feeds</button><button class="chip" data-mode="timeline">Timeline</button></div>
     <div class="row" id="serieswin" style="margin:6px 0 4px;gap:6px"><button class="chip" data-h="12">12 h</button><button class="chip" data-h="24">1 day</button><button class="chip" data-h="72">3 days</button><button class="chip" data-h="0">All</button><button class="chip" id="seriesnow" hidden>Back to now</button></div>
     <div class="small" id="seriesread" style="min-height:1.4em">Drag to scroll · pinch to zoom · tap a point</div>
-    <canvas id="serieschart" width="560" height="190" style="touch-action:pan-y;cursor:grab"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> growth after each feed (back to 1x at every feed) <span style="color:var(--muted)">┆</span> feeds, 2x</div></div>
+    <canvas id="serieschart" width="560" height="190" style="touch-action:pan-y;cursor:grab"></canvas><div class="small" id="serieskey"><span style="color:var(--chart-d)">&#9632;</span> growth after each feed (back to 1x at every feed) <span style="color:var(--muted)">┆</span> feeds, 2x</div></div>
   <div class="card wide" id="lastcard"><div class="label">Last 6 hours</div><canvas id="chart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> temperature</div></div>
   <div class="card wide" id="startcard">
     <div class="label">Start level</div>
@@ -388,15 +389,16 @@ function readiness(){
   if(streak>=READY_RUNS&&good(cur))txt='<b style="font-size:1.1rem;display:inline">Ready to bake.</b> Doubled within '+READY_H+' h, '+streak+' feeds in a row. Mix your dough with it now, while it is near the top.';
   else{
     const by=cur.fed+READY_H/stdFactor(cur)*3600e3;
-    txt='<b style="font-size:1.1rem;display:inline">Ready to bake: not yet</b> ('+Math.min(streak,READY_RUNS)+' of '+READY_RUNS+'). Ready once it doubles within '+READY_H+' h as a standard feed (1:2:2 at '+STD_F+'°F), '+READY_RUNS+' feeds in a row.'+
+    txt='<b style="font-size:1.1rem;display:inline">Ready to bake: not yet</b> ('+Math.min(streak,READY_RUNS)+' of '+READY_RUNS+'). A strength check, not a schedule: it has to be fast enough to double within '+READY_H+' h on a standard 1:2:2 at '+STD_F+'°F, '+READY_RUNS+' feeds in a row. '+
+      'Feeds at other ratios and temperatures are scaled to that, so a 1:5:5 timed for later is judged fairly.'+
       (!good(cur)&&Date.now()<by?' This feed ('+fedAs(cur)+') counts if it doubles by '+clock(by)+'.':'');
   }
   $('ready').innerHTML=txt;
   const f=v=>v==null?'–':v.toFixed(1),day=t=>new Date(t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
   const td='<td style="padding:0 14px 2px 0">';
-  $('kpis').innerHTML='<tr style="color:var(--muted)">'+td+'Feed</td>'+td+'Fed as</td>'+td+'Peak (hours after feed)</td><td>Doubled (as standard)</td></tr>'+
+  $('kpis').innerHTML='<tr style="color:var(--muted)">'+td+'Feed</td>'+td+'Fed as</td>'+td+'Peak (hours after feed)</td><td>Doubled at → as 1:2:2, '+STD_F+'°F</td></tr>'+
     ks.slice(-4).map(k=>'<tr>'+td+day(k.fed)+'</td>'+td+fedAs(k)+'</td>'+td+(k.peak==null?'–':(k.peak>=2?k.peak.toFixed(1):Math.min(k.peak,1.99).toFixed(2))+'x at '+f(k.peakH)+' h')+'</td><td>'+
-      (k.dblH==null?(k===ks[ks.length-1]?'not yet':'never'):f(k.dblH)+' h ('+f(k.dblH*stdFactor(k))+' h)')+(good(k)?' ✓':'')+'</td></tr>').join('');
+      (k.dblH==null?(k===ks[ks.length-1]?'not yet':'never'):f(k.dblH)+' h → '+f(k.dblH*stdFactor(k))+' h')+(good(k)?' ✓':'')+'</td></tr>').join('');
 }
 // Readings come in whole millimetres and jitter a step or two, which in a
 // 1-2 cm layer is ±0.05-0.1x. Charts draw that raw line faintly and, on top,
@@ -416,6 +418,10 @@ function seriesChart(){
   const all=feedSegs(),segs=all.filter(z=>z.pts.length);
   if(all.length<2||!segs.length){$('seriescard').hidden=true;return}
   $('seriescard').hidden=false;
+  document.querySelectorAll('#seriescard .chip[data-mode]').forEach(b=>b.classList.toggle('on',b.dataset.mode===sv.mode));
+  $('serieswin').hidden=sv.mode==='overlay';
+  if(sv.mode==='overlay')return overlayChart(segs);
+  $('serieskey').innerHTML='<span style="color:var(--chart-d)">&#9632;</span> growth after each feed (back to 1x at every feed) <span style="color:var(--muted)">┆</span> feeds, 2x';
   $('serieslabel').textContent='Every feed since '+new Date(all[0].fed).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+' · '+all.length+' feeds';
   const c=$('serieschart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
   const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
@@ -464,17 +470,58 @@ function seriesChart(){
   }else $('seriesread').textContent='Drag to scroll · pinch to zoom · tap a point';
   g.restore();
 }
-const sv={win:(()=>{try{const v=localStorage.getItem('serieswin');return v==null?24:+v}catch(e){return 24}})(),end:null,cursor:null,custom:false,view:null};
+// Compare feeds: every feed on one clock, hours since it was fed, so this
+// feed's curve sits right on top of the last ones. Newest bold in the
+// accent, the one before in blue, older ones grey. sv.cursor here is ms
+// since feeding, and the readout lists every feed at that hour.
+function overlayChart(segs){
+  const c=$('serieschart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
+  const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
+  const zs=segs.slice(-5).map(z=>({z,k:feedKpis(z),hs:z.pts.map(p=>(p.t-z.fed)/3600e3),sm:smooth(z.pts,'x')}));
+  const maxH=Math.min(24,Math.max(4,...zs.map(o=>o.hs[o.hs.length-1]))),span=maxH*3600e3;
+  const L=34,R=12,T=8,B=20,W=w-L-R,H=h-T-B,X=hr=>L+W*hr/maxH;
+  sv.view={overlay:true,t0:0,t1:span,span,L,W};
+  const xs=zs.flatMap(o=>o.sm),lo=Math.min(...xs,0.9)-0.1,hi=Math.max(...xs,2)+0.2,Y=v=>T+H*(1-(v-lo)/(hi-lo));
+  const col=i=>i===zs.length-1?css('--chart-d'):i===zs.length-2?css('--chart-t'):css('--muted');
+  const day=t=>new Date(t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
+  $('serieslabel').textContent='Compare feeds · hours since each feed · last '+zs.length;
+  g.font='11px system-ui';g.lineWidth=1;g.strokeStyle=css('--line');g.fillStyle=css('--muted');g.textAlign='center';
+  const step=[1,2,3,4,6].find(s=>maxH/s<=W/50)||6;
+  for(let i=0;i<=maxH;i+=step){g.beginPath();g.moveTo(X(i),T);g.lineTo(X(i),T+H);g.stroke();g.fillText(i+'h',Math.min(Math.max(X(i),L+8),w-R-8),h-5)}
+  g.textAlign='right';for(let i=0;i<=3;i++){const v=hi-(hi-lo)*i/3;g.fillText(v.toFixed(1)+'x',L-4,T+H*i/3+4)}g.textAlign='left';
+  g.setLineDash([3,4]);g.strokeStyle=css('--muted');
+  [1,2].forEach(v=>{g.beginPath();g.moveTo(L,Y(v));g.lineTo(w-R,Y(v));g.stroke()});
+  g.fillText('2x',w-R-16,Y(2)-3);g.setLineDash([]);
+  zs.forEach((o,i)=>{
+    const top=i===zs.length-1;g.strokeStyle=col(i);g.lineWidth=top?2.75:i===zs.length-2?2:1.5;g.globalAlpha=top||i===zs.length-2?1:0.6;
+    g.setLineDash(i<zs.length-3?[5,4]:[]);
+    g.beginPath();o.hs.forEach((hr,j)=>j?g.lineTo(X(hr),Y(o.sm[j])):g.moveTo(X(hr),Y(o.sm[j])));g.stroke();
+  });
+  g.globalAlpha=1;g.setLineDash([]);
+  $('serieskey').innerHTML=zs.map((o,i)=>'<span style="color:'+col(i)+'">'+(i<zs.length-3?'╌':'&#9632;')+'</span> '+day(o.z.fed)+' ('+fedAs(o.k)+(o.k.peak!=null?', top '+o.k.peak.toFixed(1)+'x at '+o.k.peakH.toFixed(1)+' h':'')+')').reverse().join('<br>');
+  if(sv.cursor==null||sv.cursor<0||sv.cursor>span){$('seriesread').textContent='Tap the chart to compare feeds at that hour';return}
+  const hr=sv.cursor/3600e3,at=[];
+  g.strokeStyle=css('--fg');g.lineWidth=1;g.beginPath();g.moveTo(X(hr),T);g.lineTo(X(hr),T+H);g.stroke();
+  zs.forEach((o,i)=>{
+    let j=-1;o.hs.forEach((v,k)=>{if(Math.abs(v-hr)<=1/6&&(j<0||Math.abs(v-hr)<Math.abs(o.hs[j]-hr)))j=k});
+    if(j<0)return;g.fillStyle=col(i);g.beginPath();g.arc(X(o.hs[j]),Y(o.sm[j]),4,0,7);g.fill();
+    at.push('<span style="color:'+col(i)+'">'+(i===zs.length-1?'this feed':day(o.z.fed))+' '+o.sm[j].toFixed(2)+'x</span>');
+  });
+  $('seriesread').innerHTML='<b>At '+hr.toFixed(1)+' h:</b> '+(at.reverse().join(' · ')||'no readings');
+}
+const sv={win:(()=>{try{const v=localStorage.getItem('serieswin');return v==null?24:+v}catch(e){return 24}})(),end:null,cursor:null,custom:false,view:null,
+  mode:(()=>{try{return localStorage.getItem('seriesmode')||'overlay'}catch(e){return 'overlay'}})()};
 (function seriesControls(){
   const c=$('serieschart'),ptrs=new Map();let drag=null,pinch=null;
   const redraw=()=>{if(run)seriesChart()};
   const tAt=x=>{const v=sv.view,r=c.getBoundingClientRect();return v.t0+(x-r.left-v.L)/v.W*v.span};
   document.querySelectorAll('#serieswin .chip[data-h]').forEach(b=>b.onclick=()=>{sv.win=+b.dataset.h;sv.custom=false;sv.end=null;store.set('serieswin',sv.win);redraw()});
   $('seriesnow').onclick=()=>{sv.end=null;redraw()};
+  document.querySelectorAll('#seriescard .chip[data-mode]').forEach(b=>b.onclick=()=>{sv.mode=b.dataset.mode;sv.cursor=null;store.set('seriesmode',sv.mode);redraw()});
   c.addEventListener('pointerdown',e=>{
     if(!sv.view)return;c.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,e.clientX);
     if(ptrs.size===1)drag={x:e.clientX,t1:sv.view.t1,moved:false};
-    else if(ptrs.size===2){const [a,b]=[...ptrs.values()];pinch={dist:Math.abs(a-b)||1,span:sv.view.span,tMid:tAt((a+b)/2)};drag=null}
+    else if(ptrs.size===2&&!sv.view.overlay){const [a,b]=[...ptrs.values()];pinch={dist:Math.abs(a-b)||1,span:sv.view.span,tMid:tAt((a+b)/2)};drag=null}
   });
   c.addEventListener('pointermove',e=>{
     const v=sv.view;if(!v)return;
@@ -487,7 +534,7 @@ const sv={win:(()=>{try{const v=localStorage.getItem('serieswin');return v==null
       sv.win=span/3600e3;sv.custom=true;sv.end=Math.min(v.now,Math.max(v.first+span,t0+span));redraw();
     }else if(drag){
       const dx=e.clientX-drag.x;if(Math.abs(dx)>6)drag.moved=true;
-      if(drag.moved){sv.end=Math.min(v.now,drag.t1-dx/v.W*v.span);c.style.cursor='grabbing';redraw()}
+      if(drag.moved&&!v.overlay){sv.end=Math.min(v.now,drag.t1-dx/v.W*v.span);c.style.cursor='grabbing';redraw()}
     }
   });
   const up=e=>{
@@ -501,7 +548,7 @@ const sv={win:(()=>{try{const v=localStorage.getItem('serieswin');return v==null
   // Trackpad: pinch (ctrl+wheel) zooms around the pointer, sideways swipe
   // scrolls. A plain vertical wheel is left to scroll the page.
   c.addEventListener('wheel',e=>{
-    const v=sv.view;if(!v)return;
+    const v=sv.view;if(!v||v.overlay)return;
     if(e.ctrlKey){
       e.preventDefault();
       const tm=tAt(e.clientX),span=Math.min(v.full,Math.max(3600e3,v.span*Math.exp(e.deltaY/100)));
