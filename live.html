@@ -423,7 +423,7 @@ function strength(){
 // the prior, so the forecast leans on them early and on the readings once it
 // climbs. Each fit costs a few ms, so the page replays the whole feed to
 // show how the forecast moved.
-const FC_K=1.1,FC_SPEED=3.5,FC_SIG=0.45,FC_SIG_MIN=0.15,FC_D=6,FC_D_SIG=0.35,FC_RISE=1,FC_RISE_SIG=0.3,FC_OBS=0.08,FC_BIN=15*60e3;
+const FC_K=1.1,FC_SPEED=3.5,FC_SIG=0.45,FC_SIG_MIN=0.15,FC_D=6,FC_D_SIG=0.35,FC_RISE=1,FC_RISE_SIG=0.3,FC_RISE_SIG_MIN=0.35,FC_OBS=0.08,FC_BIN=15*60e3;
 const fcR=(t,T,D,k)=>t<=T-D?0:t<=T?Math.pow((t-T+D)/D,k):Math.max(0.3,1-3*((t-T)/D)**2);
 // 15-minute medians counted back from the latest reading, so every bucket is
 // full and the newest one moves with each reading.
@@ -467,16 +467,30 @@ function fcPrior(k,done,fNow){
   return {T0:nd?speed*nd*tf(fNow??k.f):null,sig,bias,errs,speed,rawSpeed:raw(done),nd,
     D0,sigD:fcSpread(lD,Math.log(D0),0.15,FC_D_SIG),A0,sigA:fcSpread(As,A0,0.2,FC_RISE_SIG)};
 }
+// Climbing at full pace? The last hour's rise against the fastest hour since
+// the feed, on the 15-minute bins (x units). ratio near 1: no sign of slowing.
+function fcClimb(bins){
+  const b=bins.slice().sort((a,c)=>a.h-c.h);if(b.length<6)return null;
+  const at=t=>b.reduce((q,p)=>Math.abs(p.h-t)<Math.abs(q.h-t)?p:q).x;
+  let fast=0;for(const p of b)if(p.h-1>=b[0].h)fast=Math.max(fast,p.x-at(p.h-1));
+  const x=b[b.length-1].x,last=x-at(b[b.length-1].h-1);
+  return {last,fast,ratio:fast>0?last/fast:0,x,full:x>1.3&&fast>0&&last>=0.75*fast};
+}
 // Posterior over peak hours T (climb D and rise A worked out) from the
-// readings up to hour `h`. Returns the median and 80% range.
+// readings up to hour `h`. Returns the median and 80% range. While it is
+// still climbing at full pace the peak is after the latest reading (tmin):
+// otherwise a feed that runs past its guess gets "any time now" forever.
+// The height prior is kept loose (vessel and ratio change the height in x).
 function fcFit(z,pr,sh,h){
   if(!pr.T0)return null;
-  const bins=fcBins(z,z.fed+h*3600e3),s2=FC_OBS**2,a2=pr.sigA**2;
+  const bins=fcBins(z,z.fed+h*3600e3),s2=FC_OBS**2,a2=Math.max(pr.sigA,FC_RISE_SIG_MIN)**2;
+  const cl=fcClimb(bins),tmin=cl&&cl.full?h:0;
   const Ts=[],Ds=[];for(let j=0;j<=120;j++)Ts.push(1.5*Math.pow(36/1.5,j/120));
   for(let j=-8;j<=8;j++)Ds.push(pr.D0*Math.exp(j*pr.sigD/3));
   const lT=[],mA=[],bD=[];let mx=-Infinity;
   for(const T of Ts){
     let row=-Infinity,ra=0;const cells=[];
+    if(T<tmin){lT.push(-Infinity);mA.push(pr.A0);bD.push(T);continue}
     for(const D of Ds){
       if(D>T)continue;
       let sr=0,sy=0,syy=0;
@@ -495,7 +509,7 @@ function fcFit(z,pr,sh,h){
   const p=lT.map(l=>Math.exp(l-mx)),tot=p.reduce((s,v)=>s+v,0);
   const qi=f=>{let c=0;for(let i=0;i<p.length;i++){c+=p[i];if(c>=f*tot)return i}return p.length-1},q=f=>Ts[qi(f)],im=qi(0.5);
   const A=p.reduce((s,v,i)=>s+v*mA[i],0)/tot;
-  return {T:Ts[im],lo:q(0.1),hi:q(0.9),A,curve:{T:Ts[im],D:bD[im],A:mA[im]},n:bins.length};
+  return {T:Ts[im],lo:q(0.1),hi:q(0.9),A,curve:{T:Ts[im],D:bD[im],A:mA[im]},n:bins.length,tmin,climb:cl};
 }
 // The forecast card: headline, readings with the projected curve, how the
 // forecast moved (replayed every FC_BIN), and the track record on past
@@ -520,8 +534,9 @@ const fcTrail=(z,pr,sh,hEnd)=>{const out=[];for(let h=0;h<hEnd;h+=FC_BIN/3600e3)
 // once the range is tight.
 function fcLean(stats){const v=stats.filter(x=>x!=null);return v.length?median(v)*v.length/(v.length+1):0}
 function fcAdjust(f,prior,lean){
-  const w=Math.min(1,Math.max(0,1-(f.hi-f.lo)/(prior.hi-prior.lo))),c=w*lean;
-  return {...f,T:f.T-c,lo:f.lo-c,hi:f.hi-c,shift:c,curve:f.curve&&{...f.curve,T:f.curve.T-c}};
+  // never back past the latest reading while it is still climbing at full pace
+  const w=Math.min(1,Math.max(0,1-(f.hi-f.lo)/(prior.hi-prior.lo))),c=w*lean,m=f.tmin||0,cl=v=>Math.max(m,v-c);
+  return {...f,T:cl(f.T),lo:cl(f.lo),hi:cl(f.hi),shift:c,curve:f.curve&&{...f.curve,T:cl(f.curve.T)}};
 }
 // Past feeds, each replayed with only the feeds before it. Cached until a
 // feed finishes.
@@ -571,12 +586,21 @@ function forecast(){
     $('fcnote').innerHTML='Before the rise it said <b>'+clock(at(priorFit.T))+'</b> ('+fcHrs(priorFit.T-cur.peakH)+')'+
       (e(cur.peakH-3)?'; 3 h before the peak, '+e(cur.peakH-3):'')+(e(cur.peakH-1)?'; 1 h before, '+e(cur.peakH-1):'')+'. + means it said later than it happened. This feed now teaches the next forecast.';
   }else{
-    const left=live.T-hNow;
-    $('fcnow').textContent=clock(at(live.T));
-    $('fcunit').textContent=left>0.5?'in about '+(left<1.5?Math.round(left*60)+' min':left.toFixed(0)+' h'):'any time now';
-    if(hNow>live.hi)$('fcunit').textContent='probably at its peak now';
-    const rising=!!riseOnset(z);
-    $('fcnote').innerHTML=(hNow>live.hi?'<b style="color:var(--fg)">Its likely window ('+rng(live)+') has passed</b> and it has stopped climbing, so it is at or near its top. The peak is locked in once it falls back a little. ':'<b style="color:var(--fg)">Likely '+rng(live)+'</b> (80% range). ')+'Updates with every reading: fitted to the '+hNow.toFixed(1)+' h since the feed, '+
+    // How it is climbing right now decides the wording: full pace past the
+    // first guess = running late (peak not yet); slowing = close; flat = at top.
+    const left=live.T-hNow,cl=live.climb,mm=v=>(v*z.depth*10).toFixed(1);
+    const pace=cl&&cl.x>1.3?(cl.full?'full':cl.ratio>=0.25?'slowing':'flat'):null,late=hNow>priorFit.T;
+    let unit=left>0.5?'in about '+(left<1.5?Math.round(left*60)+' min':left.toFixed(0)+' h'):'any time now';
+    if(pace==='full'&&late)unit='still climbing · later than first guessed';
+    else if(pace==='slowing')unit=left>0.5?unit+' · slowing':'slowing · close to its peak';
+    else if(pace==='flat'&&hNow>live.lo)unit='probably at its peak now';
+    $('fcnow').textContent=clock(at(live.T));$('fcunit').textContent=unit;
+    const rising=!!riseOnset(z),B=s=>'<b style="color:var(--fg)">'+s+'</b>';
+    const lead=pace==='full'&&late?B('Running late, still climbing.')+' The first guess was '+clock(at(priorFit.T))+', but it rose '+mm(cl.last)+' mm in the last hour, about as fast as at any point ('+mm(cl.fast)+' at its fastest), so the peak hasn\'t come yet. Each reading pushes the forecast out until the climb slows; then it tightens. '+(cur.dblH!=null?'Nothing to do: it has already doubled, so it\'s usable now if you need it. ':'')+B('Now likely '+rng(live))+'. '
+      :pace==='flat'&&hNow>live.lo?B('It has stopped climbing')+' ('+mm(cl.last)+' mm in the last hour), so it is at or near its top. The peak is locked in once it falls back a little. '
+      :pace==='slowing'?B('Slowing:')+' '+mm(cl.last)+' mm in the last hour, down from '+mm(cl.fast)+' at its fastest, so the peak is close. '+B('Likely '+rng(live))+' (80% range). '
+      :B('Likely '+rng(live))+' (80% range). ';
+    $('fcnote').innerHTML=lead+'Updates with every reading: fitted to the '+hNow.toFixed(1)+' h since the feed, '+
       (rising?'and since it started climbing the readings steer it.':'but it hasn\'t started climbing yet, so it leans on '+who+'\'s past speed until it does.')+
       ' Peak height about '+(1+live.A).toFixed(1)+'x. <b>Before the rise:</b> '+clock(at(priorFit.T))+' ('+rng(priorFit)+').';
   }
