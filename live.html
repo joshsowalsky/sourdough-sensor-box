@@ -826,8 +826,12 @@ function readiness(){
     :Date.now()<by?'it is at '+(cur.last??1).toFixed(2)+'x so far.':'it reached '+(cur.peak??1).toFixed(2)+'x, so it missed.';
   const curTxt=' This feed ('+fedAs(cur)+'): a ready starter doubles in '+f(paceH(cur))+' h, by '+clock(by)+'; '+verdict;
   let txt;
+  // The streak is proven by past feeds; the running feed only has to rise
+  // (or, once it has missed, it breaks the streak).
+  const missed=cur.dblH!=null?!good(cur):Date.now()>=by;
   if(streak>=READY_RUNS&&good(cur))txt='<b style="font-size:1.1rem;display:inline">Ready to bake.</b> Kept a healthy pace '+streak+' feeds in a row. Mix your dough with it now, while it is near the top.';
-  else txt='<b style="font-size:1.1rem;display:inline">Ready to bake: not yet</b> ('+Math.min(streak,READY_RUNS)+' of '+READY_RUNS+'). Ready once it doubles at a healthy pace for its ratio and temperature, '+READY_RUNS+' feeds in a row ('+READY_H+' h for 1:2:2 at '+STD_F+'°F; sooner for 1:1:1, later for 1:5:5).';
+  else if(streak>=READY_RUNS&&!missed)txt='<b style="font-size:1.1rem;display:inline">Ready to bake once this feed is up.</b> Kept a healthy pace '+streak+' feeds in a row. Use this one near its peak.';
+  else txt='<b style="font-size:1.1rem;display:inline">Ready to bake: not yet</b> ('+(missed?0:Math.min(streak,READY_RUNS))+' of '+READY_RUNS+'). Ready once it doubles at a healthy pace for its ratio and temperature, '+READY_RUNS+' feeds in a row ('+READY_H+' h for 1:2:2 at '+STD_F+'°F; sooner for 1:1:1, later for 1:5:5).';
   $('ready').innerHTML=txt+curTxt;
   // Every feed, newest first; the box scrolls once there are more than fit.
   // Two lines per cell so the columns stay narrow and line up on a phone.
