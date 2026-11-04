@@ -356,13 +356,18 @@ function strength(){
   const day=t=>new Date(t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
   const last=idx[idx.length-1],lk=ks[last];
   $('sspeed').textContent=sp[last].toFixed(1);
-  $('sspeednote').innerHTML=(last===ks.length-1?'This feed':'The '+day(lk.fed)+' feed')+'. Ready at <b>'+READY_SPEED.toFixed(1)+'</b> or less; lower is stronger.';
+  // The feed still rising has no peak yet: its speed so far comes from the
+  // live peak forecast (median and 80% range), redrawn with every reading.
+  const F=!done[ks.length-1]?fcCompute():null,nd0=doublingsOf(cur);
+  const prov=F&&!F.finished&&nd0?['T','lo','hi'].map(q=>toStdF(F.live[q]/nd0,cur.f)):null;
+  $('sspeednote').innerHTML=(last===ks.length-1?'This feed':'The '+day(lk.fed)+' feed')+'. Ready at <b>'+READY_SPEED.toFixed(1)+'</b> or less; lower is stronger.'+
+    (prov?' <span style="color:var(--fg)">This feed so far: about <b>'+prov[0].toFixed(1)+'</b> ('+prov[1].toFixed(1)+'–'+prov[2].toFixed(1)+'), from the peak forecast.</span>':'');
   $('srise').textContent=lk.peak.toFixed(1);
   $('srisenote').innerHTML='Same feed. Healthy at <b>'+RISE_OK+'x</b> or more.';
   // Speed per feed, with the ready band.
   const c=$('speedchart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
   const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
-  const vs=idx.map(i=>sp[i]),lo=Math.min(2,Math.floor(Math.min(...vs)*2)/2-0.25),hi=Math.max(lo+2,Math.ceil(Math.max(...vs))+0.25);
+  const vs=idx.map(i=>sp[i]).concat(prov?[prov[1],Math.min(prov[2],8)]:[]),lo=Math.min(2,Math.floor(Math.min(...vs)*2)/2-0.25),hi=Math.max(lo+2,Math.ceil(Math.max(...vs))+0.25);
   const L=34,R=10,T=18,B=22,W=w-L-R,H=h-T-B,Y=v=>T+H*(1-(v-lo)/(hi-lo)),n=ks.length,X=i=>L+W*(n===1?0.5:(i+0.5)/n);
   g.font='11px system-ui';g.fillStyle=css('--ok');g.globalAlpha=0.15;g.fillRect(L,Y(READY_SPEED),W,T+H-Y(READY_SPEED));g.globalAlpha=1;
   g.strokeStyle=css('--line');g.lineWidth=1;g.fillStyle=css('--muted');g.textAlign='right';
@@ -373,6 +378,11 @@ function strength(){
   g.textAlign='center';
   ks.forEach((k,i)=>{
     const d=new Date(k.fed);g.fillStyle=css('--muted');g.fillText(d.toLocaleDateString([],{weekday:'short'})+(d.getHours()<12?' am':' pm'),X(i),h-6);
+    if(sp[i]==null&&i===n-1&&prov){
+      const [m,a,b]=prov;g.strokeStyle=css('--chart-d');g.lineWidth=2;
+      g.beginPath();g.moveTo(X(i),Y(Math.max(lo,a)));g.lineTo(X(i),Y(Math.min(hi,b)));g.stroke();
+      g.fillStyle=css('--panel');g.beginPath();g.arc(X(i),Y(m),4.5,0,7);g.fill();g.stroke();
+      g.fillStyle=css('--fg');g.fillText('~'+m.toFixed(1),X(i)+(X(i)+30>w?-22:22),Y(m)+4);return}
     if(sp[i]==null){g.fillText(i===n-1?'rising':'–',X(i),Y((lo+hi)/2));return}
     g.fillStyle=css('--chart-d');g.beginPath();g.arc(X(i),Y(sp[i]),4.5,0,7);g.fill();
     g.fillStyle=css('--fg');g.fillText(sp[i].toFixed(1),X(i),Y(sp[i])-9);
@@ -533,7 +543,7 @@ function fcCompute(){
   const done=fcFinished(ks,segs),hist=fcHistory(done);
   // fcFitShape stores each feed's climb on it; this last call (all finished
   // feeds) is the one the current feed uses.
-  const sh=fcFitShape(done),fs=run.points.filter(p=>p.f!=null),fNow=fs.length?fs[fs.length-1].f:cur.f??STD_F;
+  const sh=fcFitShape(done),fNow=cur.f??STD_F;  // room temp averaged since the feed
   const pr=fcPrior(cur,done,fNow);
   const finished=cur.peak!=null&&cur.peak>=1.3&&cur.last!=null&&cur.peak-cur.last>=0.1;
   const hNow=(Math.min(Date.now(),z.pts[z.pts.length-1].t)-z.fed)/3600e3;
@@ -558,9 +568,10 @@ function forecast(){
     const left=live.T-hNow;
     $('fcnow').textContent=clock(at(live.T));
     $('fcunit').textContent=left>0.5?'in about '+(left<1.5?Math.round(left*60)+' min':left.toFixed(0)+' h'):'any time now';
+    if(hNow>live.hi)$('fcunit').textContent='probably at its peak now';
     const rising=!!riseOnset(z);
-    $('fcnote').innerHTML='<b style="color:var(--fg)">Likely '+rng(live)+'</b> (80% range). Updates with every reading: fitted to the '+hNow.toFixed(1)+' h since the feed, '+
-      (rising?'and it is climbing, so the readings now steer it.':'but it hasn\'t started climbing yet, so it leans on '+who+'\'s past speed until it does.')+
+    $('fcnote').innerHTML=(hNow>live.hi?'<b style="color:var(--fg)">Its likely window ('+rng(live)+') has passed</b> and it has stopped climbing, so it is at or near its top. The peak is locked in once it falls back a little. ':'<b style="color:var(--fg)">Likely '+rng(live)+'</b> (80% range). ')+'Updates with every reading: fitted to the '+hNow.toFixed(1)+' h since the feed, '+
+      (rising?'and since it started climbing the readings steer it.':'but it hasn\'t started climbing yet, so it leans on '+who+'\'s past speed until it does.')+
       ' Peak height about '+(1+live.A).toFixed(1)+'x. <b>Before the rise:</b> '+clock(at(priorFit.T))+' ('+rng(priorFit)+').';
   }
   // Readings, the projected curve and the likely peak window.
