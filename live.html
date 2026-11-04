@@ -360,7 +360,7 @@ function strength(){
   // live peak forecast (median and 80% range), redrawn with every reading.
   const F=!done[ks.length-1]?fcCompute():null,nd0=doublingsOf(cur);
   const prov=F&&!F.finished&&nd0?['T','lo','hi'].map(q=>toStdF(F.live[q]/nd0,cur.f)):null;
-  $('sspeednote').innerHTML=(last===ks.length-1?'This feed':'The '+day(lk.fed)+' feed')+'. Ready at <b>'+READY_SPEED.toFixed(1)+'</b> or less; lower is stronger.'+
+  $('sspeednote').innerHTML=(last===ks.length-1?'This feed':'The '+day(lk.fed)+' feed')+'. Ready at <b>'+READY_SPEED.toFixed(1)+'</b> or less; fewer hours is stronger (higher on the chart).'+
     (prov?' <span style="color:var(--fg)">This feed so far: about <b>'+prov[0].toFixed(1)+'</b> ('+prov[1].toFixed(1)+'–'+prov[2].toFixed(1)+'), from the peak forecast.</span>':'');
   $('srise').textContent=lk.peak.toFixed(1);
   $('srisenote').innerHTML='Same feed. Healthy at <b>'+RISE_OK+'x</b> or more.';
@@ -368,12 +368,12 @@ function strength(){
   const c=$('speedchart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
   const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
   const vs=idx.map(i=>sp[i]).concat(prov?[prov[1],Math.min(prov[2],8)]:[]),lo=Math.min(2,Math.floor(Math.min(...vs)*2)/2-0.25),hi=Math.max(lo+2,Math.ceil(Math.max(...vs))+0.25);
-  const L=34,R=10,T=18,B=22,W=w-L-R,H=h-T-B,Y=v=>T+H*(1-(v-lo)/(hi-lo)),n=ks.length,X=i=>L+W*(n===1?0.5:(i+0.5)/n);
-  g.font='11px system-ui';g.fillStyle=css('--ok');g.globalAlpha=0.15;g.fillRect(L,Y(READY_SPEED),W,T+H-Y(READY_SPEED));g.globalAlpha=1;
+  const L=34,R=10,T=18,B=22,W=w-L-R,H=h-T-B,Y=v=>T+H*(v-lo)/(hi-lo),n=ks.length,X=i=>L+W*(n===1?0.5:(i+0.5)/n);
+  g.font='11px system-ui';g.fillStyle=css('--ok');g.globalAlpha=0.15;g.fillRect(L,T,W,Y(READY_SPEED)-T);g.globalAlpha=1;
   g.strokeStyle=css('--line');g.lineWidth=1;g.fillStyle=css('--muted');g.textAlign='right';
   for(let v=Math.ceil(lo);v<=hi;v++){g.beginPath();g.moveTo(L,Y(v));g.lineTo(w-R,Y(v));g.stroke();g.fillText(v+' h',L-4,Y(v)+4)}
   g.setLineDash([4,4]);g.strokeStyle=css('--ok');g.beginPath();g.moveTo(L,Y(READY_SPEED));g.lineTo(w-R,Y(READY_SPEED));g.stroke();g.setLineDash([]);
-  g.fillStyle=css('--ok');g.fillText('ready ≤ '+READY_SPEED.toFixed(1),w-R,Y(READY_SPEED)-4);
+  g.fillStyle=css('--ok');g.textAlign='left';g.fillText('ready ≤ '+READY_SPEED.toFixed(1),L+4,Y(READY_SPEED)-4);g.fillStyle=css('--muted');g.fillText('↑ faster',L+4,T-6);g.textAlign='right';
   g.strokeStyle=css('--chart-d');g.lineWidth=2;g.beginPath();idx.forEach((i,j)=>j?g.lineTo(X(i),Y(sp[i])):g.moveTo(X(i),Y(sp[i])));g.stroke();
   g.textAlign='center';
   ks.forEach((k,i)=>{
