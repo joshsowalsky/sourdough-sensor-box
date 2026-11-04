@@ -47,6 +47,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 <div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div class="small" id="outlook" hidden></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><table id="kpis" class="small" style="margin-top:6px;border-collapse:collapse"></table><div id="recipe" hidden style="margin-top:10px"><div class="label">What you fed</div>
 <div class="row" style="margin-top:4px;gap:6px"><label class="note">Starter <input id="rg_s" type="number" inputmode="decimal" min="0" step="any" class="g"></label><label class="note">Flour <input id="rg_f" type="number" inputmode="decimal" min="0" step="any" class="g"></label><label class="note">Water <input id="rg_w" type="number" inputmode="decimal" min="0" step="any" class="g"></label><span class="note">grams</span></div>
 <label class="note" style="display:block;margin-top:6px">Flour type <input id="rflour" type="text" maxlength="120" class="wide-in"></label>
+<label class="note" style="display:block;margin-top:6px">Jar <input id="rvessel" type="text" maxlength="120" class="wide-in"></label>
 <label class="note" style="display:block;margin-top:6px">Note <input id="rnote" type="text" maxlength="120" class="wide-in" placeholder="optional"></label></div>
 <a class="btn" id="calbtn" href="#" hidden>Calibrate empty jar</a> <a class="btn" id="startbtn" href="#" hidden>Starter in</a> <a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
 <div class="grid">
@@ -109,6 +110,7 @@ function recipeIn(){
   const g=[$('rg_s'),$('rg_f'),$('rg_w')].map(e=>Number(e.value)),r={};
   if(g.every(v=>v>=0)&&g[0]>0&&g[1]>0)r.feed_g=g.join(':');
   if($('rflour').value.trim())r.flour=$('rflour').value.trim();
+  if($('rvessel').value.trim())r.vessel=$('rvessel').value.trim();
   if($('rnote').value.trim())r.note=$('rnote').value.trim();
   return r;
 }
@@ -116,7 +118,7 @@ let recipeFor=null;
 function fillRecipe(ps){
   if(recipeFor===ps)return;recipeFor=ps;
   const [s,f,w]=(run.feed_g||'').split(':');
-  $('rg_s').value=s||'';$('rg_f').value=f||'';$('rg_w').value=w||'';$('rflour').value=run.flour||'';$('rnote').value='';
+  $('rg_s').value=s||'';$('rg_f').value=f||'';$('rg_w').value=w||'';$('rflour').value=run.flour||'';$('rvessel').value=run.next_vessel||run.vessel||'';$('rnote').value='';
 }
 async function sendCtl(c){
   const key=store.get('pausekey'),rec=c==='start'?recipeIn():null;
