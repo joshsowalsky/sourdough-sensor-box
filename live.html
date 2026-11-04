@@ -61,6 +61,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <input type="range" id="plantemp" min="64" max="84" step="1">
     <div id="planout" style="margin-top:6px"></div>
     <table id="plantable" class="small" style="margin-top:6px;border-collapse:collapse"></table>
+    <div class="row" style="margin-top:8px"><button id="planuse">Use in Starter in</button><span class="note" id="planusenote"></span></div>
     <div class="note" id="planbasis" style="margin-top:6px"></div></div>
   <div class="card wide" id="seriescard" hidden><div class="label" id="serieslabel">Every feed</div>
     <div class="row" style="margin:6px 0 0;gap:6px"><button class="chip" data-mode="overlay">Compare feeds</button><button class="chip" data-mode="timeline">Timeline</button></div>
@@ -114,11 +115,14 @@ function recipeIn(){
   if($('rnote').value.trim())r.note=$('rnote').value.trim();
   return r;
 }
-let recipeFor=null;
+// The grams follow the feed planner's pick (planPick, set by renderPlan) until
+// you type in them; "Use in Starter in" puts the pick back. Without a planner,
+// the current feed's recipe.
+let recipeFor=null,recipeTouched=false,planPick=null;
+const setGrams=([s,f,w])=>{$('rg_s').value=s??'';$('rg_f').value=f??'';$('rg_w').value=w??''};
 function fillRecipe(ps){
-  if(recipeFor===ps)return;recipeFor=ps;
-  const [s,f,w]=(run.feed_g||'').split(':');
-  $('rg_s').value=s||'';$('rg_f').value=f||'';$('rg_w').value=w||'';$('rflour').value=run.flour||'';$('rvessel').value=run.next_vessel||run.vessel||'';$('rnote').value='';
+  if(recipeFor===ps)return;recipeFor=ps;recipeTouched=false;
+  setGrams(planPick||(run.feed_g||'').split(':'));$('rflour').value=run.flour||'';$('rvessel').value=run.next_vessel||run.vessel||'';$('rnote').value='';
 }
 async function sendCtl(c){
   const key=store.get('pausekey'),rec=c==='start'?recipeIn():null;
@@ -309,6 +313,10 @@ function renderPlan(){
   if(hrsAt(PLAN_RATIOS[0],F)>H+0.75)out+='<div class="note">Even '+lbl(PLAN_RATIOS[0])+' won\'t peak that soon at '+F+'°F. Somewhere warmer, or a later peak.</div>';
   if(hrsAt(PLAN_RATIOS[PLAN_RATIOS.length-1],F)<H-0.75)out+='<div class="note">That\'s further out than '+lbl(PLAN_RATIOS[PLAN_RATIOS.length-1])+' reaches at '+F+'°F. Feed later, or somewhere cooler.</div>';
   $('planout').innerHTML=out;
+  planPick=[st,Math.round(best*st),Math.round(best*b.hyd*st)];
+  if(!recipeTouched)setGrams(planPick);
+  $('planusenote').textContent=$('recipe').hidden?'Pause for a new jar and these grams are filled in for you.'
+    :recipeTouched?'Your typed grams are kept; tap to switch to these.':'Starter in is using these grams.';
   const td='<td style="padding:0 14px 2px 0">';
   $('plantable').innerHTML='<tr style="color:var(--muted)">'+td+'Ratio</td><td>Peaks around</td></tr>'+
     [1,2,3,5,10].map(r=>'<tr'+(r===best?' style="font-weight:700"':'')+'>'+td+lbl(r)+'</td><td>'+clockAt(hrsAt(r,F))+' ('+hrsAt(r,F).toFixed(1)+' h)</td></tr>').join('');
@@ -685,6 +693,8 @@ $('mark').onclick=()=>{if(doc){store.set('start',String(doc.distance_cm));render
 $('clear').onclick=()=>{store.del('start');render()};
 $('depth').value=store.get('depth')||'';
 $('planpeak').oninput=$('plantemp').oninput=()=>{if(run)renderPlan()};
+['rg_s','rg_f','rg_w'].forEach(id=>$(id).addEventListener('input',()=>{recipeTouched=true;if(run)renderPlan()}));
+$('planuse').onclick=()=>{if(!planPick)return;recipeTouched=false;setGrams(planPick);if(run)renderPlan();if(!$('recipe').hidden)$('recipe').scrollIntoView({behavior:'smooth',block:'center'})};
 $('depth').oninput=e=>{const v=parseFloat(e.target.value);v>0?store.set('depth',String(v)):store.del('depth');render()};
 addEventListener('resize',()=>{chart();renderRun()});
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{chart();renderRun()});
