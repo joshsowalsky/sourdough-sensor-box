@@ -225,8 +225,16 @@ async function loadRun(){
 // Starter depth at the feed, from grams fed and the vessel's cm per 10 g
 // (catalog inside diameters, see README). null if the vessel isn't known.
 const CM_PER_10G={karter:0.33,pyrex:0.24,yilihcia:0.15};
+// A feed without its own empty reading borrows the nearest one measured in
+// the same vessel (the box sits on each the same way), before the catalog.
+function emptyOf(r){
+  if(r.empty_cm)return +r.empty_cm;
+  const t=Date.parse(r.fed_at),same=[...(run.history||[]),run].filter(q=>q.empty_cm&&q.vessel===r.vessel);
+  return same.length?+same.reduce((b,q)=>Math.abs(Date.parse(q.fed_at)-t)<Math.abs(Date.parse(b.fed_at)-t)?q:b).empty_cm:null;
+}
 function startDepth(r=run,start){
-  if(r.empty_cm&&start!=null&&r.empty_cm-start>0.2)return r.empty_cm-start;
+  const e=emptyOf(r);
+  if(e&&start!=null&&e-start>0.2)return e-start;
   const v=(r.vessel||'').toLowerCase(),k=Object.keys(CM_PER_10G).find(k=>v.includes(k));
   const g=(r.feed_g||'').split(':').reduce((a,b)=>a+Number(b),0);
   return k&&g>0?g/10*CM_PER_10G[k]:null;
