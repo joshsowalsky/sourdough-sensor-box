@@ -122,7 +122,7 @@ function fillRecipe(ps){
 }
 async function sendCtl(c){
   const key=store.get('pausekey'),rec=c==='start'?recipeIn():null;
-  if(!key){location.href=CTL+'/'+c+(rec?'?'+new URLSearchParams(rec):'');return}
+  if(!key){location.replace(CTL+'/'+c+(rec?'?'+new URLSearchParams(rec):''));return}
   $('pausenote').textContent='Sending…';
   try{
     const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:rec?'start '+JSON.stringify(rec):c});
