@@ -53,7 +53,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 <h1>Sourdough Live</h1>
 <div class="status"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
 <div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div class="small" id="outlook" hidden></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><div id="kpiwrap"><table id="kpis" class="ktab small"></table></div><div id="recipe" hidden style="margin-top:10px"><div class="label">What you fed</div>
-<div class="row" style="margin-top:4px;gap:6px"><label class="note">Starter <input id="rg_s" type="number" inputmode="decimal" min="0" step="any" class="g"></label><label class="note">Flour <input id="rg_f" type="number" inputmode="decimal" min="0" step="any" class="g"></label><label class="note">Water <input id="rg_w" type="number" inputmode="decimal" min="0" step="any" class="g"></label><span class="note">grams</span></div>
+<div class="row" style="margin-top:4px;gap:6px"><label class="note">Starter <input id="rg_s" type="number" inputmode="decimal" min="0" step="any" class="g"></label><label class="note">Flour <input id="rg_f" type="number" inputmode="decimal" min="0" step="any" class="g"></label><label class="note">Water <input id="rg_w" type="number" inputmode="decimal" min="0" step="any" class="g"></label><span class="note">grams</span><label class="note"><input type="checkbox" id="rglock"> Lock ratio</label></div><div class="note" id="rglocknote" hidden></div>
 <label class="note" style="display:block;margin-top:6px">Flour <select id="rflourmix" class="wide-in"><option value="0">All usual flour</option><option value="0.25">¾ usual + ¼ whole wheat/rye</option><option value="0.5">Half usual, half whole wheat/rye</option><option value="1">All whole wheat/rye</option><option value="other">+ Add a flour…</option></select></label>
 <div class="note" id="rflourgrams" style="margin-top:2px"></div>
 <input id="rflour" type="text" maxlength="100" class="wide-in" hidden placeholder="New flour, e.g. spelt">
@@ -186,7 +186,27 @@ function flourMix(t){
 }
 const showFlour=()=>{const o=$('rflourmix').value==='other';$('rflour').hidden=!o;$('rflourgrams').textContent=o?'':'= '+flourText()};
 let recipeFor=null,recipeTouched=false,planPick=null;
-const setGrams=([s,f,w])=>{$('rg_s').value=s??'';$('rg_f').value=f??'';$('rg_w').value=w??'';showFlour()};
+const setGrams=([s,f,w])=>{$('rg_s').value=s??'';$('rg_f').value=f??'';$('rg_w').value=w??'';showFlour();if($('rglock').checked)setLock(true)};
+// Lock ratio: type what actually went in (a gram or two extra flour) and the
+// other two follow at the same ratio, so nothing has to be fished out. The
+// note says how much more of each to add, from the grams when it was locked.
+const G_IDS=['rg_s','rg_f','rg_w'],gVals=()=>G_IDS.map(id=>Number($(id).value)),g1=v=>+(Math.round(v*10)/10);
+let lockR=null,lockBase=null,lockTyped=-1;
+function setLock(on){
+  const v=gVals();lockR=on&&v[0]>0&&v[1]>0&&v[2]>=0?v.map(x=>x/v[0]):null;lockBase=lockR?v:null;lockTyped=-1;
+  showLock();
+}
+function showLock(){
+  const n=$('rglocknote');n.hidden=!lockR;if(!lockR)return;
+  const v=gVals(),d=v.map((x,i)=>i===lockTyped?0:g1(x-lockBase[i])),names=['starter','flour','water'];
+  const add=d.some(x=>x>0)?' Add '+d.map((x,i)=>x>0?x+' g '+names[i]:null).filter(Boolean).join(' and ')+' to keep the ratio.':'';
+  n.textContent='Locked at 1:'+g1(lockR[1])+':'+g1(lockR[2])+'. Change one and the others follow.'+add;
+}
+function lockFollow(id){
+  if($('rglock').checked&&!lockR){setLock(true);return}
+  if(!lockR)return;const i=G_IDS.indexOf(id),v=Number($(id).value);if(!(v>0))return;
+  lockTyped=i;const s=v/lockR[i];G_IDS.forEach((o,j)=>{if(j!==i)$(o).value=g1(s*lockR[j])});showLock();
+}
 function fillRecipe(ps){
   if(recipeFor===ps)return;recipeFor=ps;recipeTouched=false;
   setGrams(planPick||(run.feed_g||'').split(':'));fillFlours();const mix=flourMix(run.flour);$('rflourmix').value=String(mix);$('rflour').value=mix==='other'?(run.flour||'').replace(/^[\d.]+\s*g\s+/,''):'';showFlour();
@@ -1098,7 +1118,9 @@ $('mark').onclick=()=>{if(doc){store.set('start',String(doc.distance_cm));render
 $('clear').onclick=()=>{store.del('start');render()};
 $('depth').value=store.get('depth')||'';
 $('planpeak').oninput=$('plantemp').oninput=()=>{if(run)renderPlan()};
-['rg_s','rg_f','rg_w'].forEach(id=>$(id).addEventListener('input',()=>{recipeTouched=true;if(run)renderPlan();showFlour()}));
+['rg_s','rg_f','rg_w'].forEach(id=>$(id).addEventListener('input',()=>{recipeTouched=true;lockFollow(id);if(run)renderPlan();showFlour()}));
+$('rglock').onchange=e=>{e.target.checked?store.set('glock','1'):store.del('glock');setLock(e.target.checked)};
+if(store.get('glock'))$('rglock').checked=true;  // remembered; locks on the grams once they're filled in
 $('rflourmix').onchange=$('rflour').oninput=showFlour;
 $('rvesselsel').onchange=()=>{showJar();if(!$('rvessel').hidden)$('rvessel').focus()};
 $('planuse').onclick=()=>{if(!planPick)return;recipeTouched=false;setGrams(planPick);if(run)renderPlan();if(!$('recipe').hidden)$('recipe').scrollIntoView({behavior:'smooth',block:'center'})};
