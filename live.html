@@ -33,6 +33,8 @@ button{cursor:pointer}
 a.btn{display:inline-flex;align-items:center;text-decoration:none;margin-top:10px;font-weight:600}
 button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .wide{grid-column:1/-1}
+.sbox{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;min-width:0}
+.eq{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px}
 .note{font-size:.8rem;color:var(--muted)}
 .verdict{background:var(--panel);border:1px solid var(--line);border-left:8px solid var(--muted);border-radius:12px;padding:12px 14px}
 .verdict b{display:block;font-size:2rem;line-height:1.15}
@@ -53,6 +55,15 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 <input id="rvessel" type="text" maxlength="120" class="wide-in" hidden placeholder="New jar, e.g. Weck 500 mL">
 <label class="note" style="display:block;margin-top:6px">Note <input id="rnote" type="text" maxlength="120" class="wide-in" placeholder="optional"></label></div>
 <a class="btn" id="calbtn" href="#" hidden>Calibrate empty jar</a> <a class="btn" id="startbtn" href="#" hidden>Starter in</a> <a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
+<div class="card" id="strengthcard" hidden><div class="label">Strength · how fast Gus multiplies</div>
+  <div class="grid" style="margin-top:8px">
+    <div class="sbox"><div class="label">Speed · hours per doubling</div><div class="big"><span id="sspeed">–</span><span class="unit">h</span></div><div class="small" id="sspeednote"></div></div>
+    <div class="sbox"><div class="label">Rise</div><div class="big"><span id="srise">–</span><span class="unit">x</span></div><div class="small" id="srisenote"></div></div>
+  </div>
+  <canvas id="speedchart" width="560" height="150" style="height:150px;margin-top:10px"></canvas>
+  <div class="small" id="sexplain"></div>
+  <div id="sfeed" style="margin-top:10px"></div>
+</div>
 <div class="grid">
   <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change">Set a start level below</div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
@@ -310,6 +321,64 @@ function renderRun(){
   seriesChart();
   readiness();
   renderPlan();
+  strength();
+}
+// Strength as speed: hours per doubling of the starter's population, at
+// STD_F. A feed at 1:r:r dilutes it to 1/(1+2r) of the jar, so it needs
+// log2(dilution) doublings to fill it again, plus PLAN_LAG to wake up:
+// speed = hours to peak / (log2(dilution) + PLAN_LAG), scaled to STD_F with
+// PLAN_F_PER_2X. Ratio-free: a long 1:10:10 isn't penalised and a quick 1:1:1
+// isn't flattered. Ready at READY_H on the standard feed, i.e. READY_SPEED.
+const RISE_OK=2;  // READY_SPEED comes after the constants it's built from, below
+function doublingsOf(k){const [st,fl,wa]=(k.feed_g||'').split(':').map(Number);return st&&fl?Math.log2((st+fl+(wa||0))/st)+PLAN_LAG:null}
+const toStdF=(h,f)=>h*Math.pow(2,((f??STD_F)-STD_F)/PLAN_F_PER_2X);
+function strength(){
+  const segs=feedSegs(),ks=segs.map(feedKpis),cur=ks[ks.length-1];
+  // The current feed counts once it has clearly come down from its top.
+  const done=ks.map((k,i)=>i<ks.length-1||(k.peak!=null&&k.last!=null&&k.peak-k.last>=0.1));
+  const sp=ks.map((k,i)=>done[i]&&k.peakH!=null&&k.peak>=1.3&&doublingsOf(k)?toStdF(k.peakH/doublingsOf(k),k.f):null);
+  const idx=sp.map((v,i)=>v!=null?i:-1).filter(i=>i>=0);
+  if(!idx.length){$('strengthcard').hidden=true;return}
+  $('strengthcard').hidden=false;
+  const day=t=>new Date(t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
+  const last=idx[idx.length-1],lk=ks[last];
+  $('sspeed').textContent=sp[last].toFixed(1);
+  $('sspeednote').innerHTML=(last===ks.length-1?'This feed':'The '+day(lk.fed)+' feed')+'. Ready at <b>'+READY_SPEED.toFixed(1)+'</b> or less; lower is stronger.';
+  $('srise').textContent=lk.peak.toFixed(1);
+  $('srisenote').innerHTML='Same feed. Healthy at <b>'+RISE_OK+'x</b> or more.';
+  // Speed per feed, with the ready band.
+  const c=$('speedchart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
+  const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
+  const vs=idx.map(i=>sp[i]),lo=Math.min(2,Math.floor(Math.min(...vs)*2)/2-0.25),hi=Math.max(lo+2,Math.ceil(Math.max(...vs))+0.25);
+  const L=34,R=10,T=18,B=22,W=w-L-R,H=h-T-B,Y=v=>T+H*(1-(v-lo)/(hi-lo)),n=ks.length,X=i=>L+W*(n===1?0.5:(i+0.5)/n);
+  g.font='11px system-ui';g.fillStyle=css('--ok');g.globalAlpha=0.15;g.fillRect(L,Y(READY_SPEED),W,T+H-Y(READY_SPEED));g.globalAlpha=1;
+  g.strokeStyle=css('--line');g.lineWidth=1;g.fillStyle=css('--muted');g.textAlign='right';
+  for(let v=Math.ceil(lo);v<=hi;v++){g.beginPath();g.moveTo(L,Y(v));g.lineTo(w-R,Y(v));g.stroke();g.fillText(v+' h',L-4,Y(v)+4)}
+  g.setLineDash([4,4]);g.strokeStyle=css('--ok');g.beginPath();g.moveTo(L,Y(READY_SPEED));g.lineTo(w-R,Y(READY_SPEED));g.stroke();g.setLineDash([]);
+  g.fillStyle=css('--ok');g.fillText('ready ≤ '+READY_SPEED.toFixed(1),w-R,Y(READY_SPEED)-4);
+  g.strokeStyle=css('--chart-d');g.lineWidth=2;g.beginPath();idx.forEach((i,j)=>j?g.lineTo(X(i),Y(sp[i])):g.moveTo(X(i),Y(sp[i])));g.stroke();
+  g.textAlign='center';
+  ks.forEach((k,i)=>{
+    const d=new Date(k.fed);g.fillStyle=css('--muted');g.fillText(d.toLocaleDateString([],{weekday:'short'})+(d.getHours()<12?' am':' pm'),X(i),h-6);
+    if(sp[i]==null){g.fillText(i===n-1?'rising':'–',X(i),Y((lo+hi)/2));return}
+    g.fillStyle=css('--chart-d');g.beginPath();g.arc(X(i),Y(sp[i]),4.5,0,7);g.fill();
+    g.fillStyle=css('--fg');g.fillText(sp[i].toFixed(1),X(i),Y(sp[i])-9);
+  });
+  g.textAlign='left';
+  $('sexplain').textContent='Speed = hours to peak ÷ (doublings it needs + 1 to wake up), at '+STD_F+'°F. The same yardstick for every ratio.';
+  // While this feed is still going: its doublings and when it would peak at a few speeds.
+  if(done[ks.length-1]){$('sfeed').innerHTML='';return}
+  const nd=doublingsOf(cur);if(!nd){$('sfeed').innerHTML='';return}
+  const fs=run.points.filter(p=>p.f!=null),fNow=fs.length?fs[fs.length-1].f:cur.f??STD_F;
+  const [st,fl,wa]=(cur.feed_g||'').split(':').map(Number),share=Math.round((st+fl+(wa||0))/st);
+  const at=s=>clock(cur.fed+s*Math.pow(2,(STD_F-fNow)/PLAN_F_PER_2X)*nd*3600e3);
+  const rows=[['Ready ('+READY_SPEED.toFixed(1)+' h / doubling)',READY_SPEED,true]];
+  idx.slice(-2).reverse().forEach(i=>rows.push(['As fast as '+day(ks[i].fed)+' ('+sp[i].toFixed(1)+')',sp[i]]));
+  const td='<td style="padding:4px 14px 4px 0;border-top:1px solid var(--line)">';
+  $('sfeed').innerHTML='<div class="label">This feed · '+fedAs(cur)+'</div>'+
+    '<div class="eq small" style="margin-top:6px;color:var(--fg)">'+(run.starter||'Starter').replace(/^./,c=>c.toUpperCase())+' is about 1/'+share+' of the jar, so it needs <b>'+(nd-PLAN_LAG).toFixed(1)+' doublings</b> to fill it, plus '+PLAN_LAG+' to wake up = <b>'+nd.toFixed(1)+'</b>.</div>'+
+    '<table class="small" style="margin-top:6px;border-collapse:collapse;width:100%"><tr style="color:var(--muted)"><td style="padding:0 14px 2px 0">If it is…</td><td>Peaks around ('+fNow.toFixed(0)+'°F)</td></tr>'+
+    rows.map(([t,s,b])=>'<tr>'+td+t+'</td>'+td+(b?'<b>'+at(s)+'</b>':at(s))+'</td></tr>').join('')+'</table>';
 }
 // Feed planner. Hours to peak ~ D x (log2(1/p) + PLAN_LAG): the starter has to
 // grow back by 1/p (p = its share of the jar after feeding) plus about one
@@ -441,6 +510,7 @@ const fedAs=k=>{const [st,fl,wa]=(k.feed_g||'').split(':').map(Number);return (s
 // row. Then use it for the dough near its peak (Feed soon / Feed now).
 const READY_H=8,READY_RUNS=2;
 const paceH=k=>READY_H/stdFactor(k);
+const READY_SPEED=READY_H/(Math.log2(STD_DIL)+PLAN_LAG);
 function readiness(){
   const ks=feedSegs().map(feedKpis);if(!ks.length)return;
   const good=k=>k.dblH!=null&&k.dblH*stdFactor(k)<=READY_H;
