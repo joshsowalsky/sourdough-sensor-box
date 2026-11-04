@@ -55,6 +55,18 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 <input id="rvessel" type="text" maxlength="120" class="wide-in" hidden placeholder="New jar, e.g. Weck 500 mL">
 <label class="note" style="display:block;margin-top:6px">Note <input id="rnote" type="text" maxlength="120" class="wide-in" placeholder="optional"></label></div>
 <a class="btn" id="calbtn" href="#" hidden>Calibrate empty jar</a> <a class="btn" id="startbtn" href="#" hidden>Starter in</a> <a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
+<div class="card" id="fccard" hidden><div class="label">Peak forecast · this feed</div>
+  <div class="big"><span id="fcnow">–</span><span class="unit" id="fcunit"></span></div>
+  <div class="small" id="fcnote"></div>
+  <canvas id="fcchart" style="height:170px;margin-top:8px"></canvas>
+  <div class="small" id="fckey"></div>
+  <div class="label" style="margin-top:12px">How the forecast moved</div>
+  <canvas id="fctrail" style="height:150px;margin-top:4px"></canvas>
+  <div class="small" id="fctrailnote"></div>
+  <div class="label" style="margin-top:12px">Track record</div>
+  <table id="fctrack" class="small" style="margin-top:4px;border-collapse:collapse;width:100%"></table>
+  <div class="small" id="fclearn"></div>
+</div>
 <div class="card" id="strengthcard" hidden><div class="label">Strength · how fast Gus multiplies</div>
   <div class="grid" style="margin-top:8px">
     <div class="sbox"><div class="label">Speed · hours per doubling</div><div class="big"><span id="sspeed">–</span><span class="unit">h</span></div><div class="small" id="sspeednote"></div></div>
@@ -322,6 +334,7 @@ function renderRun(){
   readiness();
   renderPlan();
   strength();
+  forecast();
 }
 // Strength as speed: hours per doubling of the starter's population, at
 // STD_F. A feed at 1:r:r dilutes it to 1/(1+2r) of the jar, so it needs
@@ -379,6 +392,238 @@ function strength(){
     '<div class="eq small" style="margin-top:6px;color:var(--fg)">'+(run.starter||'Starter').replace(/^./,c=>c.toUpperCase())+' is about 1/'+share+' of the jar, so it needs <b>'+(nd-PLAN_LAG).toFixed(1)+' doublings</b> to fill it, plus '+PLAN_LAG+' to wake up = <b>'+nd.toFixed(1)+'</b>.</div>'+
     '<table class="small" style="margin-top:6px;border-collapse:collapse;width:100%"><tr style="color:var(--muted)"><td style="padding:0 14px 2px 0">If it is…</td><td>Peaks around ('+fNow.toFixed(0)+'°F)</td></tr>'+
     rows.map(([t,s,b])=>'<tr>'+td+t+'</td>'+td+(b?'<b>'+at(s)+'</b>':at(s))+'</td></tr>').join('')+'</table>';
+}
+// ---- Peak forecast ---------------------------------------------------------
+// A feed sits flat while it wakes up, then climbs to its peak along much the
+// same curve each time: fraction of the rise r = ((t-L)/D)^k from the onset L
+// to the peak T = L+D. The wait L varies a lot (7 h when starved, 2 h since);
+// the climb D has stayed near 6 h at 1:2:2 and 1:1:1 alike. k is fitted to
+// past feeds.
+// Before the rise: T from speed x doublings at the room temp, speed from
+// recent finished feeds (newest counts most), corrected by how far that guess
+// was off on past feeds (bias) and as wide as its past misses (spread). D
+// from past climbs. Live: every reading since the feed is fitted for each
+// possible (T, D), with the rise height worked out exactly; the guesses are
+// the prior, so the forecast leans on them early and on the readings once it
+// climbs. Each fit costs a few ms, so the page replays the whole feed to
+// show how the forecast moved.
+const FC_K=1.1,FC_SPEED=3.5,FC_SIG=0.45,FC_SIG_MIN=0.15,FC_D=6,FC_D_SIG=0.35,FC_RISE=1,FC_RISE_SIG=0.3,FC_OBS=0.08,FC_BIN=15*60e3;
+const fcR=(t,T,D,k)=>t<=T-D?0:t<=T?Math.pow((t-T+D)/D,k):Math.max(0.3,1-3*((t-T)/D)**2);
+// 15-minute medians counted back from the latest reading, so every bucket is
+// full and the newest one moves with each reading.
+function fcBins(z,upto){
+  const m=new Map();
+  for(const p of z.pts){if(p.t>upto||p.t-z.fed<FC_BIN)continue;const k=Math.floor((upto-p.t)/FC_BIN);if(!m.has(k))m.set(k,[]);m.get(k).push(p)}
+  return [...m.values()].map(b=>({h:(median(b.map(p=>p.t))-z.fed)/3600e3,x:median(b.map(p=>p.x))}));
+}
+// Finished feeds whose peak was seen (not cut off by the next feed), with
+// their speed and, once the curve is fitted, their climb D.
+function fcFinished(ks,segs){
+  return ks.map((k,i)=>{
+    const z=segs[i];if(i===ks.length-1||k.peakH==null||k.peak<1.3||!z.pts.length)return null;
+    if(z.fed+k.peakH*3600e3>=z.pts[z.pts.length-1].t-30*60e3)return null;
+    const nd=doublingsOf(k);if(!nd)return null;
+    return {i,z,k,T:k.peakH,A:k.peak-1,speed:toStdF(k.peakH/nd,k.f),bins:fcBins(z,z.fed+k.peakH*3600e3)};
+  }).filter(Boolean);
+}
+// Shared k and each feed's climb D, by least squares up to its peak.
+function fcFitShape(done){
+  const bestD=(d,k)=>{let b=null;for(let D=1;D<=d.T;D+=0.1){let e=0;for(const p of d.bins)e+=((p.x-1)/d.A-fcR(p.h,d.T,D,k))**2;if(!b||e<b.e)b={e,D}}return b};
+  let best=null;
+  for(let k=0.6;k<=2.001;k+=0.05){const fits=done.map(d=>bestD(d,k)),e=fits.reduce((s,f)=>s+f.e,0);if(!best||e<best.e)best={e,k,Ds:fits.map(f=>f.D)}}
+  if(!best||!done.length)return {k:FC_K};
+  done.forEach((d,j)=>d.D=best.Ds[j]);
+  return {k:best.k};
+}
+const fcWmean=vs=>{let s=0,w=0;vs.forEach((v,j)=>{const q=Math.pow(0.5,vs.length-1-j);s+=v*q;w+=q});return s/w};
+const fcSpread=(vs,m,min,dflt)=>vs.length>=2?Math.max(min,Math.sqrt(vs.reduce((s,v)=>s+(v-m)**2,0)/vs.length)):dflt;
+// The before-the-rise guesses for feed k, from finished feeds `done` (all
+// before it, D fitted). The T guess is replayed on each past feed to learn
+// its bias and spread: the log error of what it would have said there.
+function fcPrior(k,done,fNow){
+  const nd=doublingsOf(k),tf=f=>Math.pow(2,(STD_F-(f??STD_F))/PLAN_F_PER_2X);
+  const raw=ds=>ds.length?fcWmean(ds.map(d=>d.speed)):FC_SPEED;
+  const errs=done.slice(1).map((d,j)=>Math.log(d.T/(raw(done.slice(0,j+1))*doublingsOf(d.k)*tf(d.k.f))));
+  const bias=errs.reduce((s,e)=>s+e,0)/(errs.length+2);  // shrunk toward 0 while there are few feeds
+  const sig=fcSpread(errs,bias,FC_SIG_MIN,FC_SIG),speed=raw(done)*Math.exp(bias);
+  const lD=done.filter(d=>d.D).map(d=>Math.log(d.D)),D0=lD.length?Math.exp(fcWmean(lD)):FC_D;
+  const As=done.map(d=>d.A),A0=As.length?fcWmean(As):FC_RISE;
+  return {T0:nd?speed*nd*tf(fNow??k.f):null,sig,bias,errs,speed,rawSpeed:raw(done),nd,
+    D0,sigD:fcSpread(lD,Math.log(D0),0.15,FC_D_SIG),A0,sigA:fcSpread(As,A0,0.2,FC_RISE_SIG)};
+}
+// Posterior over peak hours T (climb D and rise A worked out) from the
+// readings up to hour `h`. Returns the median and 80% range.
+function fcFit(z,pr,sh,h){
+  if(!pr.T0)return null;
+  const bins=fcBins(z,z.fed+h*3600e3),s2=FC_OBS**2,a2=pr.sigA**2;
+  const Ts=[],Ds=[];for(let j=0;j<=120;j++)Ts.push(1.5*Math.pow(36/1.5,j/120));
+  for(let j=-8;j<=8;j++)Ds.push(pr.D0*Math.exp(j*pr.sigD/3));
+  const lT=[],mA=[],bD=[];let mx=-Infinity;
+  for(const T of Ts){
+    let row=-Infinity,ra=0;const cells=[];
+    for(const D of Ds){
+      if(D>T)continue;
+      let sr=0,sy=0,syy=0;
+      for(const b of bins){const r=fcR(b.h,T,D,sh.k),y=b.x-1;sr+=r*r;sy+=r*y;syy+=y*y}
+      // Rise height A ~ N(A0, sigA) integrated out exactly.
+      const P=sr/s2+1/a2,m=(sy/s2+pr.A0/a2)/P;
+      const ll=-0.5*(syy/s2+pr.A0**2/a2-m*m*P)-0.5*Math.log(P*a2)-((Math.log(D)-Math.log(pr.D0))**2)/(2*pr.sigD**2);
+      cells.push([ll,m,D]);
+    }
+    if(!cells.length){lT.push(-Infinity);mA.push(pr.A0);bD.push(T);continue}
+    const cm=Math.max(...cells.map(c=>c[0]));let s=0;
+    for(const [l,m] of cells){const w=Math.exp(l-cm);s+=w;ra+=w*m}
+    row=cm+Math.log(s)-((Math.log(T)-Math.log(pr.T0))**2)/(2*pr.sig**2);
+    lT.push(row);mA.push(ra/s);bD.push(cells.reduce((b,c)=>c[0]>b[0]?c:b)[2]);if(row>mx)mx=row;
+  }
+  const p=lT.map(l=>Math.exp(l-mx)),tot=p.reduce((s,v)=>s+v,0);
+  const qi=f=>{let c=0;for(let i=0;i<p.length;i++){c+=p[i];if(c>=f*tot)return i}return p.length-1},q=f=>Ts[qi(f)],im=qi(0.5);
+  const A=p.reduce((s,v,i)=>s+v*mA[i],0)/tot;
+  return {T:Ts[im],lo:q(0.1),hi:q(0.9),A,curve:{T:Ts[im],D:bD[im],A:mA[im]},n:bins.length};
+}
+// The forecast card: headline, readings with the projected curve, how the
+// forecast moved (replayed every FC_BIN), and the track record on past
+// feeds, each replayed with only the feeds before it.
+let fcCache=null,fcPast=null;
+const fcDay=t=>new Date(t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
+const fcHrs=v=>(v>=0?'+':'−')+(Math.abs(v)<1?Math.round(Math.abs(v)*60)+' min':Math.abs(v).toFixed(1)+' h');
+// Hours after the feed that land on whole clock hours, every 1/2/3/4/6/12 h, so
+// labels sit at least px apart.
+function fcTicks(fed,h0,h1,span,px){
+  const per=(h1-h0)/Math.max(1,span/px),step=[1,2,3,4,6,12].find(v=>v>=per)||12,out=[];
+  const d=new Date(fed+h0*3600e3);d.setMinutes(0,0,0);let t=d.getTime();if(t<fed+h0*3600e3)t+=3600e3;
+  for(;t<=fed+h1*3600e3;t+=3600e3)if(new Date(t).getHours()%step===0)out.push((t-fed)/3600e3);
+  return out;
+}
+const fcHour=t=>new Date(t).toLocaleTimeString([],{hour:'numeric'});
+const fcTrail=(z,pr,sh,hEnd)=>{const out=[];for(let h=0;h<hEnd;h+=FC_BIN/3600e3)out.push({h,...fcFit(z,pr,sh,h)});return out};
+// Once the readings steer it, the curve fit has had a lean of its own (it
+// ran late on the first feeds: the top is a plateau and the fit centres on
+// it). That lean, learned from past feeds, is taken off in proportion to how
+// much the readings have narrowed the range: none before the rise, all of it
+// once the range is tight.
+function fcLean(stats){const v=stats.filter(x=>x!=null);return v.length?median(v)*v.length/(v.length+1):0}
+function fcAdjust(f,prior,lean){
+  const w=Math.min(1,Math.max(0,1-(f.hi-f.lo)/(prior.hi-prior.lo))),c=w*lean;
+  return {...f,T:f.T-c,lo:f.lo-c,hi:f.hi-c,shift:c,curve:f.curve&&{...f.curve,T:f.curve.T-c}};
+}
+// Past feeds, each replayed with only the feeds before it. Cached until a
+// feed finishes.
+function fcHistory(done){
+  const key=done.map(d=>d.z.fed+':'+d.T).join();
+  if(fcPast&&fcPast.key===key)return fcPast;
+  const raw=done.map((d,j)=>{
+    const before=done.slice(0,j),sh=fcFitShape(before),pr=fcPrior(d.k,before),tr=fcTrail(d.z,pr,sh,d.T);
+    // its lean: median miss from an hour into the climb until the peak
+    const D=fcFitShape([d])&&d.D,from=d.T-(D||FC_D)+1,ms=tr.filter(p=>p.h>=from).map(p=>p.T-d.T);
+    return {d,tr,stat:ms.length?median(ms):null};
+  });
+  const rows=raw.map((r,j)=>{
+    const lean=fcLean(raw.slice(0,j).map(q=>q.stat)),adj=r.tr.map(p=>fcAdjust(p,r.tr[0],lean));
+    const at=h=>h>0.25?adj.reduce((b,p)=>Math.abs(p.h-h)<Math.abs(b.h-h)?p:b).T-r.d.T:null;
+    return {fed:r.d.z.fed,k:r.d.k,T:r.d.T,prior:adj[0].T-r.d.T,h3:at(r.d.T-3),h1:at(r.d.T-1)};
+  });
+  return fcPast={key,rows,lean:fcLean(raw.map(r=>r.stat)),stats:raw.map(r=>r.stat)};
+}
+function fcCompute(){
+  const segs=feedSegs(),ks=segs.map(feedKpis),n=ks.length,cur=ks[n-1],z=segs[n-1];
+  if(!z.depth||!z.pts.length||!doublingsOf(cur))return null;
+  const key=n+':'+z.pts.length+':'+z.pts[z.pts.length-1].t+':'+z.pts[z.pts.length-1].x;
+  if(fcCache&&fcCache.key===key)return fcCache;
+  const done=fcFinished(ks,segs),hist=fcHistory(done);
+  // fcFitShape stores each feed's climb on it; this last call (all finished
+  // feeds) is the one the current feed uses.
+  const sh=fcFitShape(done),fs=run.points.filter(p=>p.f!=null),fNow=fs.length?fs[fs.length-1].f:cur.f??STD_F;
+  const pr=fcPrior(cur,done,fNow);
+  const finished=cur.peak!=null&&cur.peak>=1.3&&cur.last!=null&&cur.peak-cur.last>=0.1;
+  const hNow=(Math.min(Date.now(),z.pts[z.pts.length-1].t)-z.fed)/3600e3;
+  const raw=fcTrail(z,pr,sh,hNow);raw.push({h:hNow,...fcFit(z,pr,sh,hNow)});
+  const trail=raw.map(p=>fcAdjust(p,raw[0],hist.lean));
+  return fcCache={key,z,cur,pr,sh,live:trail[trail.length-1],trail,priorFit:trail[0],track:hist.rows,lean:hist.lean,nLean:hist.stats.filter(x=>x!=null).length,finished,hNow,done};
+}
+function forecast(){
+  const F=fcCompute();
+  if(!F){$('fccard').hidden=true;return}
+  $('fccard').hidden=false;
+  const {z,cur,pr,live,trail,priorFit,track,finished,hNow,done,lean,nLean}=F,at=h=>z.fed+h*3600e3;
+  const who=(run.starter||'starter').replace(/^./,c=>c.toUpperCase());
+  const rng=f=>clock(at(f.lo))+'–'+clock(at(f.hi));
+  const replay=h=>trail.reduce((b,p)=>Math.abs(p.h-h)<Math.abs(b.h-h)?p:b,trail[0]);
+  if(finished){
+    $('fcnow').textContent=clock(at(cur.peakH));$('fcunit').textContent='peaked · '+cur.peak.toFixed(1)+'x';
+    const e=h=>{if(h<0.25)return null;const r=replay(h);return fcHrs(r.T-cur.peakH)};
+    $('fcnote').innerHTML='Before the rise it said <b>'+clock(at(priorFit.T))+'</b> ('+fcHrs(priorFit.T-cur.peakH)+')'+
+      (e(cur.peakH-3)?'; 3 h before the peak, '+e(cur.peakH-3):'')+(e(cur.peakH-1)?'; 1 h before, '+e(cur.peakH-1):'')+'. + means it said later than it happened. This feed now teaches the next forecast.';
+  }else{
+    const left=live.T-hNow;
+    $('fcnow').textContent=clock(at(live.T));
+    $('fcunit').textContent=left>0.5?'in about '+(left<1.5?Math.round(left*60)+' min':left.toFixed(0)+' h'):'any time now';
+    const rising=!!riseOnset(z);
+    $('fcnote').innerHTML='<b style="color:var(--fg)">Likely '+rng(live)+'</b> (80% range). Updates with every reading: fitted to the '+hNow.toFixed(1)+' h since the feed, '+
+      (rising?'and it is climbing, so the readings now steer it.':'but it hasn\'t started climbing yet, so it leans on '+who+'\'s past speed until it does.')+
+      ' Peak height about '+(1+live.A).toFixed(1)+'x. <b>Before the rise:</b> '+clock(at(priorFit.T))+' ('+rng(priorFit)+').';
+  }
+  // Readings, the projected curve and the likely peak window.
+  {
+    const c=$('fcchart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
+    const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
+    const sm=smooth(z.pts,'x'),cv=live.curve,t1=Math.max(hNow,finished?hNow:Math.min(live.hi,36)+0.5);
+    const xs=sm.concat(finished?[]:[1+cv.A]),lo=Math.min(0.9,...xs),hi=Math.max(2.1,...xs)+0.05;
+    const L=34,R=8,T=12,B=20,W=w-L-R,H=h-T-B,X=hh=>L+W*hh/t1,Y=v=>T+H*(1-(v-lo)/(hi-lo));
+    g.font='11px system-ui';g.lineWidth=1;
+    if(!finished){g.fillStyle=css('--accent');g.globalAlpha=0.13;g.fillRect(X(live.lo),T,X(live.hi)-X(live.lo),H);g.globalAlpha=1}
+    g.strokeStyle=css('--line');g.fillStyle=css('--muted');g.textAlign='right';
+    for(let v=Math.ceil(lo*2)/2;v<=hi;v+=0.5){g.beginPath();g.moveTo(L,Y(v));g.lineTo(w-R,Y(v));g.stroke();g.fillText(v+'x',L-4,Y(v)+4)}
+    g.textAlign='center';
+    for(const hh of fcTicks(z.fed,0,t1,W,56))g.fillText(fcHour(at(hh)),X(hh),h-5);
+    // before-the-rise guess
+    g.setLineDash([2,3]);g.strokeStyle=css('--muted');g.beginPath();g.moveTo(X(priorFit.T),T);g.lineTo(X(priorFit.T),T+H);g.stroke();g.setLineDash([]);
+    g.globalAlpha=0.35;g.strokeStyle=css('--chart-d');g.beginPath();z.pts.forEach((p,i)=>{const hh=(p.t-z.fed)/3600e3;i?g.lineTo(X(hh),Y(p.x)):g.moveTo(X(hh),Y(p.x))});g.stroke();g.globalAlpha=1;
+    g.lineWidth=2;g.beginPath();z.pts.forEach((p,i)=>{const hh=(p.t-z.fed)/3600e3;i?g.lineTo(X(hh),Y(sm[i])):g.moveTo(X(hh),Y(sm[i]))});g.stroke();
+    if(!finished&&cv){
+      g.setLineDash([6,4]);g.beginPath();
+      const h0=Math.max(hNow,cv.T-cv.D);for(let hh=h0;hh<=t1;hh+=0.1){const v=1+cv.A*fcR(hh,cv.T,cv.D,F.sh.k);hh===h0?g.moveTo(X(hh),Y(v)):g.lineTo(X(hh),Y(v))}
+      g.stroke();g.setLineDash([]);
+      g.fillStyle=css('--chart-d');g.beginPath();g.arc(X(cv.T),Y(1+cv.A),4,0,7);g.fill();
+    }
+    g.strokeStyle=css('--fg');g.lineWidth=1;g.beginPath();g.moveTo(X(hNow),T);g.lineTo(X(hNow),T+H);g.stroke();
+    g.textAlign='left';
+  }
+  $('fckey').innerHTML='<span style="color:var(--chart-d)">━</span> readings <span style="color:var(--chart-d)">╍</span> projected <span style="color:var(--accent);opacity:.6">█</span> likely peak window <span style="color:var(--muted)">┆</span> before-the-rise guess │ now';
+  // How the forecast moved: forecast peak time against the time it was made.
+  {
+    const c=$('fctrail'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
+    const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
+    const t1=Math.max(hNow,1),ys=trail.flatMap(p=>[p.lo,p.hi]).concat(finished?[cur.peakH]:[]);
+    let lo=Math.max(0,Math.min(...ys)-0.5),hi=Math.max(...ys)+0.5;
+    const L=46,R=8,T=10,B=20,W=w-L-R,H=h-T-B,X=hh=>L+W*hh/t1,Y=v=>T+H*(1-(v-lo)/(hi-lo));
+    g.font='11px system-ui';g.lineWidth=1;g.strokeStyle=css('--line');g.fillStyle=css('--muted');g.textAlign='right';
+    for(const v of fcTicks(z.fed,lo,hi,H,24)){g.beginPath();g.moveTo(L,Y(v));g.lineTo(w-R,Y(v));g.stroke();g.fillText(fcHour(at(v)),L-4,Y(v)+4)}
+    g.textAlign='center';
+    for(const hh of fcTicks(z.fed,0,t1,W,56))g.fillText(fcHour(at(hh)),X(hh),h-5);
+    g.save();g.beginPath();g.rect(L,T,W,H);g.clip();
+    g.fillStyle=css('--accent');g.globalAlpha=0.15;g.beginPath();
+    trail.forEach((p,i)=>i?g.lineTo(X(p.h),Y(p.hi)):g.moveTo(X(p.h),Y(p.hi)));
+    [...trail].reverse().forEach(p=>g.lineTo(X(p.h),Y(p.lo)));g.closePath();g.fill();g.globalAlpha=1;
+    // "now": a peak can't be forecast earlier than this line.
+    g.strokeStyle=css('--muted');g.setLineDash([2,3]);g.beginPath();g.moveTo(X(0),Y(0));g.lineTo(X(t1),Y(t1));g.stroke();
+    if(finished){g.strokeStyle=css('--ok');g.setLineDash([5,4]);g.beginPath();g.moveTo(L,Y(cur.peakH));g.lineTo(w-R,Y(cur.peakH));g.stroke()}
+    g.setLineDash([]);g.strokeStyle=css('--chart-d');g.lineWidth=2;g.beginPath();
+    trail.forEach((p,i)=>i?g.lineTo(X(p.h),Y(p.T)):g.moveTo(X(p.h),Y(p.T)));g.stroke();
+    g.restore();g.textAlign='left';
+  }
+  const first=trail[0],moved=live.T-first.T;
+  $('fctrailnote').innerHTML='<span style="color:var(--chart-d)">━</span> forecast peak, as made at each time <span style="color:var(--accent);opacity:.6">█</span> its 80% range <span style="color:var(--muted)">┆</span> now'+(finished?' <span style="color:var(--ok)">╍</span> real peak':'')+
+    '. '+(trail.length>1?(Math.abs(moved)<0.25?'Hasn\'t moved much since the feed.':'Moved '+fcHrs(moved).replace('+','later by ').replace('−','earlier by ')+' since the feed, and the range has gone from '+((first.hi-first.lo)).toFixed(1)+' h wide to '+(live.hi-live.lo).toFixed(1)+' h.'):'');
+  // Track record and what it learned.
+  const td='<td style="padding:4px 12px 4px 0;border-top:1px solid var(--line)">',f=v=>v==null?'–':fcHrs(v);
+  $('fctrack').innerHTML=track.length?'<tr style="color:var(--muted)"><td style="padding:0 12px 2px 0">Feed</td><td>Peaked</td><td>Before the rise</td><td>3 h out</td><td>1 h out</td></tr>'+
+    track.map(r=>'<tr>'+td+fcDay(r.fed)+'<br><span class="note">'+fedAs(r.k)+'</span></td>'+td+clock(r.fed+r.T*3600e3)+'</td>'+td+f(r.prior)+'</td>'+td+f(r.h3)+'</td>'+td+f(r.h1)+'</td></tr>').join(''):'';
+  const pct=v=>Math.round(Math.abs(1-Math.exp(v))*100)+'%';
+  $('fclearn').innerHTML=(track.length?'How far off each forecast was, replayed with only the feeds before it (+ = said later than it happened). ':'')+
+    '<b>What it has learned so far</b> from '+done.length+' finished feed'+(done.length===1?'':'s')+': '+who+'\'s recent speed is '+pr.rawSpeed.toFixed(1)+' h per doubling (newest counts most). '+
+    (pr.errs.length?'That guess has run '+(pr.bias<0?'slow':'fast')+' on past feeds, so it\'s '+(pr.bias<0?'shortened':'lengthened')+' by '+pct(pr.bias)+', and its misses (±'+pct(pr.sig)+') set the range. ':'')+
+    'Once it starts climbing, past feeds took about '+pr.D0.toFixed(1)+' h from first lift to peak, which pins the peak down'+(nLean?', and the fitted curve has run '+fcHrs(lean).replace('+','').replace('−','')+' '+(lean>=0?'late':'early')+' near the top, so that is taken off as the readings take over':'')+'. Each finished feed is added automatically, so this gets sharper with every feed.';
 }
 // Feed planner. Hours to peak ~ D x (log2(1/p) + PLAN_LAG): the starter has to
 // grow back by 1/p (p = its share of the jar after feeding) plus about one
@@ -454,29 +699,16 @@ function riseOnset(z){
   const sm=smooth(z.pts,'x'),i=sm.findIndex(x=>(x-1)*z.depth>=ONSET_CM);
   return i<0?null:{t:z.pts[i].t,sm};
 }
-// Peak estimate while rising, once there are OUTLOOK_AFTER_H hours of climb
-// to measure. Two takes, shown as a range: (1) past feeds' hours from onset
-// to an observed peak (RISE_TO_PEAK_H until there is one), (2) the last 2 h
-// climb rate carried on to 2x. The climb slows near the top, so (2) runs early.
+// While rising: since when, and the last 2 h climb rate. The peak time is
+// the Peak forecast card's job (forecast()).
 function peakOutlook(){
   const segs=feedSegs(),z=segs[segs.length-1],on=riseOnset(z);if(!on)return null;
   const now=Date.now(),h=(now-on.t)/3600e3;
-  if(h<OUTLOOK_AFTER_H)return 'Started rising at '+clock(on.t)+'. Peak estimate from '+clock(on.t+OUTLOOK_AFTER_H*3600e3)+', once it has '+OUTLOOK_AFTER_H+' h of climb to measure.';
-  const past=segs.slice(0,-1).map(p=>{
-    const o=riseOnset(p),k=feedKpis(p);if(!o||k.peakH==null)return null;
-    const peakT=p.fed+k.peakH*3600e3;
-    return peakT<p.pts[p.pts.length-1].t-30*60e3?(peakT-o.t)/3600e3:null;  // peak seen, not cut off by the next feed
-  }).filter(v=>v!=null&&v>0);
-  const toPeak=past.length?past.sort((a,b)=>a-b)[Math.floor(past.length/2)]:RISE_TO_PEAK_H;
+  if(h<OUTLOOK_AFTER_H)return 'Started rising at '+clock(on.t)+'. Peak time: see Peak forecast below.';
   // Least-squares climb over the last 2 h, in cm/h.
   const w=z.pts.filter(p=>p.t>=now-2*3600e3),n=w.length,mt=w.reduce((s,p)=>s+p.t,0)/n,mx=w.reduce((s,p)=>s+p.x,0)/n;
-  const slope=w.reduce((s,p)=>s+(p.t-mt)*(p.x-mx),0)/(w.reduce((s,p)=>s+(p.t-mt)**2,0)||1)*3600e3;
-  const cmh=slope*z.depth,xNow=on.sm[on.sm.length-1];
-  const a=on.t+toPeak*3600e3,b=xNow<2&&slope>0?now+(2-xNow)/slope*3600e3:null;
-  const lo=Math.min(a,b??a),hi=Math.max(a,b??a);
-  let t='<b>Peak estimate: '+(hi-lo<20*60e3?'around '+clock((lo+hi)/2):clock(lo)+' to '+clock(hi))+'.</b> Rising since '+clock(on.t)+', '+(cmh*10).toFixed(1)+' mm/h over the last 2 h. ';
-  t+=(past.length?'Past feeds peaked '+toPeak.toFixed(1)+' h after they started rising':'Assumes it peaks about '+RISE_TO_PEAK_H+' h after it started rising')+' ('+clock(a)+')';
-  t+=b?'; at this pace it reaches 2x by '+clock(b)+', but the climb usually slows near the top.':'.';
+  const slope=w.reduce((s,p)=>s+(p.t-mt)*(p.x-mx),0)/(w.reduce((s,p)=>s+(p.t-mt)**2,0)||1)*3600e3,cmh=slope*z.depth;
+  let t='Rising since '+clock(on.t)+', '+(cmh*10).toFixed(1)+' mm/h over the last 2 h. Peak time: see Peak forecast below.';
   // Slowing down: the last hour's climb against its fastest hour, both on the
   // smoothed line. ("Feed soon" takes over under 1.5 mm and half the fastest.)
   const ix=t=>{let i=z.pts.findIndex(p=>p.t>=t);return i<0?z.pts.length-1:i};
