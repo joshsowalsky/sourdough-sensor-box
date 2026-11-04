@@ -156,9 +156,19 @@ function startDepth(r=run,start){
   const g=(r.feed_g||'').split(':').reduce((a,b)=>a+Number(b),0);
   return k&&g>0?g/10*CM_PER_10G[k]:null;
 }
+// Drop readings more than SPIKE_CM off the median of their neighbours (5 each
+// side): starter can't move a centimetre in a few minutes, but a lifted or
+// bumped box reads anything (7.9 cm when lifted just before a Pause).
+const SPIKE_CM=1;
+function despike(pts){
+  return pts.filter((p,i)=>{
+    const nb=pts.slice(Math.max(0,i-5),i).concat(pts.slice(i+1,i+6)).map(q=>q.d);
+    return nb.length<2||Math.abs(p.d-median(nb))<=SPIKE_CM;
+  });
+}
 function runStats(){
   const fed=new Date(run.fed_at).getTime();
-  const pts=run.points.map(p=>({t:new Date(p.t).getTime(),d:p.d,f:p.f})).filter(p=>p.t>=fed);
+  const pts=despike(run.points.map(p=>({t:new Date(p.t).getTime(),d:p.d,f:p.f})).filter(p=>p.t>=fed));
   // Before the first logged reading, the live one stands in (box on the jar).
   const live=doc&&doc.distance_cm!=null&&!pausedSince()?doc.distance_cm:null;
   const start=pts.length?median(pts.filter(p=>p.t-fed<=600e3).map(p=>p.d)):(live??NaN);
@@ -310,7 +320,7 @@ function renderPlan(){
 function feedSegs(){
   return [...(run.history||[]),run].map(r=>{
     const fed=new Date(r.fed_at).getTime();
-    const pts=r.points.map(p=>({t:new Date(p.t).getTime(),d:p.d})).filter(p=>p.t>=fed);
+    const pts=despike(r.points.map(p=>({t:new Date(p.t).getTime(),d:p.d})).filter(p=>p.t>=fed));
     const start=median(pts.filter(p=>p.t-fed<=15*60e3).map(p=>p.d)),depth=startDepth(r,start);
     const fs=r.points.filter(p=>p.f!=null).map(p=>p.f),f=r.room_f_avg??(fs.length?fs.reduce((a,b)=>a+b)/fs.length:null);
     return {fed,vessel:r.vessel,feed_g:r.feed_g,f,depth,pts:depth&&!isNaN(start)?pts.map(p=>({t:p.t,x:1+(start-p.d)/depth})):[]};
@@ -438,7 +448,8 @@ function seriesChart(){
   sv.view={t0,t1,span,full,first,now,L,W};
   document.querySelectorAll('#serieswin .chip[data-h]').forEach(b=>b.classList.toggle('on',sv.custom?false:+b.dataset.h===sv.win));
   $('seriesnow').hidden=sv.end==null;
-  const vis=segs.flatMap(z=>z.pts.filter(p=>p.t>=t0&&p.t<=t1).map(p=>p.x)),xs=vis.length?vis:segs.flatMap(z=>z.pts.map(p=>p.x));
+  // One scale for every feed, so scrolling doesn't stretch or squash the curves.
+  const xs=segs.flatMap(z=>z.pts.map(p=>p.x));
   const lo=Math.min(...xs,0.9)-0.1,hi=Math.max(...xs,2)+0.2,Y=v=>T+H*(1-(v-lo)/(hi-lo));
   g.font='11px system-ui';g.lineWidth=1;g.strokeStyle=css('--line');g.fillStyle=css('--muted');
   // Clock-time ticks on whole hours, as many as fit; midnight shows the day.
