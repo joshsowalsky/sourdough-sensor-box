@@ -50,6 +50,8 @@ main:not(.tab-bake)>#baketab{display:none!important}
 .ing{list-style:none;margin:4px 0 6px;padding:0}
 .ing li{padding:1px 0}
 #bakrecipe .ing{color:var(--fg);font-size:.95rem}
+input.ingin{width:4.8em;margin:0 6px 0 0;min-height:34px;padding:4px 6px;text-align:right;font-variant-numeric:tabular-nums}
+.ing li:has(input.ingin){padding:2px 0}
 .ing b{display:inline-block;min-width:3.8em;text-align:right;margin-right:8px;font-variant-numeric:tabular-nums}
 .bknow h3{font-size:1rem;margin:12px 0 2px}
 .sbox{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;min-width:0}
@@ -79,7 +81,8 @@ main:not(.tab-bake)>#baketab{display:none!important}
     <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><button class="chip" id="bakreset">Start over</button></div>
     <div class="note" id="bakrecipe" style="margin-top:6px"></div>
     <div id="baksteps" style="margin-top:8px"></div>
-    <div class="note" style="margin-top:6px">Tap Done as you finish each step; the times after it move to match. Tap a done time to fix it. Times are a guide: the dough decides, especially when the bulk rise ends.</div></div>
+    <div class="note" style="margin-top:6px">Tap Done as you finish each step; the times after it move to match. Tap a done time to fix it. Times are a guide: the dough decides, especially when the bulk rise ends.</div>
+    <div class="note" id="baksync" style="margin-top:4px"></div></div>
   <div class="card bknow"><div class="label">Good to know</div><div id="bakknow" class="small" style="color:var(--fg);font-size:.92rem"></div></div>
 </section>
 <div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div class="small" id="outlook" hidden></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><div id="kpiwrap"><table id="kpis" class="ktab small"></table></div><div id="recipe" hidden style="margin-top:10px"><div class="label">What you fed</div>
@@ -1311,12 +1314,12 @@ const BAKE_F=76,BULK_H=5,USE_H=2,GUS_PER_LOAF=100,GUS_MIN=80,GUS_KEEP=15;
 const gusPer=()=>bk.gus!=null&&bk.gus>=GUS_MIN?bk.gus:GUS_PER_LOAF;
 const bakeF=()=>doc&&doc.temp_c!=null?doc.temp_c*9/5+32:BAKE_F;
 const warmBy=F=>Math.pow(2,(BAKE_F-F)/PLAN_F_PER_2X);
-let bk={loaves:1,done:{}};
+let bk={loaves:1,done:{},amt:{}},bkGus=null;
 try{bk={...bk,...JSON.parse(store.get('bakerun')||'{}')}}catch(e){}
 const bkSave=()=>store.set('bakerun',JSON.stringify(bk));
 const BAKE_STEPS=[
-  {id:'mix',t:'Mix',what:n=>'In a big bowl:'+ingList([[450*n,'bread flour'],[50*n,'whole wheat'],[350*n,'warm water (about 80°F)'],[gusPer()*n,'Gus']])+'Squish until no dry flour is left, then cover. Leave about '+GUS_KEEP+' g of Gus in the jar for next time.'},
-  {id:'salt',t:'Add the salt',after:['mix',40],what:n=>ingList([[10*n,'salt'],[15*n,'water']])+'Pinch and squeeze it through until you can’t feel the grains.'},
+  {id:'mix',t:'Mix',what:n=>'In a big bowl:'+ingEdit(BAKE_ING.mix)+'Squish until no dry flour is left, then cover. Leave about '+GUS_KEEP+' g of Gus in the jar for next time.'},
+  {id:'salt',t:'Add the salt',after:['mix',40],what:n=>ingEdit(BAKE_ING.salt)+'Pinch and squeeze it through until you can’t feel the grains.'},
   {id:'f1',t:'Stretch and fold 1 of 4',after:['salt',30],what:()=>'Wet your hand. Lift one side of the dough, fold it over the top, turn the bowl a quarter, and repeat 4 times. Cover.'},
   {id:'f2',t:'Fold 2 of 4',after:['f1',30],what:()=>'Same as the first.'},
   {id:'f3',t:'Fold 3 of 4',after:['f2',30],what:()=>'Same again. It should feel smoother and hold its shape more.'},
@@ -1329,9 +1332,17 @@ const BAKE_STEPS=[
   {id:'bake',t:'Bake',after:['heat',55],what:()=>'Straight from the fridge: turn it out onto parchment, score the top, into the pot. 20 min lid on at 475°F, then 20–25 min lid off until deep brown.'},
   {id:'cool',t:'Cool, then cut',after:['bake',45],what:()=>'At least 1 h on a rack. It is still cooking inside.'}];
 function r0(v){return Math.round(v)}
-const ingList=rows=>'<ul class="ing">'+rows.map(([g,t])=>'<li><b>'+r0(g)+' g</b>'+t+'</li>').join('')+'</ul>';
+// Every amount has a default (per loaf) and a box to type what you really used.
+const ING={flour:{name:'bread flour',per:450},ww:{name:'whole wheat',per:50},water:{name:'water (room temp)',per:350},
+  gus:{name:'Gus',per:null},salt:{name:'salt',per:10},saltw:{name:'water, with the salt',per:15}};
+const BAKE_ING={mix:['flour','ww','water','gus'],salt:['salt','saltw']};
+const amt=k=>bk.amt&&bk.amt[k]!=null?bk.amt[k]:(k==='gus'?gusPer():ING[k].per)*bk.loaves;
+const g1d=v=>String(+(+v).toFixed(1));
+const ingEdit=keys=>'<ul class="ing">'+keys.map(k=>'<li><input type="number" inputmode="decimal" step="any" min="0" class="ingin" data-amt="'+k+'" value="'+g1d(amt(k))+'">g '+ING[k].name+'</li>').join('')+'</ul>';
+const gusPct=()=>amt('gus')/Math.max(1,amt('flour')+amt('ww'));
+const ingList=rows=>'<ul class="ing">'+rows.map(([g,t])=>'<li><b>'+g1d(g)+' g</b>'+t+'</li>').join('')+'</ul>';
 function bakeTimes(){
-  const T={},now=Date.now(),F=bakeF(),bh=BULK_H*warmBy(F);
+  const T={},now=Date.now(),F=bakeF(),bh=(BULK_H+2*Math.log2(0.2/Math.max(0.05,gusPct())))*warmBy(F);
   let prev=0;
   for(const st of BAKE_STEPS){
     let t=bk.done[st.id];
@@ -1368,6 +1379,7 @@ function bakeGus(){
   }
   else{const fc=fcCompute();if(fc&&!fc.pending&&!fc.finished)peakT=cur.fed+fc.live.T*3600e3}
   const end=peakT&&(topEnd||peakT)+useH*3600e3;
+  bkGus={x:cur.last,past:past?(now-(topEnd||peakT))/3600e3:null};
   const topTxt=past?(topEnd-peakT>20*60e3?'At its top ('+cur.peak.toFixed(1)+'x) from '+clock(peakT)+' to '+clock(topEnd)+'.':'Peaked at '+clock(peakT)+' ('+cur.peak.toFixed(1)+'x).'):'';
   const [st0,fl0,wa0]=(run.feed_g||'').split(':').map(Number),have=Math.max(0,(st0+fl0+(wa0||0)||0)-JAR_LOSS);
   const spare=have-GUS_KEEP,per=Math.min(GUS_PER_LOAF,Math.floor(spare/bk.loaves/5)*5);
@@ -1405,7 +1417,7 @@ function bakeTab(){
   if($('baksteps').contains(document.activeElement))return;  // don't redraw under a time being edited
   const n=bk.loaves,{T,bh,F}=bakeTimes(),next=BAKE_STEPS.find(st=>!bk.done[st.id]),now=Date.now();
   if(document.activeElement!==$('bakn'))$('bakn').value=n;
-  $('bakrecipe').innerHTML='<span style="color:var(--fg)">All of it, for '+(n===1?'1 loaf':n+' loaves')+':</span>'+ingList([[450*n,'bread flour'],[50*n,'whole wheat'],[365*n,'water'],[gusPer()*n,'Gus'],[10*n,'salt']])+'Using your own recipe? Keep its amounts and follow these times.';
+  bakeSummary();
   const hm=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
   const dayOf=t=>new Date(t).toDateString()===new Date().toDateString()?'':new Date(t).toLocaleDateString([],{weekday:'short'})+' ';
   const lastDone=[...BAKE_STEPS].reverse().find(st=>bk.done[st.id]);
@@ -1422,6 +1434,28 @@ function bakeTab(){
     return '<div class="bstep'+(isNext?' next':'')+(d?' done':'')+'"><div class="when">'+when+'</div><div class="what"><b>'+st.t+'</b><br>'+what+(btn?'<div>'+btn+'</div>':'')+'</div></div>';
   }).join('');
 }
+function bakeSummary(){
+  const n=bk.loaves,A=amt,[,fl,wa]=((run&&run.feed_g)||'').split(':').map(Number),gf=fl>0?fl/(fl+(wa||0)):0.5;
+  const flour=A('flour')+A('ww')+A('gus')*gf,water=A('water')+A('saltw')+A('gus')*(1-gf),pc=v=>Math.round(v*100)+'%';
+  $('bakrecipe').innerHTML='<span style="color:var(--fg)">All of it, for '+(n===1?'1 loaf':n+' loaves')+' (type what you really used in the boxes below):</span>'+
+    ingList([[A('flour'),'bread flour'],[A('ww'),'whole wheat'],[A('water')+A('saltw'),'water'],[A('gus'),'Gus'],[A('salt'),'salt']])+
+    '<span style="color:var(--fg)">'+pc(water/flour)+' water (counting the water and flour in Gus), Gus '+pc(gusPct())+' of the flour, salt '+pc(A('salt')/flour)+'.</span> Using your own recipe? Type its amounts in and follow these times.';
+}
+// Each step goes to the PC's bake log too (through the same private topic
+// as Pause), with the amounts used. No pause key: this device only.
+let bkSendT=null;
+async function sendBake(kind,id,at){
+  const key=store.get('pausekey');
+  if(!key){$('baksync').textContent='Saved on this device only: it has no pause key, so the bake log on the PC doesn’t get these.';return}
+  const ev={step:id,kind,at:at||bk.done[id]||Date.now(),fed:run?new Date(run.fed_at).getTime():null,temp:+bakeF().toFixed(1)};
+  if(BAKE_ING[id])ev.amt=Object.fromEntries(BAKE_ING[id].map(k=>[k,+(+amt(k)).toFixed(1)]));
+  if(id==='mix'&&bkGus){if(bkGus.x!=null)ev.x=+bkGus.x.toFixed(2);if(bkGus.past!=null)ev.past=+bkGus.past.toFixed(2)}
+  try{
+    const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:'bake '+JSON.stringify(ev)});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    $('baksync').textContent='Saved to the bake log on the PC ('+clock(Date.now())+').';
+  }catch(e){$('baksync').textContent='Couldn’t reach the PC’s bake log ('+e.message+'). It’s still saved on this device.'}
+}
 function setTab(t){
   document.querySelector('main').classList.toggle('tab-bake',t==='bake');
   document.querySelectorAll('#tabs [data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
@@ -1431,17 +1465,26 @@ function setTab(t){
 $('tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){setTab(b.dataset.tab);scrollTo(0,0)}};
 $('baksteps').onclick=e=>{
   const d=e.target.closest('[data-bd]'),u=e.target.closest('[data-bu]');
-  if(d){bk.done[d.dataset.bd]=Date.now();bkSave();bakeTab()}
-  if(u){delete bk.done[u.dataset.bu];bkSave();bakeTab()}
+  if(d){const id=d.dataset.bd;bk.done[id]=Date.now();bkSave();bakeTab();sendBake('done',id)}
+  if(u){const id=u.dataset.bu,at=bk.done[id];delete bk.done[id];bkSave();bakeTab();sendBake('undo',id,at)}
 };
 $('baksteps').onchange=e=>{
   const id=e.target.dataset&&e.target.dataset.bt;if(!id||!e.target.value)return;
   const [hh,mm]=e.target.value.split(':').map(Number),t=new Date(bk.done[id]);t.setHours(hh,mm,0,0);
   if(t.getTime()>Date.now()+10*60e3)t.setDate(t.getDate()-1);
-  bk.done[id]=t.getTime();bkSave();e.target.blur();bakeTab();
+  bk.done[id]=t.getTime();bkSave();e.target.blur();bakeTab();sendBake('time',id);
 };
-$('bakn').oninput=e=>{const v=parseFloat(e.target.value);if(v>0){bk.loaves=v;bkSave();bakeTab()}};
-$('bakreset').onclick=()=>{if(confirm('Start over? This clears the step times.')){bk.done={};bkSave();bakeTab()}};
+$('baksteps').addEventListener('input',e=>{
+  const k=e.target.dataset&&e.target.dataset.amt;if(!k)return;
+  const v=parseFloat(e.target.value);if(v>=0)bk.amt[k]=v;else delete bk.amt[k];
+  bkSave();bakeSummary();
+  // Changed after the step was done: send the new amounts once typing stops.
+  const id=Object.keys(BAKE_ING).find(s=>BAKE_ING[s].includes(k));
+  clearTimeout(bkSendT);if(bk.done[id])bkSendT=setTimeout(()=>sendBake('amounts',id),4000);
+});
+$('baksteps').addEventListener('focusout',()=>setTimeout(()=>{if(!$('baksteps').contains(document.activeElement))bakeTab()},0));
+$('bakn').oninput=e=>{const v=parseFloat(e.target.value);if(v>0){bk.loaves=v;bk.amt={};bkSave();bakeTab()}};
+$('bakreset').onclick=()=>{if(confirm('Start over? This clears the step times.')){bk.done={};bk.amt={};bkSave();bakeTab()}};
 function ago(s){if(s<90)return Math.round(s)+' s ago';if(s<5400)return Math.round(s/60)+' min ago';return (s/3600).toFixed(1)+' h ago'}
 async function load(){
   try{
