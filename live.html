@@ -47,6 +47,10 @@ main:not(.tab-bake)>#baketab{display:none!important}
 .bstep.done .what{color:var(--muted)}
 .bcheck{display:flex;gap:8px;margin-top:8px}
 .bcheck>span:first-child{flex:0 0 1.2em;font-weight:700}
+.ing{list-style:none;margin:4px 0 6px;padding:0}
+.ing li{padding:1px 0}
+#bakrecipe .ing{color:var(--fg);font-size:.95rem}
+.ing b{display:inline-block;min-width:3.8em;text-align:right;margin-right:8px;font-variant-numeric:tabular-nums}
 .bknow h3{font-size:1rem;margin:12px 0 2px}
 .sbox{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;min-width:0}
 .eq{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px}
@@ -1311,8 +1315,8 @@ let bk={loaves:1,done:{}};
 try{bk={...bk,...JSON.parse(store.get('bakerun')||'{}')}}catch(e){}
 const bkSave=()=>store.set('bakerun',JSON.stringify(bk));
 const BAKE_STEPS=[
-  {id:'mix',t:'Mix',what:n=>'In a big bowl: '+r0(450*n)+' g bread flour, '+r0(50*n)+' g whole wheat, '+r0(350*n)+' g warm water (about 80°F) and '+r0(gusPer()*n)+' g Gus. Squish until no dry flour is left, then cover. Leave about '+GUS_KEEP+' g of Gus in the jar for next time.'},
-  {id:'salt',t:'Add the salt',after:['mix',40],what:n=>r0(10*n)+' g salt and '+r0(15*n)+' g water. Pinch and squeeze it through until you can’t feel the grains.'},
+  {id:'mix',t:'Mix',what:n=>'In a big bowl:'+ingList([[450*n,'bread flour'],[50*n,'whole wheat'],[350*n,'warm water (about 80°F)'],[gusPer()*n,'Gus']])+'Squish until no dry flour is left, then cover. Leave about '+GUS_KEEP+' g of Gus in the jar for next time.'},
+  {id:'salt',t:'Add the salt',after:['mix',40],what:n=>ingList([[10*n,'salt'],[15*n,'water']])+'Pinch and squeeze it through until you can’t feel the grains.'},
   {id:'f1',t:'Stretch and fold 1 of 4',after:['salt',30],what:()=>'Wet your hand. Lift one side of the dough, fold it over the top, turn the bowl a quarter, and repeat 4 times. Cover.'},
   {id:'f2',t:'Fold 2 of 4',after:['f1',30],what:()=>'Same as the first.'},
   {id:'f3',t:'Fold 3 of 4',after:['f2',30],what:()=>'Same again. It should feel smoother and hold its shape more.'},
@@ -1325,6 +1329,7 @@ const BAKE_STEPS=[
   {id:'bake',t:'Bake',after:['heat',55],what:()=>'Straight from the fridge: turn it out onto parchment, score the top, into the pot. 20 min lid on at 475°F, then 20–25 min lid off until deep brown.'},
   {id:'cool',t:'Cool, then cut',after:['bake',45],what:()=>'At least 1 h on a rack. It is still cooking inside.'}];
 function r0(v){return Math.round(v)}
+const ingList=rows=>'<ul class="ing">'+rows.map(([g,t])=>'<li><b>'+r0(g)+' g</b>'+t+'</li>').join('')+'</ul>';
 function bakeTimes(){
   const T={},now=Date.now(),F=bakeF(),bh=BULK_H*warmBy(F);
   let prev=0;
@@ -1400,7 +1405,7 @@ function bakeTab(){
   if($('baksteps').contains(document.activeElement))return;  // don't redraw under a time being edited
   const n=bk.loaves,{T,bh,F}=bakeTimes(),next=BAKE_STEPS.find(st=>!bk.done[st.id]),now=Date.now();
   if(document.activeElement!==$('bakn'))$('bakn').value=n;
-  $('bakrecipe').textContent='For '+(n===1?'1 loaf':n+' loaves')+': '+r0(450*n)+' g bread flour, '+r0(50*n)+' g whole wheat, '+r0(365*n)+' g water, '+r0(gusPer()*n)+' g Gus, '+r0(10*n)+' g salt. Using your own recipe? Keep its amounts and follow these times.';
+  $('bakrecipe').innerHTML='<span style="color:var(--fg)">All of it, for '+(n===1?'1 loaf':n+' loaves')+':</span>'+ingList([[450*n,'bread flour'],[50*n,'whole wheat'],[365*n,'water'],[gusPer()*n,'Gus'],[10*n,'salt']])+'Using your own recipe? Keep its amounts and follow these times.';
   const hm=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
   const dayOf=t=>new Date(t).toDateString()===new Date().toDateString()?'':new Date(t).toLocaleDateString([],{weekday:'short'})+' ';
   const lastDone=[...BAKE_STEPS].reverse().find(st=>bk.done[st.id]);
