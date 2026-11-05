@@ -192,13 +192,40 @@ function fillJars(cur){
   const day=t=>new Date(t).toLocaleDateString([],{month:'short',day:'numeric'});
   $('rjars').innerHTML='<tr><th>Jar</th><th>Empty</th><th>Feeds</th></tr>'+[...jt.values()].map(j=>'<tr><td>'+esc(j.name)+'</td><td>'+(j.empty?j.empty.toFixed(1)+' cm<div class="sub">'+day(j.at)+'</div>':'<span class="sub">not yet</span>')+'</td><td>'+j.feeds+'</td></tr>').join('');
 }
+// Jar picker. "+ Add a jar…" is a two-step flow that can't be skipped:
+// calibrate the empty jar, then name it (or cancel back to the last jar).
+// Picking a known jar after a calibration checks the reading against it.
+let lastJar=null;
+const jarBtn=(act,t)=>' <button class="chip" data-jar="'+act+'" style="min-height:34px;padding:4px 10px;margin-top:4px">'+t+'</button>';
 const showJar=()=>{
-  const v=$('rvesselsel').value,j=jarTable().find(q=>q.name===v);$('rvessel').hidden=v!=='new';
-  $('rjarnote').innerHTML=calNow?'<strong style="color:var(--fg)">Which jar did you just measure?</strong> Pick it or add it here: Starter in saves '+calNow.toFixed(1)+' cm under its name, so next time you can skip Calibrate.'
-    :v==='new'?'New jar: tap Calibrate with it empty first, once.'
-    :j&&j.empty?'<span style="color:var(--ok)">✓ Known jar, empty '+j.empty.toFixed(1)+' cm.</span> No need to calibrate.'
+  const v=$('rvesselsel').value,j=jarTable().find(q=>q.name===v),n=$('rjarnote');
+  const measuring=calib&&calib.cm==null&&!calib.failed;
+  if(v!=='new')lastJar=v;
+  $('rvessel').hidden=!(v==='new'&&calNow&&!measuring);
+  if(v==='new'){
+    if(measuring)n.innerHTML='<strong style="color:var(--fg)">New jar, step 1 of 2:</strong> measuring… keep the box still on the empty jar, about 10 seconds.'+jarBtn('cancel','Cancel');
+    else if(!calNow)n.innerHTML='<strong style="color:var(--fg)">New jar, step 1 of 2:</strong> put the box on the new jar, clean and empty, and tap Calibrate.'+
+      (calib&&calib.failed?' <span style="color:var(--warn)">The last try didn\'t get a reading: check the box sits flat.</span>':'')+jarBtn('cal','Calibrate')+jarBtn('cancel','Cancel');
+    else n.innerHTML='<strong style="color:var(--fg)">Step 2 of 2:</strong> it reads '+calNow.toFixed(1)+' cm empty. Name it above, then save.'+jarBtn('save','Save jar')+jarBtn('cal','Measure again')+jarBtn('cancel','Cancel');
+    return;
+  }
+  const known=j&&j.empty;
+  n.innerHTML=calNow&&known&&Math.abs(calNow-j.empty)>0.5?'<span style="color:var(--warn)">You just measured '+calNow.toFixed(1)+' cm, but this jar read '+j.empty.toFixed(1)+' cm before.</span> A different jar? Choose "+ Add a jar…" to name it. Same jar with the box sitting differently? Starter in saves '+calNow.toFixed(1)+' cm for it.'
+    :calNow&&known?'<span style="color:var(--ok)">✓ Matches this jar ('+j.empty.toFixed(1)+' cm before).</span>'
+    :calNow?'Starter in saves '+calNow.toFixed(1)+' cm as this jar\'s empty reading.'
+    :known?'<span style="color:var(--ok)">✓ Known jar, empty '+j.empty.toFixed(1)+' cm.</span> No need to calibrate.'
     :'Not calibrated yet: tap Calibrate with this jar empty, once, and it is remembered.';
 };
+function jarAct(act){
+  if(act==='cal'){sendCtl('calibrate');return}
+  if(act==='cancel'){$('rvessel').value='';$('rvesselsel').value=lastJar||$('rvesselsel').options[0].value}
+  if(act==='save'){
+    const name=$('rvessel').value.trim();
+    if(!name){$('rvessel').focus();$('rvessel').placeholder='Name the jar, e.g. Weck 500 mL';return}
+    addSaved('jars',name);fillJars(name);$('rvessel').value='';
+  }
+  showJar();refreshNext();if(run)renderPlan();
+}
 const vesselIn=()=>$('rvesselsel').value==='new'?$('rvessel').value.trim():$('rvesselsel').value;
 function flourText(){
   const m=$('rflourmix').value,g=Number($('rg_f').value);
@@ -245,6 +272,7 @@ function fillRecipe(ps){
   fillJars(run.next_vessel||run.vessel);$('rvessel').value='';$('rnote').value='';
 }
 async function sendCtl(c){
+  if(c==='start'&&$('rvesselsel').value==='new'&&!$('rvessel').value.trim()){showJar();$('rjarnote').scrollIntoView({behavior:'smooth',block:'center'});return}
   const key=store.get('pausekey'),rec=c==='start'?recipeIn():null;
   if(rec){if($('rvesselsel').value==='new')addSaved('jars',rec.vessel);if($('rflourmix').value==='other')addSaved('flours',$('rflour').value.trim())}
   if(!key){location.replace(CTL+'/'+c+(rec?'?'+new URLSearchParams(rec):''));return}
@@ -395,7 +423,8 @@ function renderRun(){
   const started=!ps&&ctlNow&&ctlNow.c==='start'&&new Date(run.fed_at).getTime()<ctlNow.at-90e3;
   const pc=run.pause||{},ecm=calib?calib.cm:(pc.empty_cm||null);
   // A fresh calibration: ask which jar it was (the Jar picker, right below).
-  if(ps&&ecm&&calNow!==+ecm){calNow=+ecm;{showJar();setTimeout(()=>$('rvesselsel').scrollIntoView({behavior:'smooth',block:'center'}),300)}}else if(!ps)calNow=null;
+  if(ps&&ecm&&calNow!==+ecm){calNow=+ecm;setTimeout(()=>$('rvesselsel').scrollIntoView({behavior:'smooth',block:'center'}),300)}else if(!ps)calNow=null;
+  if(ps&&recipeFor!=null)showJar();
   const swap=calib&&calib.cm==null&&!calib.failed?'Measuring the empty jar. Keep the box still on it, about 10 seconds.'
     :calib&&calib.failed?'Couldn\'t measure the empty jar. Check the box sits flat on it and tap Calibrate again.'
     :ecm?'Empty jar: '+Number(ecm).toFixed(1)+' cm to the bottom. Now pour in the starter, put the box back on, check the grams below, and tap Starter in.'
@@ -1214,6 +1243,7 @@ if(store.get('glock'))$('rglock').checked=true;  // remembered; locks on the gra
 $('rflourmix').onchange=$('rflour').oninput=()=>{showFlour();refreshNext()};
 $('rvessel').addEventListener('input',refreshNext);
 $('rvesselsel').onchange=()=>{showJar();refreshNext();if(!$('rvessel').hidden)$('rvessel').focus()};
+$('rjarnote').onclick=e=>{const b=e.target.closest('[data-jar]');if(b){e.preventDefault();jarAct(b.dataset.jar)}};
 $('planuse').onclick=()=>{if(!planPick)return;recipeTouched=false;setGrams(planPick);if(run)renderPlan();if(!$('recipe').hidden)$('recipe').scrollIntoView({behavior:'smooth',block:'center'})};
 $('depth').oninput=e=>{const v=parseFloat(e.target.value);v>0?store.set('depth',String(v)):store.del('depth');render()};
 addEventListener('resize',()=>{chart();renderRun()});
