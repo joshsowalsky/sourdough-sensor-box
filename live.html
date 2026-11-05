@@ -305,6 +305,8 @@ function runVerdict(s){
   }
   const rate=i=>i>=60?m[i-60]-m[i]:null,now=rate(m.length-1);
   let fastest=0;for(let i=60;i<m.length;i++)fastest=Math.max(fastest,rate(i));
+  // Doubled and near the top is the good moment: use it, or feed if not baking.
+  if(now!=null&&now<0.15&&now<=fastest/2&&d&&rise>=d)return ['good','✓ At its peak','Only '+(Math.max(now,0)*10).toFixed(0)+' mm up in the last hour. Best time to use it; if you\x27re not baking, feed it now.'];
   if(now!=null&&now<0.15&&now<=fastest/2)return ['near','Feed soon','Near its peak: only '+(Math.max(now,0)*10).toFixed(0)+' mm up in the last hour, down from '+(fastest*10).toFixed(0)+' mm at its fastest. Feeding now is fine.'];
   // Doubled = risen by its own starting depth; slowing = last hour under 3/4 of its fastest.
   const up='Up '+(now!=null?(Math.max(now,0)*10).toFixed(0)+' mm in the last hour':'and climbing'),dbl=d&&rise>=d,cr=climbRates(feedSegs().slice(-1)[0]),slow=!!(cr&&cr.slowing);
@@ -365,7 +367,7 @@ function renderRun(){
   $('pausebtn').onclick=e=>{e.preventDefault();sendCtl(ps?'resume':'pause')};
   if(!store.get('pausekey')&&!$('pausenote').textContent)$('pausenote').textContent='home Wi-Fi only on this device (no pause key)';
   $('verdict').className='verdict '+cls;$('verdict').hidden=false;
-  $('nextstep').textContent=started?'':ps||cls==='feed'||cls==='near'?nextFeed(/no rise|dead/i.test(head)):cls==='good'?'Use it any time now; feed again once it peaks.':'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
+  $('nextstep').textContent=started?'':ps||cls==='feed'||cls==='near'?nextFeed(/no rise|dead/i.test(head)):cls==='good'?(/At its peak/.test(head)?nextFeed(false):'Use it any time now; feed again once it peaks.'):'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
   const ol=!started&&!ps&&(cls==='ok'||cls==='good')?peakOutlook():null;$('outlook').hidden=!ol;$('outlook').innerHTML=ol||'';if(ol)$('outlook').style.marginTop='6px';
   runChart(s);
   seriesChart();
