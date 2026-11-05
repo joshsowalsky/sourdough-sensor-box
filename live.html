@@ -156,6 +156,7 @@ function recipeIn(){
   const g=[$('rg_s'),$('rg_f'),$('rg_w')].map(e=>Number(e.value)),r={};
   if(g.every(v=>v>=0)&&g[0]>0&&g[1]>0)r.feed_g=g.join(':');
   const fl=flourText();if(fl)r.flour=fl;
+  if(calDrop)r.empty='known';
   const v=vesselIn();if(v)r.vessel=v;
   if($('rnote').value.trim())r.note=$('rnote').value.trim();
   return r;
@@ -183,7 +184,7 @@ function jarTable(){
   [...(run.history||[]),run].forEach(r=>{if(!r.vessel)return;const e=m.get(r.vessel)||{name:r.vessel,feeds:0,empty:null,at:null};e.feeds++;if(r.empty_cm){e.empty=+r.empty_cm;e.at=r.fed_at}m.set(r.vessel,e)});
   return [...m.values()];
 }
-let calNow=null;  // empty reading taken in this pause, if any
+let calNow=null,calDrop=false;  // empty reading taken in this pause, and whether it was discarded
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
 function fillJars(cur){
   const s=$('rvesselsel'),l=[...new Set([...JARS,...(run.history||[]).map(r=>r.vessel),run.vessel,...saved('jars'),cur].filter(Boolean))];
@@ -199,25 +200,31 @@ let lastJar=null;
 const jarBtn=(act,t)=>' <button class="chip" data-jar="'+act+'" style="min-height:34px;padding:4px 10px;margin-top:4px">'+t+'</button>';
 const showJar=()=>{
   const v=$('rvesselsel').value,j=jarTable().find(q=>q.name===v),n=$('rjarnote');
-  const measuring=calib&&calib.cm==null&&!calib.failed;
+  const measuring=calib&&calib.cm==null&&!calib.failed,cal=calDrop?null:calNow;
   if(v!=='new')lastJar=v;
-  $('rvessel').hidden=!(v==='new'&&calNow&&!measuring);
+  $('rvessel').hidden=!(v==='new'&&cal&&!measuring);
   if(v==='new'){
     if(measuring)n.innerHTML='<strong style="color:var(--fg)">New jar, step 1 of 2:</strong> measuring… keep the box still on the empty jar, about 10 seconds.'+jarBtn('cancel','Cancel');
-    else if(!calNow)n.innerHTML='<strong style="color:var(--fg)">New jar, step 1 of 2:</strong> put the box on the new jar, clean and empty, and tap Calibrate.'+
+    else if(!cal)n.innerHTML='<strong style="color:var(--fg)">New jar, step 1 of 2:</strong> put the box on the new jar, clean and empty, and tap Calibrate.'+
       (calib&&calib.failed?' <span style="color:var(--warn)">The last try didn\'t get a reading: check the box sits flat.</span>':'')+jarBtn('cal','Calibrate')+jarBtn('cancel','Cancel');
-    else n.innerHTML='<strong style="color:var(--fg)">Step 2 of 2:</strong> it reads '+calNow.toFixed(1)+' cm empty. Name it above, then save.'+jarBtn('save','Save jar')+jarBtn('cal','Measure again')+jarBtn('cancel','Cancel');
+    else n.innerHTML='<strong style="color:var(--fg)">Step 2 of 2:</strong> it reads '+cal.toFixed(1)+' cm empty. Name it above, then save.'+jarBtn('save','Save jar')+jarBtn('cal','Measure again')+jarBtn('drop','Discard reading')+jarBtn('cancel','Cancel');
     return;
   }
   const known=j&&j.empty;
-  n.innerHTML=calNow&&known&&Math.abs(calNow-j.empty)>0.5?'<span style="color:var(--warn)">You just measured '+calNow.toFixed(1)+' cm, but this jar read '+j.empty.toFixed(1)+' cm before.</span> A different jar? Choose "+ Add a jar…" to name it. Same jar with the box sitting differently? Starter in saves '+calNow.toFixed(1)+' cm for it.'
-    :calNow&&known?'<span style="color:var(--ok)">✓ Matches this jar ('+j.empty.toFixed(1)+' cm before).</span>'
-    :calNow?'Starter in saves '+calNow.toFixed(1)+' cm as this jar\'s empty reading.'
+  const C=cal;
+  n.innerHTML=C&&known&&Math.abs(C-j.empty)>0.5?'<span style="color:var(--warn)">You just measured '+C.toFixed(1)+' cm, but this jar read '+j.empty.toFixed(1)+' cm before.</span> A different jar? Choose "+ Add a jar…" to name it. Same jar with the box sitting differently? Starter in would save '+C.toFixed(1)+' cm for it.'
+    :C&&known?'<span style="color:var(--ok)">✓ Matches this jar ('+j.empty.toFixed(1)+' cm before).</span>'
+    :C?'Starter in saves '+C.toFixed(1)+' cm as this jar\'s empty reading.'
     :known?'<span style="color:var(--ok)">✓ Known jar, empty '+j.empty.toFixed(1)+' cm.</span> No need to calibrate.'
     :'Not calibrated yet: tap Calibrate with this jar empty, once, and it is remembered.';
+  // Nothing is saved until Starter in: say so, and let a bad reading go.
+  if(C)n.innerHTML+='<div style="margin-top:4px">This reading is <b style="display:inline;font-size:inherit">not saved</b> until you tap Starter in.'+jarBtn('cal','Measure again')+jarBtn('drop','Discard reading')+'</div>';
+  else if(calDrop&&calNow)n.innerHTML+='<div style="margin-top:4px">Discarded the '+calNow.toFixed(1)+' cm reading'+(known?'; Starter in uses the saved '+j.empty.toFixed(1)+' cm.':'.')+jarBtn('undo','Undo')+'</div>';
 };
 function jarAct(act){
-  if(act==='cal'){sendCtl('calibrate');return}
+  if(act==='cal'){calDrop=false;sendCtl('calibrate');return}
+  if(act==='drop')calDrop=true;
+  if(act==='undo')calDrop=false;
   if(act==='cancel'){$('rvessel').value='';$('rvesselsel').value=lastJar||$('rvesselsel').options[0].value}
   if(act==='save'){
     const name=$('rvessel').value.trim();
@@ -423,14 +430,14 @@ function renderRun(){
   const started=!ps&&ctlNow&&ctlNow.c==='start'&&new Date(run.fed_at).getTime()<ctlNow.at-90e3;
   const pc=run.pause||{},ecm=calib?calib.cm:(pc.empty_cm||null);
   // A fresh calibration: ask which jar it was (the Jar picker, right below).
-  if(ps&&ecm&&calNow!==+ecm){calNow=+ecm;setTimeout(()=>$('rvesselsel').scrollIntoView({behavior:'smooth',block:'center'}),300)}else if(!ps)calNow=null;
+  if(ps&&ecm&&calNow!==+ecm){calNow=+ecm;calDrop=false;setTimeout(()=>$('rvesselsel').scrollIntoView({behavior:'smooth',block:'center'}),300)}else if(!ps){calNow=null;calDrop=false}
   if(ps&&recipeFor!=null)showJar();
   const swap=calib&&calib.cm==null&&!calib.failed?'Measuring the empty jar. Keep the box still on it, about 10 seconds.'
     :calib&&calib.failed?'Couldn\'t measure the empty jar. Check the box sits flat on it and tap Calibrate again.'
-    :ecm?'Empty jar: '+Number(ecm).toFixed(1)+' cm to the bottom. Now pour in the starter, put the box back on, check the grams below, and tap Starter in.'
+    :ecm&&!calDrop?'Measured '+Number(ecm).toFixed(1)+' cm empty (not saved until Starter in; check the Jar below). Pour in the starter, put the box back on, check the grams, and tap Starter in.'
     :'A jar marked ✓ below is already calibrated: pour in the starter, put the box back on, and tap Starter in. A new jar: put the box on it empty and tap Calibrate first.';
   const [cls,head,note]=started?['ok','New feed started','Fed '+clock(ctlNow.at)+'. The page switches to the new run within a few minutes.']
-    :ps?['near',calib&&calib.cm==null&&!calib.failed?'Calibrating…':ecm?'Jar calibrated':'Paused','Tracking paused since '+clock(ps)+'. '+swap]:runVerdict(s);
+    :ps?['near',calib&&calib.cm==null&&!calib.failed?'Calibrating…':ecm&&!calDrop?'Paused: jar measured':'Paused','Tracking paused since '+clock(ps)+'. '+swap]:runVerdict(s);
   $('calbtn').hidden=$('startbtn').hidden=$('recipe').hidden=!ps;
   // Paused = feeding: the planner moves up right under this card, and back after.
   {const pc=$('plancard'),slot=$('planslot');if(ps&&pc.parentNode!==slot)slot.appendChild(pc);else if(!ps&&pc.parentNode===slot)$('planhome').after(pc);slot.hidden=!ps}
