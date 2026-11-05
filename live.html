@@ -35,6 +35,19 @@ button{cursor:pointer}
 a.btn{display:inline-flex;align-items:center;text-decoration:none;margin-top:10px;font-weight:600}
 button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .wide{grid-column:1/-1}
+/* Tabs: Starter (everything else) and Bake (#baketab). */
+main.tab-bake>:not(.keep){display:none!important}
+main:not(.tab-bake)>#baketab{display:none!important}
+#baketab{display:flex;flex-direction:column;gap:14px}
+.bstep{display:flex;gap:10px;padding:10px 6px;border-top:1px solid var(--line)}
+.bstep .when{flex:0 0 7.6em;font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.bstep .what{flex:1;min-width:0}
+.bstep.next{background:color-mix(in srgb,var(--accent) 13%,var(--panel));border-radius:10px;border-top-color:transparent}
+.bstep.next .when{color:var(--accent);font-weight:600}
+.bstep.done .what{color:var(--muted)}
+.bcheck{display:flex;gap:8px;margin-top:8px}
+.bcheck>span:first-child{flex:0 0 1.2em;font-weight:700}
+.bknow h3{font-size:1rem;margin:12px 0 2px}
 .sbox{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;min-width:0}
 .eq{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px}
 .note{font-size:.8rem;color:var(--muted)}
@@ -53,8 +66,18 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .verdict.near{border-color:var(--accent)}.verdict.near b{color:var(--accent)}
 .verdict.feed{border-color:var(--warn)}.verdict.feed b{color:var(--warn)}
 </style></head><body><main>
-<h1>Sourdough Live</h1>
-<div class="status"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
+<h1 class="keep">Sourdough Live</h1>
+<div class="status keep"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
+<div class="row keep" id="tabs" style="gap:6px"><button class="chip" data-tab="starter">Starter</button><button class="chip" data-tab="bake">Bake</button></div>
+<section id="baketab" class="keep">
+  <div class="card"><div class="label">Is Gus ready?</div><div id="bakegus" class="small" style="color:var(--fg);font-size:.95rem">Loading…</div></div>
+  <div class="card"><div class="label">Steps · mix today, bake tomorrow</div>
+    <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><button class="chip" id="bakreset">Start over</button></div>
+    <div class="note" id="bakrecipe" style="margin-top:6px"></div>
+    <div id="baksteps" style="margin-top:8px"></div>
+    <div class="note" style="margin-top:6px">Tap Done as you finish each step; the times after it move to match. Tap a done time to fix it. Times are a guide: the dough decides, especially when the bulk rise ends.</div></div>
+  <div class="card bknow"><div class="label">Good to know</div><div id="bakknow" class="small" style="color:var(--fg);font-size:.92rem"></div></div>
+</section>
 <div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div class="small" id="outlook" hidden></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><div id="kpiwrap"><table id="kpis" class="ktab small"></table></div><div id="recipe" hidden style="margin-top:10px"><div class="label">What you fed</div>
 <div class="row" style="margin-top:4px;gap:6px"><label class="note">Starter <input id="rg_s" type="number" inputmode="decimal" min="0" step="any" class="g"></label><label class="note">Flour <input id="rg_f" type="number" inputmode="decimal" min="0" step="any" class="g"></label><label class="note">Water <input id="rg_w" type="number" inputmode="decimal" min="0" step="any" class="g"></label><span class="note">grams</span><label class="note"><input type="checkbox" id="rglock"> Lock ratio</label></div><div class="note" id="rglocknote" hidden></div>
 <label class="note" style="display:block;margin-top:6px">Flour <select id="rflourmix" class="wide-in"><option value="0">All usual flour</option><option value="0.25">¾ usual + ¼ whole wheat/rye</option><option value="0.5">Half usual, half whole wheat/rye</option><option value="1">All whole wheat/rye</option><option value="other">+ Add a flour…</option></select></label>
@@ -479,6 +502,7 @@ function renderRun(){
   renderPlan();
   strength();
   forecast();
+  bakeTab();
 }
 // Strength as speed: hours per doubling of the starter's population, at
 // STD_F. A feed at 1:r:r dilutes it to 1/(1+2r) of the jar, so it needs
@@ -1275,6 +1299,144 @@ function runChart(s){
   if(fs.length>1){const fmin=Math.floor(Math.min(...fs))-3,fmax=fmin+Math.max(6,Math.ceil(Math.max(...fs)+3-fmin));line('f',css('--chart-t'),fmin,fmax,'r')}
 }
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+// ---- Bake tab: is Gus ready, the steps with their times, and what matters.
+// Per loaf: 450 g bread flour + 50 g whole wheat, 365 g water (73%), 100 g
+// Gus (20%), 10 g salt. Bulk about BULK_H at BAKE_F, scaled by temperature
+// with the planner's PLAN_F_PER_2X; Gus is best from its peak to USE_H after.
+const BAKE_F=76,BULK_H=5,USE_H=2,GUS_PER_LOAF=100,GUS_MIN=80,GUS_KEEP=15;
+const gusPer=()=>bk.gus!=null&&bk.gus>=GUS_MIN?bk.gus:GUS_PER_LOAF;
+const bakeF=()=>doc&&doc.temp_c!=null?doc.temp_c*9/5+32:BAKE_F;
+const warmBy=F=>Math.pow(2,(BAKE_F-F)/PLAN_F_PER_2X);
+let bk={loaves:1,done:{}};
+try{bk={...bk,...JSON.parse(store.get('bakerun')||'{}')}}catch(e){}
+const bkSave=()=>store.set('bakerun',JSON.stringify(bk));
+const BAKE_STEPS=[
+  {id:'mix',t:'Mix',what:n=>'In a big bowl: '+r0(450*n)+' g bread flour, '+r0(50*n)+' g whole wheat, '+r0(350*n)+' g warm water (about 80°F) and '+r0(gusPer()*n)+' g Gus. Squish until no dry flour is left, then cover. Leave about '+GUS_KEEP+' g of Gus in the jar for next time.'},
+  {id:'salt',t:'Add the salt',after:['mix',40],what:n=>r0(10*n)+' g salt and '+r0(15*n)+' g water. Pinch and squeeze it through until you can’t feel the grains.'},
+  {id:'f1',t:'Stretch and fold 1 of 4',after:['salt',30],what:()=>'Wet your hand. Lift one side of the dough, fold it over the top, turn the bowl a quarter, and repeat 4 times. Cover.'},
+  {id:'f2',t:'Fold 2 of 4',after:['f1',30],what:()=>'Same as the first.'},
+  {id:'f3',t:'Fold 3 of 4',after:['f2',30],what:()=>'Same again. It should feel smoother and hold its shape more.'},
+  {id:'f4',t:'Fold 4 of 4',after:['f3',30],what:()=>'Last one. Then leave it covered and alone.'},
+  {id:'bulk',t:'Bulk rise ends',bulk:true,what:()=>'Done when it is up about 50–75%, domed, jiggly when you shake the bowl, with bubbles on the sides and top. Judge the dough, not the clock; a strip of tape at the starting level helps.'},
+  {id:'pre',t:'Pre-shape',after:['bulk',0],what:()=>'Tip it onto the counter, fold it into a loose round, and let it rest uncovered 20–30 min.'},
+  {id:'shape',t:'Shape',after:['pre',25],what:()=>'Shape it tight, then put it seam-side up in a floured basket or towel-lined bowl. Cover.'},
+  {id:'fridge',t:'Into the fridge',after:['shape',5],what:()=>'Overnight, 8–16 h. Longer is more sour.'},
+  {id:'heat',t:'Preheat',heat:true,what:()=>'Oven and Dutch oven (lid on) to 500°F for 45–60 min.'},
+  {id:'bake',t:'Bake',after:['heat',55],what:()=>'Straight from the fridge: turn it out onto parchment, score the top, into the pot. 20 min lid on at 475°F, then 20–25 min lid off until deep brown.'},
+  {id:'cool',t:'Cool, then cut',after:['bake',45],what:()=>'At least 1 h on a rack. It is still cooking inside.'}];
+function r0(v){return Math.round(v)}
+function bakeTimes(){
+  const T={},now=Date.now(),F=bakeF(),bh=BULK_H*warmBy(F);
+  let prev=0;
+  for(const st of BAKE_STEPS){
+    let t=bk.done[st.id];
+    if(!t){
+      if(st.id==='mix')t=now;
+      else if(st.bulk)t=T.mix+bh*3600e3;
+      else if(st.heat){
+        // 7 h after the fridge, but not in the middle of the night.
+        t=T.fridge+7*3600e3;const d=new Date(t),hr=d.getHours();
+        if(hr>=22||hr<7){if(hr>=22)d.setDate(d.getDate()+1);d.setHours(7,0,0,0);t=Math.min(d.getTime(),T.fridge+15*3600e3)}
+      }else t=T[st.after[0]]+st.after[1]*60e3;
+      t=Math.max(t,now,prev);
+    }
+    T[st.id]=prev=t;
+  }
+  return {T,bh,F};
+}
+// Gus right now: strong enough, where it is in its rise, and enough of it.
+function bakeGus(){
+  if(!run)return null;
+  const segs=feedSegs(),ks=segs.map(feedKpis);if(!ks.length)return null;
+  const good=k=>k.dblH!=null&&k.dblH*stdFactor(k)<=READY_H,now=Date.now();
+  let streak=0;for(let i=ks.length-1;i>=0;i--){const c=i===ks.length-1;if(good(ks[i]))streak++;else if(!c)break}
+  const cur=ks[ks.length-1],missed=cur.dblH!=null?!good(cur):now>=cur.fed+paceH(cur)*3600e3;
+  const F=bakeF(),useH=USE_H*warmBy(F),ps=pausedSince();
+  const past=cur.peak!=null&&cur.last!=null&&cur.peak-cur.last>=0.1&&cur.peak>=1.3;
+  let peakT=null,topEnd=null;
+  if(past){
+    peakT=cur.fed+cur.peakH*3600e3;
+    // Starters often sit at the top for a while: the window counts from the
+    // last time it was still within 0.05x of its peak.
+    const z=segs[segs.length-1],sm=smooth(z.pts,'x');let j=-1;sm.forEach((v,i)=>{if(v>=cur.peak-0.05)j=i});
+    topEnd=Math.max(peakT,j>=0?z.pts[j].t:peakT);
+  }
+  else{const fc=fcCompute();if(fc&&!fc.pending&&!fc.finished)peakT=cur.fed+fc.live.T*3600e3}
+  const end=peakT&&(topEnd||peakT)+useH*3600e3;
+  const topTxt=past?(topEnd-peakT>20*60e3?'At its top ('+cur.peak.toFixed(1)+'x) from '+clock(peakT)+' to '+clock(topEnd)+'.':'Peaked at '+clock(peakT)+' ('+cur.peak.toFixed(1)+'x).'):'';
+  const [st0,fl0,wa0]=(run.feed_g||'').split(':').map(Number),have=Math.max(0,(st0+fl0+(wa0||0)||0)-JAR_LOSS);
+  const spare=have-GUS_KEEP,per=Math.min(GUS_PER_LOAF,Math.floor(spare/bk.loaves/5)*5);
+  bk.gus=run?Math.max(per,0):null;
+  const row=(ok,txt)=>'<div class="bcheck"><span style="color:var('+(ok===true?'--ok':ok===false?'--warn':'--muted')+')">'+(ok===true?'✓':ok===false?'✗':'◔')+'</span><span>'+txt+'</span></div>';
+  let h='';
+  h+=streak>=READY_RUNS&&!missed?row(true,'<b>Strong enough.</b> Doubled on pace '+streak+' feeds in a row ('+READY_RUNS+' needed).')
+    :row(false,'<b>Not strong enough yet.</b> It needs to double on pace '+READY_RUNS+' feeds in a row; '+(missed?'this feed missed, so it is 0':'it is at '+Math.min(streak,READY_RUNS))+' of '+READY_RUNS+'. Keep feeding.');
+  let win=null;
+  if(ps)h+=row(null,'<b>Tracking is paused.</b> Start the next feed on the Starter tab to see where it is.');
+  else if(past&&now<=end){win=end;h+=row(true,'<b>Use it now.</b> '+topTxt+' Best until about <b>'+clock(end)+'</b> at '+F.toFixed(0)+'°F.')}
+  else if(past)h+=row(false,'<b>Past its best.</b> '+topTxt+' It still works for a few more hours, but the dough will be slower and more sour. For the best rise, feed it and use the next peak.');
+  else if(peakT){win=end;h+=row(null,'<b>Still rising</b>, '+(cur.last??1).toFixed(1)+'x now. Peak around '+clock(peakT)+'; best from then until about '+clock(end)+'.'+((cur.last??1)>=2?' It has doubled, so it is usable now too.':''))}
+  else h+=row(null,'<b>Still rising</b>, '+(cur.last??1).toFixed(1)+'x now. Not near its peak yet.');
+  h+=per>=GUS_MIN?row(true,'<b>Enough.</b> About '+r0(have)+' g in the jar: '+r0(per*bk.loaves)+' g for the dough ('+per+' g a loaf'+(per<GUS_PER_LOAF?'; '+GUS_MIN+'–'+GUS_PER_LOAF+' g all work, less is just a slightly slower rise':'')+') + '+GUS_KEEP+' g to keep.')
+    :row(false,'<b>Not enough.</b> About '+r0(have)+' g in the jar; '+(bk.loaves===1?'a loaf needs':bk.loaves+' loaves need')+' at least '+r0(GUS_MIN*bk.loaves+GUS_KEEP)+' g ('+GUS_MIN+' g a loaf + '+GUS_KEEP+' g to keep). '+(spare>=GUS_MIN*0.5?'Make '+Math.max(0.5,Math.floor(spare/GUS_MIN*2)/2)+' loaf, or ':'')+'feed a bigger batch first.');
+  $('bakegus').innerHTML=h;
+  // What matters, with Gus's own numbers.
+  const sd=ks.filter(k=>k.dblH!=null).slice(-4).map(k=>k.dblH*stdFactor(k));
+  let trend='';
+  if(sd.length>=3){
+    const lastTwo=(sd[sd.length-1]+sd[sd.length-2])/2,firstTwo=(sd[0]+sd[1])/2;
+    trend='Gus’s last doubling times, as a 1:2:2 feed at 75°F: '+sd.map(v=>v.toFixed(1)).join(', ')+' h. '+
+      (lastTwo<firstTwo-1?'Still getting faster, so another feed or two could still help.':lastTwo>firstTwo+1?'Getting slower: check the room temperature, the flour, and that it is fed at its peak.':'That is flat, so more feeds won’t make the bread noticeably better. It is about as ready as it gets.');
+  }
+  $('bakknow').innerHTML=
+    '<h3>When is it ready?</h3>It doubles on schedule two feeds in a row (within '+READY_H+' h as a 1:2:2 feed at 75°F), peaks when you expect it to, smells pleasantly sour rather than like nail polish, and is domed and bubbly at the top.'+
+    '<h3>When does more feeding stop helping?</h3>When its speed stops improving from feed to feed. '+(trend||'Once a few feeds have doubled, this compares their speeds.')+
+    '<h3>When to use it</h3>At its peak, or up to about '+USE_H+' h after (less when it is warm). Earlier works too once it has doubled. Long past the peak it still raises bread, just slower and more sour.'+
+    '<h3>Does a higher rise in the jar make a taller loaf?</h3>Not really. How high the jar gets mostly depends on how much food it got (bigger feeds rise higher), the flour (whole wheat and rye go higher) and how thick it is (stiffer holds gas better). A taller loaf comes from the dough: strength from the folds, ending the bulk rise at 50–75%, tight shaping, a good proof, and a hot oven with steam. More starter only makes the bulk rise go faster.';
+  return {win};
+}
+function bakeTab(){
+  const g=bakeGus();
+  if($('baksteps').contains(document.activeElement))return;  // don't redraw under a time being edited
+  const n=bk.loaves,{T,bh,F}=bakeTimes(),next=BAKE_STEPS.find(st=>!bk.done[st.id]),now=Date.now();
+  if(document.activeElement!==$('bakn'))$('bakn').value=n;
+  $('bakrecipe').textContent='For '+(n===1?'1 loaf':n+' loaves')+': '+r0(450*n)+' g bread flour, '+r0(50*n)+' g whole wheat, '+r0(365*n)+' g water, '+r0(gusPer()*n)+' g Gus, '+r0(10*n)+' g salt. Using your own recipe? Keep its amounts and follow these times.';
+  const hm=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+  const dayOf=t=>new Date(t).toDateString()===new Date().toDateString()?'':new Date(t).toLocaleDateString([],{weekday:'short'})+' ';
+  const lastDone=[...BAKE_STEPS].reverse().find(st=>bk.done[st.id]);
+  $('baksteps').innerHTML=BAKE_STEPS.map(st=>{
+    const d=bk.done[st.id],isNext=next&&st.id===next.id;
+    let when=d?'done<br><input type="time" data-bt="'+st.id+'" value="'+hm(d)+'" style="width:7.4em;min-height:32px;padding:2px 4px;font-size:.85rem">'
+      :st.bulk?'~'+clock(T.mix+(bh-0.5)*3600e3)+'<br>to '+clock(T.mix+(bh+0.5)*3600e3)
+      :isNext&&T[st.id]<=now+60e3?'Now':'~'+dayOf(T[st.id])+clock(T[st.id]);
+    let what=st.what(n);
+    if(st.id==='mix'&&!d&&g&&g.win)what+=' <b>Gus is at its best until about '+clock(g.win)+'.</b>';
+    if(st.bulk&&!d)what+=' At '+F.toFixed(0)+'°F that is about '+bh.toFixed(1)+' h after mixing; warmer is faster.';
+    if(st.id==='fridge')what+=' Bake between '+dayOf(T.fridge+8*3600e3)+clock(T.fridge+8*3600e3)+' and '+dayOf(T.fridge+16*3600e3)+clock(T.fridge+16*3600e3)+'.';
+    const btn=(isNext?'<button data-bd="'+st.id+'" style="margin-top:6px">Done</button> ':'')+(lastDone&&st.id===lastDone.id?'<button class="chip" data-bu="'+st.id+'" style="margin-top:6px">Undo</button>':'');
+    return '<div class="bstep'+(isNext?' next':'')+(d?' done':'')+'"><div class="when">'+when+'</div><div class="what"><b>'+st.t+'</b><br>'+what+(btn?'<div>'+btn+'</div>':'')+'</div></div>';
+  }).join('');
+}
+function setTab(t){
+  document.querySelector('main').classList.toggle('tab-bake',t==='bake');
+  document.querySelectorAll('#tabs [data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  store.set('tab',t);
+  if(t==='bake')bakeTab();else render();  // charts drawn while hidden have no width
+}
+$('tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){setTab(b.dataset.tab);scrollTo(0,0)}};
+$('baksteps').onclick=e=>{
+  const d=e.target.closest('[data-bd]'),u=e.target.closest('[data-bu]');
+  if(d){bk.done[d.dataset.bd]=Date.now();bkSave();bakeTab()}
+  if(u){delete bk.done[u.dataset.bu];bkSave();bakeTab()}
+};
+$('baksteps').onchange=e=>{
+  const id=e.target.dataset&&e.target.dataset.bt;if(!id||!e.target.value)return;
+  const [hh,mm]=e.target.value.split(':').map(Number),t=new Date(bk.done[id]);t.setHours(hh,mm,0,0);
+  if(t.getTime()>Date.now()+10*60e3)t.setDate(t.getDate()-1);
+  bk.done[id]=t.getTime();bkSave();e.target.blur();bakeTab();
+};
+$('bakn').oninput=e=>{const v=parseFloat(e.target.value);if(v>0){bk.loaves=v;bkSave();bakeTab()}};
+$('bakreset').onclick=()=>{if(confirm('Start over? This clears the step times.')){bk.done={};bkSave();bakeTab()}};
 function ago(s){if(s<90)return Math.round(s)+' s ago';if(s<5400)return Math.round(s/60)+' min ago';return (s/3600).toFixed(1)+' h ago'}
 async function load(){
   try{
@@ -1349,6 +1511,7 @@ $('planuse').onclick=()=>{if(!planPick)return;recipeTouched=false;setGrams(planP
 $('depth').oninput=e=>{const v=parseFloat(e.target.value);v>0?store.set('depth',String(v)):store.del('depth');render()};
 addEventListener('resize',()=>{chart();renderRun()});
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{chart();renderRun()});
+setTab(location.hash==='#bake'?'bake':store.get('tab')==='bake'?'bake':'starter');
 load();setInterval(load,60000);setInterval(render,15000);
 loadRun();setInterval(loadRun,300000);
 </script></body></html>
