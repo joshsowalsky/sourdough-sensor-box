@@ -91,7 +91,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   <div id="sfeed" style="margin-top:10px"></div>
 </div>
 <div class="grid">
-  <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change">Set a start level below</div></div>
+  <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change"></div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
   <div class="card wide" id="runcard" hidden><div class="label" id="runlabel">This run</div><div class="big"><span id="runrise">–</span><span class="unit" id="rununit">cm risen</span></div><div class="small" id="runnote"></div><canvas id="runchart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> growth since the feed (1x = just fed) <span style="color:var(--chart-t)">&#9632;</span> room °F <span style="color:var(--muted)">┆</span> fed, 2x, 3x</div></div>
   <span id="planhome" hidden></span><div class="card wide" id="plancard" hidden><div class="label">Feed planner · if you fed it now</div>
@@ -115,8 +115,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <div class="row" id="serieswin" style="margin:6px 0 4px;gap:6px"><button class="chip" data-h="12">12 h</button><button class="chip" data-h="24">1 day</button><button class="chip" data-h="72">3 days</button><button class="chip" data-h="0">All</button><button class="chip" id="seriesnow" hidden>Back to now</button></div>
     <div class="small" id="seriesread" style="min-height:1.4em">Drag to scroll · pinch to zoom · tap a point</div>
     <canvas id="serieschart" width="560" height="190" style="touch-action:pan-y;cursor:grab"></canvas><div class="small" id="serieskey"><span style="color:var(--chart-d)">&#9632;</span> growth after each feed (back to 1x at every feed) <span style="color:var(--muted)">┆</span> feeds, 2x</div></div>
-  <div class="card wide" id="lastcard"><div class="label">Last 6 hours</div><canvas id="chart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> temperature</div></div>
-  <div class="card wide" id="startcard">
+  <div class="card wide" id="lastcard" hidden><div class="label">Last 6 hours</div><canvas id="chart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> temperature</div></div>
+  <div class="card wide" id="startcard" hidden>
     <div class="label">Start level</div>
     <div class="row" style="margin-top:6px"><button id="mark">Mark start now</button><button id="clear">Clear</button></div>
     <div class="row" style="margin-top:8px"><label for="depth" class="note">Dough depth at start (cm)</label><input id="depth" type="number" inputmode="decimal" step="0.1" min="0" placeholder="optional"></div>
