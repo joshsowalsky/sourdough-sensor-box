@@ -674,15 +674,13 @@ function forecast(){
     g.fillStyle=css('--accent');g.globalAlpha=0.15;g.beginPath();
     trail.forEach((p,i)=>i?g.lineTo(X(p.h),Y(p.hi)):g.moveTo(X(p.h),Y(p.hi)));
     [...trail].reverse().forEach(p=>g.lineTo(X(p.h),Y(p.lo)));g.closePath();g.fill();g.globalAlpha=1;
-    // "now": a peak can't be forecast earlier than this line.
-    g.strokeStyle=css('--muted');g.setLineDash([2,3]);g.beginPath();g.moveTo(X(0),Y(0));g.lineTo(X(t1),Y(t1));g.stroke();
     if(finished){g.strokeStyle=css('--ok');g.setLineDash([5,4]);g.beginPath();g.moveTo(L,Y(cur.peakH));g.lineTo(w-R,Y(cur.peakH));g.stroke()}
     g.setLineDash([]);g.strokeStyle=css('--chart-d');g.lineWidth=2;g.beginPath();
     trail.forEach((p,i)=>i?g.lineTo(X(p.h),Y(p.T)):g.moveTo(X(p.h),Y(p.T)));g.stroke();
     g.restore();g.textAlign='left';
   }
   const first=trail[0],moved=live.T-first.T;
-  $('fctrailnote').innerHTML='<span style="color:var(--chart-d)">━</span> forecast peak, as made at each time <span style="color:var(--accent);opacity:.6">█</span> its 80% range <span style="color:var(--muted)">┆</span> now'+(finished?' <span style="color:var(--ok)">╍</span> real peak':'')+
+  $('fctrailnote').innerHTML='<span style="color:var(--chart-d)">━</span> forecast peak, as made at each time <span style="color:var(--accent);opacity:.6">█</span> its 80% range; the right edge is now'+(finished?' <span style="color:var(--ok)">╍</span> real peak':'')+
     '. '+(trail.length>1?(Math.abs(moved)<0.25?'Hasn\'t moved much since the feed.':'Moved '+fcHrs(moved).replace('+','later by ').replace('−','earlier by ')+' since the feed, and the range has gone from '+((first.hi-first.lo)).toFixed(1)+' h wide to '+(live.hi-live.lo).toFixed(1)+' h.'):'');
   // Track record and what it learned.
   const td='<td style="padding:4px 12px 4px 0;border-top:1px solid var(--line)">',f=v=>v==null?'–':fcHrs(v);
