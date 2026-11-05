@@ -95,7 +95,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
   <div class="card wide" id="runcard" hidden><div class="label" id="runlabel">This run</div><div class="big"><span id="runrise">–</span><span class="unit" id="rununit">cm risen</span></div><div class="small" id="runnote"></div><canvas id="runchart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> growth since the feed (1x = just fed) <span style="color:var(--chart-t)">&#9632;</span> room °F <span style="color:var(--muted)">┆</span> fed, 2x, 3x</div></div>
   <span id="planhome" hidden></span><div class="card wide" id="plancard" hidden><div class="label">Feed planner · if you fed it now</div>
-    <label for="planpeak" class="small">Peak wanted at <b id="plantime">–</b> <span class="note" id="planh"></span></label>
+    <label for="planpeak" class="small"><span id="planpeaklbl">Peak wanted at</span> <b id="plantime">–</b> <span class="note" id="planh"></span></label>
     <input type="range" id="planpeak" min="3" max="24" step="0.5">
     <label for="plantemp" class="small">Room temp <b id="planf">–</b> <span class="note">(now: <span id="plannow">–</span>)</span></label>
     <input type="range" id="plantemp" min="64" max="84" step="1">
@@ -415,7 +415,7 @@ function nextFeed(warm){
   const r=fl/st,lbl='1:'+g1(r)+':'+g1(wa/st);
   let peak='';
   if(planModel){const t=Date.now()+planModel.hrsAt(r,planModel.F)*3600e3,pk=planPick&&Math.abs(planPick[1]/planPick[0]-r)<0.05;
-    peak=' Peaks around <strong>'+new Date(t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+'</strong> if the room stays '+planModel.F+'°F'+(pk?' (the planner’s pick for a peak '+planModel.H+' h out).':' (your grams; the planner’s pick is 1:'+g1(planPick[1]/planPick[0])+':'+g1(planPick[2]/planPick[0])+').');}
+    peak=(planBake?' Ready to mix around <strong>':' Peaks around <strong>')+new Date(t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+'</strong> if the room stays '+planModel.F+'°F'+(pk?' (the planner’s pick for a peak '+planModel.H+' h out).':' (your grams; the planner’s pick is 1:'+g1(planPick[1]/planPick[0])+':'+g1(planPick[2]/planPick[0])+').');}
   const pb=planBake&&planPick&&Math.abs(planPick[0]-st)<1?' for '+(planBake.loaves===1?'1 loaf':g1(planBake.loaves)+' loaves')+' + '+g1(planBake.keep)+' g to keep':'';
   return '<strong>Next feed '+lbl+pb+'</strong>: '+g1(st)+' g '+esc(who)+' + '+esc(flour)+' + '+g1(wa)+' g water, in '+(v===run.vessel?'a clean ':'the clean ')+esc(v)+'.'+peak+
     ' Stir, scrape the sides down, put the box on'+(warm?', and keep it somewhere warm (76–80°F)':'')+', then tap Starter in.';
@@ -864,25 +864,41 @@ function renderPlan(){
   }
   const H=Number($('planpeak').value),F=Number($('plantemp').value),at=Date.now()+H*3600e3;
   $('plantime').textContent=new Date(at).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
+  $('planpeaklbl').textContent=bake.on?'Mix the dough at':'Peak wanted at';
   $('planh').textContent='('+H+' h from now)';$('planf').textContent=F+'°F';$('plannow').textContent=fNow.toFixed(0)+'°F';
   let best=PLAN_RATIOS[0];PLAN_RATIOS.forEach(r=>{if(Math.abs(hrsAt(r,F)-H)<Math.abs(hrsAt(best,F)-H))best=r});
   // Same total in the jar at any ratio: less starter as the ratio goes up.
-  const st=Math.max(2,Math.round(total/(1+best+best*b.hyd))),g=v=>Math.round(v*st)+' g',clockAt=h=>clock(Date.now()+h*3600e3);
+  const st=Math.max(2,(bake.on?Math.ceil:Math.round)(total/(1+best+best*b.hyd))),g=v=>Math.round(v*st)+' g',clockAt=h=>clock(Date.now()+h*3600e3);
   const lbl=r=>'1:'+r+':'+(+(r*b.hyd).toFixed(1));
   const same=st0&&fl0&&Math.abs(fl0/st0-best)<0.01;
-  let out='<b style="font-size:1.3rem;display:inline">Feed '+lbl(best)+'</b>: '+g(1)+' of '+(run.starter||'starter').replace(/^./,c=>c.toUpperCase())+
-    ' + '+g(best)+' flour + '+g(best*b.hyd)+' water. '+(bake.on?'Ready to mix':'Peaks')+' around '+clockAt(hrsAt(best,F))+'.'+(same&&!bake.on?' <span class="note">(the ratio you just fed)</span>':'');
+  // The plan as a short story: what goes in now and how much that makes,
+  // what happens at the peak (bake or feed), and what is left after.
+  const who=(run.starter||'starter').replace(/^./,c=>c.toUpperCase()),mult=1+best+best*b.hyd,N=Math.round(st*mult),T=hrsAt(best,F);
+  const have=Math.max(0,jarNow-JAR_LOSS),jar=(recipeFor!=null&&vesselIn())||run.next_vessel||run.vessel||'';
+  const step=(when,what)=>'<div style="display:flex;gap:8px;margin-top:6px"><span class="note" style="flex:0 0 5.2em">'+when+'</span><span>'+what+'</span></div>';
+  let out='<b style="font-size:1.3rem;display:inline">Feed '+lbl(best)+'</b>'+(same&&!bake.on?' <span class="note">(the ratio you just fed)</span>':'');
+  out+=step('Now',g(1)+' '+who+' + '+g(best)+' flour + '+g(best*b.hyd)+' water: about '+N+' g in '+(jar?'the '+esc(jar):'the jar')+'.');
   if(bake.on){
-    const lv=bake.loaves===1?'1 loaf':g1(bake.loaves)+' loaves';
-    out+='<div class="note">Makes about '+Math.round(total)+' g: '+lv+' × '+g1(bake.per)+' g = '+Math.round(bake.loaves*bake.per)+' g for the dough, '+g1(bake.keep)+' g to keep, and about '+JAR_LOSS+' g that sticks to the jar.</div>';
-    const have=Math.max(0,jarNow-JAR_LOSS);
-    if(st>have)out+='<div class="note" style="color:var(--warn)">That needs '+st+' g of '+(run.starter||'starter')+' and there is only about '+Math.round(have)+' g. Pick a later mix time (a thinner ratio needs less), or do a build-up feed first.</div>';
-    const jar=(recipeFor!=null&&vesselIn())||run.next_vessel||run.vessel||'',cap=Number((jar.match(/(\d+)\s*ml/i)||[])[1]);
-    if(cap&&total*ML_PER_G*2.2>cap)out+='<div class="note" style="color:var(--warn)">At its peak that is about '+Math.round(total*ML_PER_G*2.2)+' mL, too much for the '+esc(jar)+'. Use a bigger jar.</div>';
-    if(bake.again)out+='<div class="note">'+(bake.days==='1'
-      ?'Baking again in about a day: after you take what the dough needs, the '+g1(bake.keep)+' g you keep is the next one’s start. Feed it with this planner once more, set to the next mix time.'
-      :'Baking again in 2+ days: once the '+g1(bake.keep)+' g you keep has risen about a third, put it in the fridge. The day before, take it out and feed it with this planner for the next mix time.')+'</div>';
+    const dough=Math.round(bake.loaves*bake.per),lv=bake.loaves===1?'1 loaf':g1(bake.loaves)+' loaves',left=Math.max(0,Math.round(N-dough-JAR_LOSS));
+    out+=step(clockAt(T),'<b style="display:inline">Mix the dough</b> at its peak, if the room stays '+F+'°F: take '+dough+' g for '+lv+' ('+g1(bake.per)+' g each).');
+    out+=step('After','About '+left+' g is left for '+who+'. '+(bake.again?(bake.days==='1'
+      ?'Baking again in about a day: feed it with this planner, set to the next mix time.'
+      :'Baking again in 2+ days: let it rise about a third, then fridge it; take it out and feed it the day before.')
+      :'Feed it as usual, or fridge it until you next feed.')+' (About '+JAR_LOSS+' g stays stuck to the jar.)');
+  }else{
+    out+=step(clockAt(T),'<b style="display:inline">At its peak</b>, if the room stays '+F+'°F: use it, or feed again. For the next feed keep about '+st+' g; the other ~'+Math.max(0,N-st-JAR_LOSS)+' g is discard.');
   }
+  // Not enough Gus for this: what would work instead.
+  if(st>have){
+    const fits=PLAN_RATIOS.find(r=>total/(1+r+r*b.hyd)<=have);
+    const maxL=bake.on?Math.floor(2*Math.max(0,(have*mult-JAR_LOSS-bake.keep)/bake.per))/2:0;
+    out+='<div class="note" style="color:var(--warn);margin-top:6px">That needs '+st+' g of '+who+' and you have about '+Math.round(have)+' g. '+
+      (fits?'Either feed thinner and mix later: '+lbl(fits)+' needs '+Math.ceil(total/(1+fits+fits*b.hyd))+' g and is ready around '+clockAt(hrsAt(fits,F))+'. ':'')+
+      (bake.on&&maxL>=0.5?(fits?'Or ':'')+'plan '+g1(maxL)+' loa'+(maxL===1?'f':'ves')+' for this time. ':'')+
+      'Or do a build-up feed first to grow more '+who+'.</div>';
+  }
+  const cap=Number((jar.match(/(\d+)\s*ml/i)||[])[1]);
+  if(cap&&N*ML_PER_G*2.2>cap)out+='<div class="note" style="color:var(--warn)">At its peak that is about '+Math.round(N*ML_PER_G*2.2)+' mL, too much for the '+esc(jar)+'. Use a bigger jar.</div>';
   if(hrsAt(PLAN_RATIOS[0],F)>H+0.75)out+='<div class="note">Even '+lbl(PLAN_RATIOS[0])+' won\'t peak that soon at '+F+'°F. Somewhere warmer, or a later peak.</div>';
   if(hrsAt(PLAN_RATIOS[PLAN_RATIOS.length-1],F)<H-0.75)out+='<div class="note">That\'s further out than '+lbl(PLAN_RATIOS[PLAN_RATIOS.length-1])+' reaches at '+F+'°F. Feed later, or somewhere cooler.</div>';
   $('planout').innerHTML=out;
