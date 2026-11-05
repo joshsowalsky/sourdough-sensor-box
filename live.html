@@ -339,14 +339,24 @@ function runVerdict(s){
 }
 // The feed to do next: this run's recipe, in run.next_vessel if the runs file
 // names one (switching beakers), else the same vessel.
+// The next feed as it stands: the grams, flour and jar in the form (which
+// follow the planner until you type), and when the planner expects it to
+// peak at its room temp. Redrawn whenever any of them changes.
+let planModel=null,nextWarm=false,nextOn=false;
 function nextFeed(warm){
-  const [st,fl,wa]=(run.feed_g||'').split(':'),who=(run.starter||'starter').replace(/^./,c=>c.toUpperCase());
-  const v=run.next_vessel||run.vessel||'jar',same=!run.next_vessel||run.next_vessel===run.vessel;
+  const who=(run.starter||'starter').replace(/^./,c=>c.toUpperCase()),gv=gVals();
+  const [st,fl,wa]=gv[0]>0&&gv[1]>0?gv:(run.feed_g||'').split(':').map(Number);
   if(!st)return 'Feed it the usual way, then tell Claude the time.';
-  return 'Next: put '+st+' g of '+who+' into '+(same?'a clean '+v:'the clean '+v+' (switching from the '+run.vessel+')')+
-    '. Add '+(run.flour||fl+' g flour')+' and '+wa+' g water, stir, scrape the sides down, put the box on'+
-    (warm?', and keep it somewhere warm (76–80°F)':'')+'. Then tap Starter in (or tell Claude the time you fed).';
+  const formOn=recipeFor!=null,v=(formOn&&vesselIn())||run.next_vessel||run.vessel||'jar';
+  const ft=formOn?flourText():(run.flour||''),flour=/[0-9]/.test(ft)?ft:fl+' g '+(ft||'flour');
+  const r=fl/st,lbl='1:'+g1(r)+':'+g1(wa/st);
+  let peak='';
+  if(planModel){const t=Date.now()+planModel.hrsAt(r,planModel.F)*3600e3,pk=planPick&&Math.abs(planPick[1]/planPick[0]-r)<0.05;
+    peak=' Peaks around <strong>'+new Date(t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+'</strong> if the room stays '+planModel.F+'°F'+(pk?' (the planner’s pick for a peak '+planModel.H+' h out).':' (your grams; the planner’s pick is 1:'+g1(planPick[1]/planPick[0])+':'+g1(planPick[2]/planPick[0])+').');}
+  return '<strong>Next feed '+lbl+'</strong>: '+g1(st)+' g '+esc(who)+' + '+esc(flour)+' + '+g1(wa)+' g water, in '+(v===run.vessel?'a clean ':'the clean ')+esc(v)+'.'+peak+
+    ' Stir, scrape the sides down, put the box on'+(warm?', and keep it somewhere warm (76–80°F)':'')+', then tap Starter in.';
 }
+const refreshNext=()=>{if(nextOn)$('nextstep').innerHTML=nextFeed(nextWarm)};
 // Paused per run.json, or per the button just pressed: the logger sends you
 // back with ?ctl=pause|resume&at=<s>, which wins until run.json is newer.
 function pausedSince(){
@@ -395,7 +405,8 @@ function renderRun(){
   $('pausebtn').onclick=e=>{e.preventDefault();sendCtl(ps?'resume':'pause')};
   if(!store.get('pausekey')&&!$('pausenote').textContent)$('pausenote').textContent='home Wi-Fi only on this device (no pause key)';
   $('verdict').className='verdict '+cls;$('verdict').hidden=false;
-  $('nextstep').textContent=started?'':ps||cls==='feed'||cls==='near'?nextFeed(/no rise|dead/i.test(head)):cls==='good'?(/At its peak/.test(head)?nextFeed(false):'Use it any time now; feed again once it peaks.'):'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
+  nextOn=!started&&(ps||cls==='feed'||cls==='near'||/At its peak/.test(head));nextWarm=/no rise|dead/i.test(head);
+  if(nextOn)refreshNext();else $('nextstep').textContent=started?'':cls==='good'?'Use it any time now; feed again once it peaks.':'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
   const ol=!started&&!ps&&(cls==='ok'||cls==='good')?peakOutlook():null;$('outlook').hidden=!ol;$('outlook').innerHTML=ol||'';if(ol)$('outlook').style.marginTop='6px';
   runChart(s);
   seriesChart();
@@ -768,8 +779,8 @@ function renderPlan(){
   if(hrsAt(PLAN_RATIOS[0],F)>H+0.75)out+='<div class="note">Even '+lbl(PLAN_RATIOS[0])+' won\'t peak that soon at '+F+'°F. Somewhere warmer, or a later peak.</div>';
   if(hrsAt(PLAN_RATIOS[PLAN_RATIOS.length-1],F)<H-0.75)out+='<div class="note">That\'s further out than '+lbl(PLAN_RATIOS[PLAN_RATIOS.length-1])+' reaches at '+F+'°F. Feed later, or somewhere cooler.</div>';
   $('planout').innerHTML=out;
-  planPick=[st,Math.round(best*st),Math.round(best*b.hyd*st)];
-  if(!recipeTouched)setGrams(planPick);
+  planPick=[st,Math.round(best*st),Math.round(best*b.hyd*st)];planModel={hrsAt,F,H};
+  if(!recipeTouched)setGrams(planPick);refreshNext();
   $('planusenote').textContent=$('recipe').hidden?'Pause for a new jar and these grams are filled in for you.'
     :recipeTouched?'Your typed grams are kept; tap to switch to these.':'Starter in is using these grams.';
   const td='<td style="padding:0 14px 2px 0">';
@@ -1164,8 +1175,9 @@ $('planpeak').oninput=$('plantemp').oninput=()=>{if(run)renderPlan()};
 ['rg_s','rg_f','rg_w'].forEach(id=>$(id).addEventListener('input',()=>{recipeTouched=true;lockFollow(id);if(run)renderPlan();showFlour()}));
 $('rglock').onchange=e=>{e.target.checked?store.set('glock','1'):store.del('glock');setLock(e.target.checked)};
 if(store.get('glock'))$('rglock').checked=true;  // remembered; locks on the grams once they're filled in
-$('rflourmix').onchange=$('rflour').oninput=showFlour;
-$('rvesselsel').onchange=()=>{showJar();if(!$('rvessel').hidden)$('rvessel').focus()};
+$('rflourmix').onchange=$('rflour').oninput=()=>{showFlour();refreshNext()};
+$('rvessel').addEventListener('input',refreshNext);
+$('rvesselsel').onchange=()=>{showJar();refreshNext();if(!$('rvessel').hidden)$('rvessel').focus()};
 $('planuse').onclick=()=>{if(!planPick)return;recipeTouched=false;setGrams(planPick);if(run)renderPlan();if(!$('recipe').hidden)$('recipe').scrollIntoView({behavior:'smooth',block:'center'})};
 $('depth').oninput=e=>{const v=parseFloat(e.target.value);v>0?store.set('depth',String(v)):store.del('depth');render()};
 addEventListener('resize',()=>{chart();renderRun()});
