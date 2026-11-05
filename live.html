@@ -62,6 +62,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 <input id="rvessel" type="text" maxlength="120" class="wide-in" hidden placeholder="New jar, e.g. Weck 500 mL">
 <label class="note" style="display:block;margin-top:6px">Note <input id="rnote" type="text" maxlength="120" class="wide-in" placeholder="optional"></label></div>
 <a class="btn" id="calbtn" href="#" hidden>Calibrate empty jar</a> <a class="btn" id="startbtn" href="#" hidden>Starter in</a> <a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
+<div id="planslot" style="margin-top:10px" hidden></div>
 <div class="card" id="fccard" hidden><div class="label">Peak forecast · this feed</div>
   <div class="big"><span id="fcnow">–</span><span class="unit" id="fcunit"></span></div>
   <div class="small" id="fcnote"></div>
@@ -87,7 +88,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change">Set a start level below</div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
   <div class="card wide" id="runcard" hidden><div class="label" id="runlabel">This run</div><div class="big"><span id="runrise">–</span><span class="unit" id="rununit">cm risen</span></div><div class="small" id="runnote"></div><canvas id="runchart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> growth since the feed (1x = just fed) <span style="color:var(--chart-t)">&#9632;</span> room °F <span style="color:var(--muted)">┆</span> fed, 2x, 3x</div></div>
-  <div class="card wide" id="plancard" hidden><div class="label">Feed planner · if you fed it now</div>
+  <span id="planhome" hidden></span><div class="card wide" id="plancard" hidden><div class="label">Feed planner · if you fed it now</div>
     <label for="planpeak" class="small">Peak wanted at <b id="plantime">–</b> <span class="note" id="planh"></span></label>
     <input type="range" id="planpeak" min="3" max="24" step="0.5">
     <label for="plantemp" class="small">Room temp <b id="planf">–</b> <span class="note">(now: <span id="plannow">–</span>)</span></label>
@@ -359,6 +360,8 @@ function renderRun(){
   const [cls,head,note]=started?['ok','New feed started','Fed '+clock(ctlNow.at)+'. The page switches to the new run within a few minutes.']
     :ps?['near',calib&&calib.cm==null&&!calib.failed?'Calibrating…':ecm?'Jar calibrated':'Paused','Tracking paused since '+clock(ps)+'. '+swap]:runVerdict(s);
   $('calbtn').hidden=$('startbtn').hidden=$('recipe').hidden=!ps;
+  // Paused = feeding: the planner moves up right under this card, and back after.
+  {const pc=$('plancard'),slot=$('planslot');if(ps&&pc.parentNode!==slot)slot.appendChild(pc);else if(!ps&&pc.parentNode===slot)$('planhome').after(pc);slot.hidden=!ps}
   if(ps)fillRecipe(ps);
   $('calbtn').textContent=ecm?'Calibrate again':'Calibrate empty jar';
   $('calbtn').href=CTL+'/calibrate';$('calbtn').onclick=e=>{e.preventDefault();sendCtl('calibrate')};
