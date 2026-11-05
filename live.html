@@ -1319,7 +1319,7 @@ try{bk={...bk,...JSON.parse(store.get('bakerun')||'{}')}}catch(e){}
 const bkSave=()=>store.set('bakerun',JSON.stringify(bk));
 const BAKE_STEPS=[
   {id:'mix',t:'Mix',what:n=>'In a big bowl:'+ingEdit(BAKE_ING.mix)+'Squish until no dry flour is left, then cover. Leave about '+GUS_KEEP+' g of Gus in the jar for next time.'},
-  {id:'salt',t:'Add the salt',after:['mix',40],what:n=>ingEdit(BAKE_ING.salt)+'Pinch and squeeze it through until you can’t feel the grains.'},
+  {id:'salt',t:'Add the salt',after:['mix',40],what:n=>ingEdit(BAKE_ING.salt)+'<b>Dissolve the salt in the water first</b>: stir in a small cup until it’s clear. Pour it over the dough, then pinch and fold it through until the dough stops feeling slippery, a minute or two.'},
   {id:'f1',t:'Stretch and fold 1 of 4',after:['salt',30],what:()=>'Wet your hand. Lift one side of the dough, fold it over the top, turn the bowl a quarter, and repeat 4 times. Cover.'},
   {id:'f2',t:'Fold 2 of 4',after:['f1',30],what:()=>'Same as the first.'},
   {id:'f3',t:'Fold 3 of 4',after:['f2',30],what:()=>'Same again. It should feel smoother and hold its shape more.'},
@@ -1334,7 +1334,7 @@ const BAKE_STEPS=[
 function r0(v){return Math.round(v)}
 // Every amount has a default (per loaf) and a box to type what you really used.
 const ING={flour:{name:'bread flour',per:450},ww:{name:'whole wheat',per:50},water:{name:'water (room temp)',per:350},
-  gus:{name:'Gus',per:null},salt:{name:'salt',per:10},saltw:{name:'water, with the salt',per:15}};
+  gus:{name:'Gus',per:null},salt:{name:'salt',per:10},saltw:{name:'water, to dissolve the salt in',per:15}};
 const BAKE_ING={mix:['flour','ww','water','gus'],salt:['salt','saltw']};
 const amt=k=>bk.amt&&bk.amt[k]!=null?bk.amt[k]:(k==='gus'?gusPer():ING[k].per)*bk.loaves;
 const g1d=v=>String(+(+v).toFixed(1));
