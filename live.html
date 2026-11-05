@@ -47,6 +47,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .ktab .sub{display:block;color:var(--muted);font-size:.75rem}
 .ktab .ok{color:var(--ok)}
 .verdict.ok{border-color:var(--ok)}.verdict.ok b{color:var(--ok)}
+.verdict.good{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 16%,var(--panel))}.verdict.good b{color:var(--ok)}
 .verdict.near{border-color:var(--accent)}.verdict.near b{color:var(--accent)}
 .verdict.feed{border-color:var(--warn)}.verdict.feed b{color:var(--warn)}
 </style></head><body><main>
@@ -305,7 +306,10 @@ function runVerdict(s){
   const rate=i=>i>=60?m[i-60]-m[i]:null,now=rate(m.length-1);
   let fastest=0;for(let i=60;i<m.length;i++)fastest=Math.max(fastest,rate(i));
   if(now!=null&&now<0.15&&now<=fastest/2)return ['near','Feed soon','Near its peak: only '+(Math.max(now,0)*10).toFixed(0)+' mm up in the last hour, down from '+(fastest*10).toFixed(0)+' mm at its fastest. Feeding now is fine.'];
-  return ['ok','Rising: not ready yet','Up '+(now!=null?(Math.max(now,0)*10).toFixed(0)+' mm in the last hour.':'and climbing.')];
+  // Doubled = risen by its own starting depth; slowing = last hour under 3/4 of its fastest.
+  const up='Up '+(now!=null?(Math.max(now,0)*10).toFixed(0)+' mm in the last hour':'and climbing'),dbl=d&&rise>=d,cr=climbRates(feedSegs().slice(-1)[0]),slow=!!(cr&&cr.slowing);
+  if(dbl)return ['good',slow?'✓ Doubled, nearing its peak':'✓ Doubled, still rising',(slow?'Usable now, and strongest at the peak, which is close.':up+'. Usable now; strongest near the peak.')];
+  return ['ok',slow?'Rising, slowing':'Rising',up+'. Not at its peak yet.'];
 }
 // The feed to do next: this run's recipe, in run.next_vessel if the runs file
 // names one (switching beakers), else the same vessel.
@@ -361,8 +365,8 @@ function renderRun(){
   $('pausebtn').onclick=e=>{e.preventDefault();sendCtl(ps?'resume':'pause')};
   if(!store.get('pausekey')&&!$('pausenote').textContent)$('pausenote').textContent='home Wi-Fi only on this device (no pause key)';
   $('verdict').className='verdict '+cls;$('verdict').hidden=false;
-  $('nextstep').textContent=started?'':ps||cls==='feed'||cls==='near'?nextFeed(/no rise|dead/i.test(head)):'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
-  const ol=!started&&!ps&&cls==='ok'?peakOutlook():null;$('outlook').hidden=!ol;$('outlook').innerHTML=ol||'';if(ol)$('outlook').style.marginTop='6px';
+  $('nextstep').textContent=started?'':ps||cls==='feed'||cls==='near'?nextFeed(/no rise|dead/i.test(head)):cls==='good'?'Use it any time now; feed again once it peaks.':'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
+  const ol=!started&&!ps&&(cls==='ok'||cls==='good')?peakOutlook():null;$('outlook').hidden=!ol;$('outlook').innerHTML=ol||'';if(ol)$('outlook').style.marginTop='6px';
   runChart(s);
   seriesChart();
   readiness();
@@ -616,8 +620,8 @@ function forecast(){
   }else{
     // How it is climbing right now decides the wording: full pace past the
     // first guess = running late (peak not yet); slowing = close; flat = at top.
-    const left=live.T-hNow,cl=live.climb,mm=v=>(v*z.depth*10).toFixed(1);
-    const pace=cl&&cl.x>1.3?(cl.full?'full':cl.ratio>=0.25?'slowing':'flat'):null,late=hNow>priorFit.T;
+    const left=live.T-hNow,cr=live.climb&&live.climb.x>1.3?climbRates(z):null,mm=v=>v.toFixed(1),cl=cr;
+    const pace=cr&&cr.fast>0?(cr.last>=0.75*cr.fast?'full':cr.last>=0.25*cr.fast?'slowing':'flat'):null,late=hNow>priorFit.T;
     let unit=left>0.5?'in about '+(left<1.5?Math.round(left*60)+' min':left.toFixed(0)+' h'):'any time now';
     if(pace==='full'&&late)unit='still climbing · later than first guessed';
     else if(pace==='slowing')unit=left>0.5?unit+' · slowing':'slowing · close to its peak';
@@ -766,6 +770,16 @@ function riseOnset(z){
   const sm=smooth(z.pts,'x'),i=sm.findIndex(x=>(x-1)*z.depth>=ONSET_CM);
   return i<0?null:{t:z.pts[i].t,sm};
 }
+// The last hour's climb against its fastest hour, in mm on the smoothed line:
+// one measure for the status banner, the outlook line and the forecast card.
+function climbRates(z){
+  const on=riseOnset(z);if(!on)return null;
+  const ix=t=>{let i=z.pts.findIndex(p=>p.t>=t);return i<0?z.pts.length-1:i};
+  const hr=i=>(on.sm[i]-on.sm[ix(z.pts[i].t-3600e3)])*z.depth*10;
+  let fast=0;for(let i=ix(on.t+3600e3);i<z.pts.length;i++)fast=Math.max(fast,hr(i));
+  const last=hr(z.pts.length-1);
+  return {on,last,fast,slowing:fast>0&&last<0.75*fast};
+}
 // While rising: since when, and the last 2 h climb rate. The peak time is
 // the Peak forecast card's job (forecast()).
 function peakOutlook(){
@@ -778,11 +792,8 @@ function peakOutlook(){
   let t='Rising since '+clock(on.t)+', '+(cmh*10).toFixed(1)+' mm/h over the last 2 h. Peak time: see Peak forecast below.';
   // Slowing down: the last hour's climb against its fastest hour, both on the
   // smoothed line. ("Feed soon" takes over under 1.5 mm and half the fastest.)
-  const ix=t=>{let i=z.pts.findIndex(p=>p.t>=t);return i<0?z.pts.length-1:i};
-  const hr=i=>(on.sm[i]-on.sm[ix(z.pts[i].t-3600e3)])*z.depth*10;
-  let fast=0;for(let i=ix(on.t+3600e3);i<z.pts.length;i++)fast=Math.max(fast,hr(i));
-  const last=hr(z.pts.length-1);
-  if(fast>0&&last<0.75*fast)t+=' <span style="color:var(--fg)">Slowing: '+last.toFixed(1)+' mm in the last hour, down from '+fast.toFixed(1)+' at its fastest, so the peak is probably close.</span>';
+  const {last,fast,slowing}=climbRates(z);
+  if(slowing)t+=' <span style="color:var(--fg)">Slowing: '+last.toFixed(1)+' mm in the last hour, down from '+fast.toFixed(1)+' at its fastest, so the peak is probably close.</span>';
   return t;
 }
 // Per-feed numbers on 15-minute medians (history is already 5-min medians):
@@ -827,8 +838,8 @@ function readiness(){
   // The streak is proven by past feeds; the running feed only has to rise
   // (or, once it has missed, it breaks the streak).
   const missed=cur.dblH!=null?!good(cur):Date.now()>=by;
-  if(streak>=READY_RUNS&&good(cur))txt='<b style="font-size:1.1rem;display:inline">Ready to bake.</b> Kept a healthy pace '+streak+' feeds in a row. Mix your dough with it now, while it is near the top.';
-  else if(streak>=READY_RUNS&&!missed)txt='<b style="font-size:1.1rem;display:inline">Ready to bake once this feed is up.</b> Kept a healthy pace '+streak+' feeds in a row. Use this one near its peak.';
+  if(streak>=READY_RUNS&&good(cur))txt='<b style="font-size:1.1rem;display:inline;color:var(--ok)">✓ Ready to bake.</b> Kept a healthy pace '+streak+' feeds in a row. Mix your dough with it now, while it is near the top.';
+  else if(streak>=READY_RUNS&&!missed)txt='<b style="font-size:1.1rem;display:inline;color:var(--ok)">Ready to bake once this feed is up.</b> Kept a healthy pace '+streak+' feeds in a row. Use this one near its peak.';
   else txt='<b style="font-size:1.1rem;display:inline">Ready to bake: not yet</b> ('+(missed?0:Math.min(streak,READY_RUNS))+' of '+READY_RUNS+'). Ready once it doubles at a healthy pace for its ratio and temperature, '+READY_RUNS+' feeds in a row ('+READY_H+' h for 1:2:2 at '+STD_F+'°F; sooner for 1:1:1, later for 1:5:5).';
   $('ready').innerHTML=txt+curTxt;
   // Every feed, newest first; the box scrolls once there are more than fit.
