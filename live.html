@@ -785,7 +785,7 @@ function forecast(){
     g.lineWidth=2;g.beginPath();z.pts.forEach((p,i)=>{const hh=(p.t-z.fed)/3600e3;i?g.lineTo(X(hh),Y(sm[i])):g.moveTo(X(hh),Y(sm[i]))});g.stroke();
     if(!finished&&cv){
       g.setLineDash([6,4]);g.beginPath();
-      const h0=Math.max(hNow,cv.T-cv.D);for(let hh=h0;hh<=t1;hh+=0.1){const v=1+cv.A*fcR(hh,cv.T,cv.D,F.sh.k);hh===h0?g.moveTo(X(hh),Y(v)):g.lineTo(X(hh),Y(v))}
+      const h0=Math.max(hNow,cv.T-cv.D),h9=Math.min(t1,cv.T+1);for(let hh=h0;hh<=h9;hh+=0.1){const v=1+cv.A*fcR(hh,cv.T,cv.D,F.sh.k);hh===h0?g.moveTo(X(hh),Y(v)):g.lineTo(X(hh),Y(v))}
       g.stroke();g.setLineDash([]);
       g.fillStyle=css('--chart-d');g.beginPath();g.arc(X(cv.T),Y(1+cv.A),4,0,7);g.fill();
     }
