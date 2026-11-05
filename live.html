@@ -68,12 +68,13 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 <label class="note" style="display:block;margin-top:6px">Note <input id="rnote" type="text" maxlength="120" class="wide-in" placeholder="optional"></label></div>
 <a class="btn" id="calbtn" href="#" hidden>Calibrate empty jar</a> <a class="btn" id="startbtn" href="#" hidden>Starter in</a> <a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
 <div id="planslot" style="margin-top:10px" hidden></div>
-<div class="card" id="fccard" hidden><div class="label">Peak forecast · this feed</div>
+<div class="card" id="fccard" hidden><div class="label" id="fclabel">Peak forecast · this feed</div>
+  <div id="fcpick" class="row" style="gap:6px;margin:6px 0 2px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px"></div>
   <div class="big"><span id="fcnow">–</span><span class="unit" id="fcunit"></span></div>
   <div class="small" id="fcnote"></div>
   <canvas id="fcchart" style="height:170px;margin-top:8px"></canvas>
   <div class="small" id="fckey"></div>
-  <div class="label" style="margin-top:12px">How the forecast moved</div>
+  <div class="label" id="fctraillabel" style="margin-top:12px">How the forecast moved</div>
   <canvas id="fctrail" style="height:150px;margin-top:4px"></canvas>
   <div class="small" id="fctrailnote"></div>
   <div class="label" style="margin-top:12px">Track record</div>
@@ -498,7 +499,7 @@ function strength(){
   $('sspeed').textContent=sp[last].toFixed(1);
   // The feed still rising has no peak yet: its speed so far comes from the
   // live peak forecast (median and 80% range), redrawn with every reading.
-  const F=!done[ks.length-1]?fcCompute():null,nd0=doublingsOf(cur);
+  const F0=!done[ks.length-1]?fcCompute():null,F=F0&&!F0.pending?F0:null,nd0=doublingsOf(cur);
   const prov=F&&!F.finished&&nd0?['T','lo','hi'].map(q=>toStdF(F.live[q]/nd0,cur.f)):null;
   $('sspeednote').innerHTML=(last===ks.length-1?'This feed':'The '+day(lk.fed)+' feed')+'. Ready at <b>'+READY_SPEED.toFixed(1)+'</b> or less; fewer hours is stronger (higher on the chart).'+
     (prov?' <span style="color:var(--fg)">This feed so far: about <b>'+prov[0].toFixed(1)+'</b> ('+prov[1].toFixed(1)+'–'+prov[2].toFixed(1)+'), from the peak forecast.</span>':'');
@@ -686,16 +687,17 @@ function fcHistory(done){
   const rows=raw.map((r,j)=>{
     const lean=fcLean(raw.slice(0,j).map(q=>q.stat)),adj=r.tr.map(p=>fcAdjust(p,r.tr[0],lean));
     const at=h=>h>0.25?adj.reduce((b,p)=>Math.abs(p.h-h)<Math.abs(b.h-h)?p:b).T-r.d.T:null;
-    return {fed:r.d.z.fed,k:r.d.k,T:r.d.T,prior:adj[0].T-r.d.T,h3:at(r.d.T-3),h1:at(r.d.T-1)};
+    return {fed:r.d.z.fed,k:r.d.k,T:r.d.T,prior:adj[0].T-r.d.T,h3:at(r.d.T-3),h1:at(r.d.T-1),adj,z:r.d.z};
   });
   return fcPast={key,rows,lean:fcLean(raw.map(r=>r.stat)),stats:raw.map(r=>r.stat)};
 }
 function fcCompute(){
   const segs=feedSegs(),ks=segs.map(feedKpis),n=ks.length,cur=ks[n-1],z=segs[n-1];
-  if(!z.depth||!z.pts.length||!doublingsOf(cur))return null;
-  const key=n+':'+z.pts.length+':'+z.pts[z.pts.length-1].t+':'+z.pts[z.pts.length-1].x;
+  const key=n+':'+z.pts.length+':'+(z.pts.length?z.pts[z.pts.length-1].t+':'+z.pts[z.pts.length-1].x:'');
   if(fcCache&&fcCache.key===key)return fcCache;
   const done=fcFinished(ks,segs),hist=fcHistory(done);
+  // Just fed, no readings yet: the card still shows, with the past feeds.
+  if(!z.depth||!z.pts.length||!doublingsOf(cur))return fcCache={key,pending:true,z,cur,track:hist.rows,done,pr:fcPrior(cur,done,cur.f??STD_F),lean:hist.lean,nLean:hist.stats.filter(x=>x!=null).length};
   // fcFitShape stores each feed's climb on it; this last call (all finished
   // feeds) is the one the current feed uses.
   const sh=fcFitShape(done),fNow=cur.f??STD_F;  // room temp averaged since the feed
@@ -706,19 +708,37 @@ function fcCompute(){
   const trail=raw.map(p=>fcAdjust(p,raw[0],hist.lean));
   return fcCache={key,z,cur,pr,sh,live:trail[trail.length-1],trail,priorFit:trail[0],track:hist.rows,lean:hist.lean,nLean:hist.stats.filter(x=>x!=null).length,finished,hNow,done};
 }
+// Which feed the card shows: this one (null) or a past one picked from the
+// chips or the track record, replayed with only the feeds before it. A new
+// feed brings it back to "This feed".
+let fcView=null,fcViewFor=null;
 function forecast(){
   const F=fcCompute();
-  if(!F){$('fccard').hidden=true;return}
+  if(!F||!F.track.length&&F.pending){$('fccard').hidden=true;return}
   $('fccard').hidden=false;
-  const {z,cur,pr,live,trail,priorFit,track,finished,hNow,done,lean,nLean}=F,at=h=>z.fed+h*3600e3;
+  if(fcViewFor!==F.cur.fed){fcViewFor=F.cur.fed;fcView=null}
+  const row=fcView!=null?F.track.find(r=>r.fed===fcView):null;if(!row)fcView=null;
+  const V=row?{z:row.z,cur:row.k,trail:row.adj,priorFit:row.adj[0],live:row.adj[row.adj.length-1],finished:true,hNow:(row.z.pts[row.z.pts.length-1].t-row.z.fed)/3600e3}:F;
+  const past=!!row,{z,cur,live,trail,priorFit,finished,hNow}=V,{pr,track,done,lean,nLean}=F,at=h=>z.fed+h*3600e3;
+  $('fclabel').textContent=past?'Peak forecast · '+fcDay(row.fed)+' feed':'Peak forecast · this feed';
+  const isOn=fed=>fed===fcView;
+  $('fcpick').innerHTML=[{fed:null,t:'This feed'},...[...track].reverse().map(r=>({fed:r.fed,t:fcDay(r.fed)}))]
+    .map(c=>'<button class="chip'+(isOn(c.fed)?' on':'')+'" style="white-space:nowrap" data-fcfed="'+(c.fed??'')+'">'+c.t+'</button>').join('');
+  const wait=!past&&F.pending;
+  ['fcchart','fckey','fctraillabel','fctrail','fctrailnote'].forEach(id=>$(id).hidden=wait);
+  if(wait){
+    $('fcnow').textContent='–';$('fcunit').textContent='waiting for readings';
+    $('fcnote').innerHTML='Fed '+clock(F.cur.fed)+'. The forecast starts with the first readings, a few minutes after the box goes back on. Tap an earlier feed above to see how its forecast did.';
+  }
   const who=(run.starter||'starter').replace(/^./,c=>c.toUpperCase());
   const rng=f=>clock(at(f.lo))+'–'+clock(at(f.hi));
   const replay=h=>trail.reduce((b,p)=>Math.abs(p.h-h)<Math.abs(b.h-h)?p:b,trail[0]);
-  if(finished){
+  if(wait){/* header set above; skip the per-feed charts */}
+  else if(finished){
     $('fcnow').textContent=clock(at(cur.peakH));$('fcunit').textContent='peaked · '+cur.peak.toFixed(1)+'x';
     const e=h=>{if(h<0.25)return null;const r=replay(h);return fcHrs(r.T-cur.peakH)};
     $('fcnote').innerHTML='Before the rise it said <b>'+clock(at(priorFit.T))+'</b> ('+fcHrs(priorFit.T-cur.peakH)+')'+
-      (e(cur.peakH-3)?'; 3 h before the peak, '+e(cur.peakH-3):'')+(e(cur.peakH-1)?'; 1 h before, '+e(cur.peakH-1):'')+'. + means it said later than it happened. This feed now teaches the next forecast.';
+      (e(cur.peakH-3)?'; 3 h before the peak, '+e(cur.peakH-3):'')+(e(cur.peakH-1)?'; 1 h before, '+e(cur.peakH-1):'')+'. + means it said later than it happened. '+(past?'Replayed with only the feeds before it, so this is what the page would have said then.':'This feed now teaches the next forecast.');
   }else{
     // How it is climbing right now decides the wording: full pace past the
     // first guess = running late (peak not yet); slowing = close; flat = at top.
@@ -739,7 +759,7 @@ function forecast(){
       ' Peak height about '+(1+live.A).toFixed(1)+'x. <b>Before the rise:</b> '+clock(at(priorFit.T))+' ('+rng(priorFit)+').';
   }
   // Readings, the projected curve and the likely peak window.
-  {
+  if(!wait){
     const c=$('fcchart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
     const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
     const sm=smooth(z.pts,'x'),cv=live.curve,t1=Math.max(hNow,finished?hNow:Math.min(live.hi,36)+0.5);
@@ -761,12 +781,12 @@ function forecast(){
       g.stroke();g.setLineDash([]);
       g.fillStyle=css('--chart-d');g.beginPath();g.arc(X(cv.T),Y(1+cv.A),4,0,7);g.fill();
     }
-    g.strokeStyle=css('--fg');g.lineWidth=1;g.beginPath();g.moveTo(X(hNow),T);g.lineTo(X(hNow),T+H);g.stroke();
+    if(!past){g.strokeStyle=css('--fg');g.lineWidth=1;g.beginPath();g.moveTo(X(hNow),T);g.lineTo(X(hNow),T+H);g.stroke()}
     g.textAlign='left';
   }
-  $('fckey').innerHTML='<span style="color:var(--chart-d)">━</span> readings <span style="color:var(--chart-d)">╍</span> projected <span style="color:var(--accent);opacity:.6">█</span> likely peak window <span style="color:var(--muted)">┆</span> before-the-rise guess │ now';
+  $('fckey').innerHTML='<span style="color:var(--chart-d)">━</span> readings <span style="color:var(--chart-d)">╍</span> projected <span style="color:var(--accent);opacity:.6">█</span> likely peak window <span style="color:var(--muted)">┆</span> before-the-rise guess'+(past?'':' │ now');
   // How the forecast moved: forecast peak time against the time it was made.
-  {
+  if(!wait){
     const c=$('fctrail'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
     const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
     const t1=Math.max(hNow,1),ys=trail.flatMap(p=>[p.lo,p.hi]).concat(finished?[cur.peakH]:[]);
@@ -785,15 +805,15 @@ function forecast(){
     trail.forEach((p,i)=>i?g.lineTo(X(p.h),Y(p.T)):g.moveTo(X(p.h),Y(p.T)));g.stroke();
     g.restore();g.textAlign='left';
   }
-  const first=trail[0],moved=live.T-first.T;
-  $('fctrailnote').innerHTML='<span style="color:var(--chart-d)">━</span> forecast peak, as made at each time <span style="color:var(--accent);opacity:.6">█</span> its 80% range; the right edge is now'+(finished?' <span style="color:var(--ok)">╍</span> real peak':'')+
-    '. '+(trail.length>1?(Math.abs(moved)<0.25?'Hasn\'t moved much since the feed.':'Moved '+fcHrs(moved).replace('+','later by ').replace('−','earlier by ')+' since the feed, and the range has gone from '+((first.hi-first.lo)).toFixed(1)+' h wide to '+(live.hi-live.lo).toFixed(1)+' h.'):'');
+  if(!wait){const first=trail[0],moved=live.T-first.T;
+  $('fctrailnote').innerHTML='<span style="color:var(--chart-d)">━</span> forecast peak, as made at each time <span style="color:var(--accent);opacity:.6">█</span> its 80% range; '+(past?'it ends at the peak':'the right edge is now')+(finished?' <span style="color:var(--ok)">╍</span> real peak':'')+
+    '. '+(trail.length>1?(Math.abs(moved)<0.25?'Hasn\'t moved much since the feed.':'Moved '+fcHrs(moved).replace('+','later by ').replace('−','earlier by ')+' since the feed, and the range has gone from '+((first.hi-first.lo)).toFixed(1)+' h wide to '+(live.hi-live.lo).toFixed(1)+' h.'):'');}
   // Track record and what it learned.
   const td='<td style="padding:4px 12px 4px 0;border-top:1px solid var(--line)">',f=v=>v==null?'–':fcHrs(v);
   $('fctrack').innerHTML=track.length?'<tr style="color:var(--muted)"><td style="padding:0 12px 2px 0">Feed</td><td>Peaked</td><td>Before the rise</td><td>3 h out</td><td>1 h out</td></tr>'+
-    track.map(r=>'<tr>'+td+fcDay(r.fed)+'<br><span class="note">'+fedAs(r.k)+'</span></td>'+td+clock(r.fed+r.T*3600e3)+'</td>'+td+f(r.prior)+'</td>'+td+f(r.h3)+'</td>'+td+f(r.h1)+'</td></tr>').join(''):'';
+    track.map(r=>'<tr data-fcfed="'+r.fed+'" style="cursor:pointer'+(isOn(r.fed)?';font-weight:700':'')+'">'+td+fcDay(r.fed)+'<br><span class="note">'+fedAs(r.k)+'</span></td>'+td+clock(r.fed+r.T*3600e3)+'</td>'+td+f(r.prior)+'</td>'+td+f(r.h3)+'</td>'+td+f(r.h1)+'</td></tr>').join(''):'';
   const pct=v=>Math.round(Math.abs(1-Math.exp(v))*100)+'%';
-  $('fclearn').innerHTML=(track.length?'How far off each forecast was, replayed with only the feeds before it (+ = said later than it happened). ':'')+
+  $('fclearn').innerHTML=(track.length?'How far off each forecast was, replayed with only the feeds before it (+ = said later than it happened). Tap a feed to see its charts. ':'')+
     '<b>What it has learned so far</b> from '+done.length+' finished feed'+(done.length===1?'':'s')+': '+who+'\'s recent speed is '+pr.rawSpeed.toFixed(1)+' h per doubling (newest counts most). '+
     (pr.errs.length?'That guess has run '+(pr.bias<0?'slow':'fast')+' on past feeds, so it\'s '+(pr.bias<0?'shortened':'lengthened')+' by '+pct(pr.bias)+', and its misses (±'+pct(pr.sig)+') set the range. ':'')+
     'Once it starts climbing, past feeds took about '+pr.D0.toFixed(1)+' h from first lift to peak, which pins the peak down'+(nLean?', and the fitted curve has run '+fcHrs(lean).replace('+','').replace('−','')+' '+(lean>=0?'late':'early')+' near the top, so that is taken off as the readings take over':'')+'. Each finished feed is added automatically, so this gets sharper with every feed.';
@@ -972,7 +992,7 @@ function readiness(){
   $('ready').innerHTML=txt+curTxt;
   // Every feed, newest first; the box scrolls once there are more than fit.
   // Two lines per cell so the columns stay narrow and line up on a phone.
-  const prov=cur.peak!=null&&cur.last!=null&&cur.peak-cur.last>=0.1?null:fcCompute();
+  const prov=cur.peak!=null&&cur.last!=null&&cur.peak-cur.last>=0.1?null:(F=>F&&!F.pending?F:null)(fcCompute());
   const speedOf=(k,i)=>{
     const nd=doublingsOf(k);if(!nd)return '–';
     const last=i===ks.length-1,done=!last||(k.peak!=null&&k.last!=null&&k.peak-k.last>=0.1);
@@ -1268,6 +1288,7 @@ $('rflourmix').onchange=$('rflour').oninput=()=>{showFlour();refreshNext()};
 $('rvessel').addEventListener('input',()=>{refreshNext();keepPick()});
 $('rvesselsel').onchange=()=>{showJar();keepPick();refreshNext();if(!$('rvessel').hidden)$('rvessel').focus()};
 $('rjarnote').onclick=$('rjars').onclick=e=>{const b=e.target.closest('[data-jar]');if(b){e.preventDefault();jarAct(b.dataset.jar)}};
+$('fcpick').onclick=$('fctrack').onclick=e=>{const b=e.target.closest('[data-fcfed]');if(!b)return;fcView=b.dataset.fcfed?Number(b.dataset.fcfed):null;forecast();$('fccard').scrollIntoView({behavior:'smooth',block:'start'})};
 $('planuse').onclick=()=>{if(!planPick)return;recipeTouched=false;setGrams(planPick);if(run)renderPlan();if(!$('recipe').hidden)$('recipe').scrollIntoView({behavior:'smooth',block:'center'})};
 $('depth').oninput=e=>{const v=parseFloat(e.target.value);v>0?store.set('depth',String(v)):store.del('depth');render()};
 addEventListener('resize',()=>{chart();renderRun()});
