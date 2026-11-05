@@ -1412,9 +1412,11 @@ function bakeGus(){
     '<h3>Does a higher rise in the jar make a taller loaf?</h3>Not really. How high the jar gets mostly depends on how much food it got (bigger feeds rise higher), the flour (whole wheat and rye go higher) and how thick it is (stiffer holds gas better). A taller loaf comes from the dough: strength from the folds, ending the bulk rise at 50–75%, tight shaping, a good proof, and a hot oven with steam. More starter only makes the bulk rise go faster.';
   return {win};
 }
-function bakeTab(){
+function bakeTab(force){
   const g=bakeGus();
-  if($('baksteps').contains(document.activeElement))return;  // don't redraw under a time being edited
+  // Don't redraw under a box being typed in (the minute refresh); a tap on
+  // Done or Undo always redraws, even though the tapped button has focus.
+  {const ae=document.activeElement;if(!force&&ae&&ae.tagName==='INPUT'&&$('baksteps').contains(ae))return}
   const n=bk.loaves,{T,bh,F}=bakeTimes(),next=BAKE_STEPS.find(st=>!bk.done[st.id]),now=Date.now();
   if(document.activeElement!==$('bakn'))$('bakn').value=n;
   bakeSummary();
@@ -1465,14 +1467,14 @@ function setTab(t){
 $('tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){setTab(b.dataset.tab);scrollTo(0,0)}};
 $('baksteps').onclick=e=>{
   const d=e.target.closest('[data-bd]'),u=e.target.closest('[data-bu]');
-  if(d){const id=d.dataset.bd;bk.done[id]=Date.now();bkSave();bakeTab();sendBake('done',id)}
-  if(u){const id=u.dataset.bu,at=bk.done[id];delete bk.done[id];bkSave();bakeTab();sendBake('undo',id,at)}
+  if(d){const id=d.dataset.bd;bk.done[id]=Date.now();bkSave();bakeTab(true);sendBake('done',id)}
+  if(u){const id=u.dataset.bu,at=bk.done[id];delete bk.done[id];bkSave();bakeTab(true);sendBake('undo',id,at)}
 };
 $('baksteps').onchange=e=>{
   const id=e.target.dataset&&e.target.dataset.bt;if(!id||!e.target.value)return;
   const [hh,mm]=e.target.value.split(':').map(Number),t=new Date(bk.done[id]);t.setHours(hh,mm,0,0);
   if(t.getTime()>Date.now()+10*60e3)t.setDate(t.getDate()-1);
-  bk.done[id]=t.getTime();bkSave();e.target.blur();bakeTab();sendBake('time',id);
+  bk.done[id]=t.getTime();bkSave();e.target.blur();bakeTab(true);sendBake('time',id);
 };
 $('baksteps').addEventListener('input',e=>{
   const k=e.target.dataset&&e.target.dataset.amt;if(!k)return;
