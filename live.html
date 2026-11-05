@@ -62,6 +62,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 <input id="rflour" type="text" maxlength="100" class="wide-in" hidden placeholder="New flour, e.g. spelt">
 <label class="note" style="display:block;margin-top:6px">Jar <select id="rvesselsel" class="wide-in"></select></label>
 <input id="rvessel" type="text" maxlength="120" class="wide-in" hidden placeholder="New jar, e.g. Weck 500 mL">
+<div class="note" id="rjarnote" style="margin-top:2px"></div>
+<details class="note" style="margin-top:4px"><summary>Your jars</summary><table id="rjars" class="ktab small"></table></details>
 <label class="note" style="display:block;margin-top:6px">Note <input id="rnote" type="text" maxlength="120" class="wide-in" placeholder="optional"></label></div>
 <a class="btn" id="calbtn" href="#" hidden>Calibrate empty jar</a> <a class="btn" id="startbtn" href="#" hidden>Starter in</a> <a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
 <div id="planslot" style="margin-top:10px" hidden></div>
@@ -166,11 +168,30 @@ function fillFlours(){
   const s=$('rflourmix');s.querySelectorAll('option[value^="c:"]').forEach(o=>o.remove());
   saved('flours').forEach(n=>s.insertBefore(opt('c:'+n,'All '+n),s.querySelector('option[value="other"]')));
 }
+// The jar table: every jar in the feed log with its latest empty reading.
+// Calibrate a jar once and Starter in saves the reading under its name; the
+// logger reuses it whenever that jar comes back without a calibration.
+function jarTable(){
+  const m=new Map();
+  [...(run.history||[]),run].forEach(r=>{if(!r.vessel)return;const e=m.get(r.vessel)||{name:r.vessel,feeds:0,empty:null,at:null};e.feeds++;if(r.empty_cm){e.empty=+r.empty_cm;e.at=r.fed_at}m.set(r.vessel,e)});
+  return [...m.values()];
+}
+let calNow=null;  // empty reading taken in this pause, if any
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
 function fillJars(cur){
   const s=$('rvesselsel'),l=[...new Set([...JARS,...(run.history||[]).map(r=>r.vessel),run.vessel,...saved('jars'),cur].filter(Boolean))];
-  s.replaceChildren(...l.map(v=>opt(v)),opt('new','+ Add a jar…'));s.value=cur||l[0];showJar();
+  const jt=new Map(jarTable().map(j=>[j.name,j]));
+  s.replaceChildren(...l.map(v=>opt(v,jt.get(v)?.empty?v+' ✓':v)),opt('new','+ Add a jar…'));s.value=cur||l[0];showJar();
+  const day=t=>new Date(t).toLocaleDateString([],{month:'short',day:'numeric'});
+  $('rjars').innerHTML='<tr><th>Jar</th><th>Empty</th><th>Feeds</th></tr>'+[...jt.values()].map(j=>'<tr><td>'+esc(j.name)+'</td><td>'+(j.empty?j.empty.toFixed(1)+' cm<div class="sub">'+day(j.at)+'</div>':'<span class="sub">not yet</span>')+'</td><td>'+j.feeds+'</td></tr>').join('');
 }
-const showJar=()=>{$('rvessel').hidden=$('rvesselsel').value!=='new'};
+const showJar=()=>{
+  const v=$('rvesselsel').value,j=jarTable().find(q=>q.name===v);$('rvessel').hidden=v!=='new';
+  $('rjarnote').innerHTML=calNow?'<b>Which jar did you just measure?</b> Pick it or add it here: Starter in saves '+calNow.toFixed(1)+' cm under its name, so next time you can skip Calibrate.'
+    :v==='new'?'New jar: tap Calibrate with it empty first, once.'
+    :j&&j.empty?'<span style="color:var(--ok)">✓ Known jar, empty '+j.empty.toFixed(1)+' cm.</span> No need to calibrate.'
+    :'Not calibrated yet: tap Calibrate with this jar empty, once, and it is remembered.';
+};
 const vesselIn=()=>$('rvesselsel').value==='new'?$('rvessel').value.trim():$('rvesselsel').value;
 function flourText(){
   const m=$('rflourmix').value,g=Number($('rg_f').value);
@@ -355,10 +376,12 @@ function renderRun(){
   // A new feed from Starter in shows up once the logger republishes run.json.
   const started=!ps&&ctlNow&&ctlNow.c==='start'&&new Date(run.fed_at).getTime()<ctlNow.at-90e3;
   const pc=run.pause||{},ecm=calib?calib.cm:(pc.empty_cm||null);
+  // A fresh calibration: ask which jar it was (the Jar picker, right below).
+  if(ps&&ecm&&calNow!==+ecm){calNow=+ecm;{showJar();setTimeout(()=>$('rvesselsel').scrollIntoView({behavior:'smooth',block:'center'}),300)}}else if(!ps)calNow=null;
   const swap=calib&&calib.cm==null&&!calib.failed?'Measuring the empty jar. Keep the box still on it, about 10 seconds.'
     :calib&&calib.failed?'Couldn\'t measure the empty jar. Check the box sits flat on it and tap Calibrate again.'
     :ecm?'Empty jar: '+Number(ecm).toFixed(1)+' cm to the bottom. Now pour in the starter, put the box back on, check the grams below, and tap Starter in.'
-    :'Swapping jars? Put the box on the clean, empty jar and tap Calibrate. Then pour in the starter, put the box back on, and tap Starter in.';
+    :'A jar marked ✓ below is already calibrated: pour in the starter, put the box back on, and tap Starter in. A new jar: put the box on it empty and tap Calibrate first.';
   const [cls,head,note]=started?['ok','New feed started','Fed '+clock(ctlNow.at)+'. The page switches to the new run within a few minutes.']
     :ps?['near',calib&&calib.cm==null&&!calib.failed?'Calibrating…':ecm?'Jar calibrated':'Paused','Tracking paused since '+clock(ps)+'. '+swap]:runVerdict(s);
   $('calbtn').hidden=$('startbtn').hidden=$('recipe').hidden=!ps;
