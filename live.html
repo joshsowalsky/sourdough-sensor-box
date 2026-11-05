@@ -276,10 +276,27 @@ function lockFollow(id){
   if(!lockR)return;const i=G_IDS.indexOf(id),v=Number($(id).value);if(!(v>0))return;
   lockTyped=i;const s=v/lockR[i];G_IDS.forEach((o,j)=>{if(j!==i)$(o).value=g1(s*lockR[j])});showLock();
 }
+// The form is filled once per pause. The pause is known by when it started
+// (run.paused), not by the last button: tapping Calibrate used to look like
+// a new pause and reset the jar to the last feed's, so the reading landed on
+// the wrong jar. What you pick is also kept in this browser for the pause, so
+// a reload (Calibrate without a pause key reloads the page) keeps it.
+const samePause=(a,b)=>a!=null&&b!=null&&Math.abs(a-b)<10*60e3;
+function pauseKey(ps){const t=run.paused?new Date(run.paused).getTime():NaN;return isNaN(t)?ps:t}
+function keepPick(){
+  if(recipeFor==null)return;
+  store.set('pick',JSON.stringify({pause:recipeFor,jar:$('rvesselsel').value,name:$('rvessel').value,grams:recipeTouched?gVals():null}));
+}
 function fillRecipe(ps){
-  if(recipeFor===ps)return;recipeFor=ps;recipeTouched=false;
-  setGrams(planPick||(run.feed_g||'').split(':'));fillFlours();const mix=flourMix(run.flour);$('rflourmix').value=String(mix);$('rflour').value=mix==='other'?(run.flour||'').replace(/^[\d.]+\s*g\s+/,''):'';showFlour();
-  fillJars(run.next_vessel||run.vessel);$('rvessel').value='';$('rnote').value='';
+  const key=pauseKey(ps);
+  if(samePause(recipeFor,key))return;recipeFor=key;recipeTouched=false;
+  let pick=null;try{pick=JSON.parse(store.get('pick')||'null')}catch(e){}
+  if(!pick||!samePause(pick.pause,key))pick=null;
+  setGrams(pick&&pick.grams||planPick||(run.feed_g||'').split(':'));if(pick&&pick.grams)recipeTouched=true;
+  fillFlours();const mix=flourMix(run.flour);$('rflourmix').value=String(mix);$('rflour').value=mix==='other'?(run.flour||'').replace(/^[\d.]+\s*g\s+/,''):'';showFlour();
+  const jar=pick&&pick.jar&&pick.jar!=='new'?pick.jar:run.next_vessel||run.vessel;
+  fillJars(jar);$('rvessel').value='';$('rnote').value='';
+  if(pick&&pick.jar==='new'){$('rvesselsel').value='new';$('rvessel').value=pick.name||'';showJar()}
 }
 async function sendCtl(c){
   if(c==='start'&&$('rvesselsel').value==='new'&&!$('rvessel').value.trim()){$('rvessel').placeholder='Name the new jar first';$('rvessel').scrollIntoView({behavior:'smooth',block:'center'});$('rvessel').focus();return}
@@ -442,7 +459,7 @@ function renderRun(){
   $('calbtn').hidden=true;$('startbtn').hidden=$('recipe').hidden=!ps;  // calibrating lives in the Jar box
   // Paused = feeding: the planner moves up right under this card, and back after.
   {const pc=$('plancard'),slot=$('planslot');if(ps&&pc.parentNode!==slot)slot.appendChild(pc);else if(!ps&&pc.parentNode===slot)$('planhome').after(pc);slot.hidden=!ps}
-  if(ps)fillRecipe(ps);
+  if(ps)fillRecipe(ps);else recipeFor=null;
   $('calbtn').href=CTL+'/calibrate';$('calbtn').onclick=e=>{e.preventDefault();sendCtl('calibrate')};
   $('startbtn').href=CTL+'/start';$('startbtn').onclick=e=>{e.preventDefault();sendCtl('start')};
   $('pausebtn').textContent=ps?'Resume (same starter)':'Pause tracking';$('pausebtn').href=CTL+(ps?'/resume':'/pause');
@@ -1244,12 +1261,12 @@ $('depth').value=store.get('depth')||'';
 $('planpeak').oninput=$('plantemp').oninput=()=>{if(run)renderPlan()};
 try{bake={...BAKE_DEF,...JSON.parse(store.get('bake')||'{}')}}catch(e){}
 showBake();['bakeon','bakeagain','bakedays'].forEach(id=>$(id).onchange=readBake);['bakeloaves','bakeper','bakekeep'].forEach(id=>$(id).oninput=readBake);
-['rg_s','rg_f','rg_w'].forEach(id=>$(id).addEventListener('input',()=>{recipeTouched=true;lockFollow(id);if(run)renderPlan();showFlour()}));
+['rg_s','rg_f','rg_w'].forEach(id=>$(id).addEventListener('input',()=>{recipeTouched=true;keepPick();lockFollow(id);if(run)renderPlan();showFlour()}));
 $('rglock').onchange=e=>{e.target.checked?store.set('glock','1'):store.del('glock');setLock(e.target.checked)};
 if(store.get('glock'))$('rglock').checked=true;  // remembered; locks on the grams once they're filled in
 $('rflourmix').onchange=$('rflour').oninput=()=>{showFlour();refreshNext()};
-$('rvessel').addEventListener('input',refreshNext);
-$('rvesselsel').onchange=()=>{showJar();refreshNext();if(!$('rvessel').hidden)$('rvessel').focus()};
+$('rvessel').addEventListener('input',()=>{refreshNext();keepPick()});
+$('rvesselsel').onchange=()=>{showJar();keepPick();refreshNext();if(!$('rvessel').hidden)$('rvessel').focus()};
 $('rjarnote').onclick=$('rjars').onclick=e=>{const b=e.target.closest('[data-jar]');if(b){e.preventDefault();jarAct(b.dataset.jar)}};
 $('planuse').onclick=()=>{if(!planPick)return;recipeTouched=false;setGrams(planPick);if(run)renderPlan();if(!$('recipe').hidden)$('recipe').scrollIntoView({behavior:'smooth',block:'center'})};
 $('depth').oninput=e=>{const v=parseFloat(e.target.value);v>0?store.set('depth',String(v)):store.del('depth');render()};
