@@ -187,16 +187,20 @@ function jarTable(){
 let calNow=null,calDrop=false;  // empty reading taken in this pause, and whether it was discarded
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
 function fillJars(cur){
-  const s=$('rvesselsel'),l=[...new Set([...JARS,...(run.history||[]).map(r=>r.vessel),run.vessel,...saved('jars'),cur].filter(Boolean))];
-  const jt=new Map(jarTable().map(j=>[j.name,j]));
+  // Removed jars are only hidden from this list (on this device); past feeds
+  // keep their own jar and reading in the feed log.
+  const hid=saved('hiddenjars'),s=$('rvesselsel'),l=[...new Set([...JARS,...(run.history||[]).map(r=>r.vessel),run.vessel,...saved('jars'),cur].filter(Boolean))].filter(v=>v===cur||!hid.includes(v));
+  const jt=new Map(jarTable().filter(j=>l.includes(j.name)).map(j=>[j.name,j]));
   s.replaceChildren(...l.map(v=>opt(v,jt.get(v)?.empty?v+' ✓':v)),opt('new','+ Add a jar…'));s.value=cur||l[0];showJar();
   const day=t=>new Date(t).toLocaleDateString([],{month:'short',day:'numeric'});
-  $('rjars').innerHTML='<tr><th>Jar</th><th>Empty</th><th>Feeds</th></tr>'+[...jt.values()].map(j=>'<tr><td>'+esc(j.name)+'</td><td>'+(j.empty?j.empty.toFixed(1)+' cm<div class="sub">'+day(j.at)+'</div>':'<span class="sub">not yet</span>')+'</td><td>'+j.feeds+'</td></tr>').join('');
+  const rows=l.map(v=>jt.get(v)||{name:v,feeds:0,empty:null,at:null});
+  $('rjars').innerHTML='<tr><th>Jar</th><th>Empty</th><th></th></tr>'+rows.map(j=>'<tr><td>'+esc(j.name)+'<div class="sub">'+j.feeds+' feed'+(j.feeds===1?'':'s')+'</div></td><td>'+(j.empty?j.empty.toFixed(1)+' cm<div class="sub">'+day(j.at)+'</div>':'<span class="sub">not yet</span>')+'</td><td>'+
+    jarBtn('recal:'+encodeURIComponent(j.name),j.empty?'Recalibrate':'Calibrate')+jarBtn('hide:'+encodeURIComponent(j.name),'Remove')+'</td></tr>').join('');
 }
 // Jar picker. "+ Add a jar…" is a two-step flow that can't be skipped:
 // calibrate the empty jar, then name it (or cancel back to the last jar).
 // Picking a known jar after a calibration checks the reading against it.
-let lastJar=null;
+let lastJar=null,recalJar=null;  // jar picked to recalibrate, until a reading comes in
 const jarBtn=(act,t)=>' <button class="chip" data-jar="'+act+'" style="min-height:34px;padding:4px 10px;margin-top:4px">'+t+'</button>';
 const showJar=()=>{
   const v=$('rvesselsel').value,j=jarTable().find(q=>q.name===v),n=$('rjarnote');
@@ -211,6 +215,8 @@ const showJar=()=>{
     return;
   }
   const known=j&&j.empty;
+  if(recalJar===v&&!measuring){n.innerHTML='<strong style="color:var(--fg)">Recalibrating:</strong> empty and clean the '+esc(v)+', put the box on it the way it sits for a rise, and tap Calibrate. The new reading replaces the old one when you tap Starter in.'+jarBtn('cal','Calibrate')+jarBtn('cancel','Cancel');return}
+  if(recalJar===v&&measuring){n.innerHTML='Measuring… keep the box still on the empty jar, about 10 seconds.';return}
   const C=cal;
   n.innerHTML=C&&known&&Math.abs(C-j.empty)>0.5?'<span style="color:var(--warn)">You just measured '+C.toFixed(1)+' cm, but this jar read '+j.empty.toFixed(1)+' cm before.</span> A different jar? Choose "+ Add a jar…" to name it. Same jar with the box sitting differently? Starter in would save '+C.toFixed(1)+' cm for it.'
     :C&&known?'<span style="color:var(--ok)">✓ Matches this jar ('+j.empty.toFixed(1)+' cm before).</span>'
@@ -222,14 +228,19 @@ const showJar=()=>{
   else if(calDrop&&calNow)n.innerHTML+='<div style="margin-top:4px">Discarded the '+calNow.toFixed(1)+' cm reading'+(known?'; Starter in uses the saved '+j.empty.toFixed(1)+' cm.':'.')+jarBtn('undo','Undo')+'</div>';
 };
 function jarAct(act){
+  if(act.startsWith('recal:')){const v=decodeURIComponent(act.slice(6));fillJars(v);recalJar=v;calDrop=false;showJar();refreshNext();$('rjarnote').scrollIntoView({behavior:'smooth',block:'center'});return}
+  if(act.startsWith('hide:')){const v=decodeURIComponent(act.slice(5));
+    if(!confirm('Remove "'+v+'" from your jar list? Past feeds keep their readings. You can add it back with + Add a jar.'))return;
+    addSaved('hiddenjars',v);const l=saved('jars').filter(x=>x!==v);store.set('jars',JSON.stringify(l));
+    fillJars($('rvesselsel').value===v?null:$('rvesselsel').value);refreshNext();if(run)renderPlan();return}
   if(act==='cal'){calDrop=false;sendCtl('calibrate');return}
   if(act==='drop')calDrop=true;
   if(act==='undo')calDrop=false;
-  if(act==='cancel'){$('rvessel').value='';$('rvesselsel').value=lastJar||$('rvesselsel').options[0].value}
+  if(act==='cancel'){recalJar=null;$('rvessel').value='';$('rvesselsel').value=lastJar||$('rvesselsel').options[0].value}
   if(act==='save'){
     const name=$('rvessel').value.trim();
     if(!name){$('rvessel').focus();$('rvessel').placeholder='Name the jar, e.g. Weck 500 mL';return}
-    addSaved('jars',name);fillJars(name);$('rvessel').value='';
+    store.set('hiddenjars',JSON.stringify(saved('hiddenjars').filter(x=>x!==name)));addSaved('jars',name);fillJars(name);$('rvessel').value='';
   }
   showJar();refreshNext();if(run)renderPlan();
 }
@@ -430,7 +441,7 @@ function renderRun(){
   const started=!ps&&ctlNow&&ctlNow.c==='start'&&new Date(run.fed_at).getTime()<ctlNow.at-90e3;
   const pc=run.pause||{},ecm=calib?calib.cm:(pc.empty_cm||null);
   // A fresh calibration: ask which jar it was (the Jar picker, right below).
-  if(ps&&ecm&&calNow!==+ecm){calNow=+ecm;calDrop=false;setTimeout(()=>$('rvesselsel').scrollIntoView({behavior:'smooth',block:'center'}),300)}else if(!ps){calNow=null;calDrop=false}
+  if(ps&&ecm&&calNow!==+ecm){calNow=+ecm;calDrop=false;recalJar=null;setTimeout(()=>$('rvesselsel').scrollIntoView({behavior:'smooth',block:'center'}),300)}else if(!ps){calNow=null;calDrop=false}
   if(ps&&recipeFor!=null)showJar();
   const swap=calib&&calib.cm==null&&!calib.failed?'Measuring the empty jar. Keep the box still on it, about 10 seconds.'
     :calib&&calib.failed?'Couldn\'t measure the empty jar. Check the box sits flat on it and tap Calibrate again.'
@@ -1250,7 +1261,7 @@ if(store.get('glock'))$('rglock').checked=true;  // remembered; locks on the gra
 $('rflourmix').onchange=$('rflour').oninput=()=>{showFlour();refreshNext()};
 $('rvessel').addEventListener('input',refreshNext);
 $('rvesselsel').onchange=()=>{showJar();refreshNext();if(!$('rvessel').hidden)$('rvessel').focus()};
-$('rjarnote').onclick=e=>{const b=e.target.closest('[data-jar]');if(b){e.preventDefault();jarAct(b.dataset.jar)}};
+$('rjarnote').onclick=$('rjars').onclick=e=>{const b=e.target.closest('[data-jar]');if(b){e.preventDefault();jarAct(b.dataset.jar)}};
 $('planuse').onclick=()=>{if(!planPick)return;recipeTouched=false;setGrams(planPick);if(run)renderPlan();if(!$('recipe').hidden)$('recipe').scrollIntoView({behavior:'smooth',block:'center'})};
 $('depth').oninput=e=>{const v=parseFloat(e.target.value);v>0?store.set('depth',String(v)):store.del('depth');render()};
 addEventListener('resize',()=>{chart();renderRun()});
