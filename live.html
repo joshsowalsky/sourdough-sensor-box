@@ -187,7 +187,7 @@ function fillJars(cur){
 }
 const showJar=()=>{
   const v=$('rvesselsel').value,j=jarTable().find(q=>q.name===v);$('rvessel').hidden=v!=='new';
-  $('rjarnote').innerHTML=calNow?'<b>Which jar did you just measure?</b> Pick it or add it here: Starter in saves '+calNow.toFixed(1)+' cm under its name, so next time you can skip Calibrate.'
+  $('rjarnote').innerHTML=calNow?'<strong style="color:var(--fg)">Which jar did you just measure?</strong> Pick it or add it here: Starter in saves '+calNow.toFixed(1)+' cm under its name, so next time you can skip Calibrate.'
     :v==='new'?'New jar: tap Calibrate with it empty first, once.'
     :j&&j.empty?'<span style="color:var(--ok)">✓ Known jar, empty '+j.empty.toFixed(1)+' cm.</span> No need to calibrate.'
     :'Not calibrated yet: tap Calibrate with this jar empty, once, and it is remembered.';
