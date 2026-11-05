@@ -306,11 +306,11 @@ function runVerdict(s){
   const rate=i=>i>=60?m[i-60]-m[i]:null,now=rate(m.length-1);
   let fastest=0;for(let i=60;i<m.length;i++)fastest=Math.max(fastest,rate(i));
   // Doubled and near the top is the good moment: use it, or feed if not baking.
-  if(now!=null&&now<0.15&&now<=fastest/2&&d&&rise>=d)return ['good','✓ At its peak','Only '+(Math.max(now,0)*10).toFixed(0)+' mm up in the last hour. Best time to use it; if you\x27re not baking, feed it now.'];
+  if(now!=null&&now<0.15&&now<=fastest/2&&d&&rise>=d)return ['good','✓ At its peak','Topped out at '+(1+rise/d).toFixed(1)+'x; only '+(Math.max(now,0)*10).toFixed(0)+' mm up in the last hour. Best time to use it; if you\x27re not baking, feed it now.'];
   if(now!=null&&now<0.15&&now<=fastest/2)return ['near','Feed soon','Near its peak: only '+(Math.max(now,0)*10).toFixed(0)+' mm up in the last hour, down from '+(fastest*10).toFixed(0)+' mm at its fastest. Feeding now is fine.'];
   // Doubled = risen by its own starting depth; slowing = last hour under 3/4 of its fastest.
-  const up='Up '+(now!=null?(Math.max(now,0)*10).toFixed(0)+' mm in the last hour':'and climbing'),dbl=d&&rise>=d,cr=climbRates(feedSegs().slice(-1)[0]),slow=!!(cr&&cr.slowing);
-  if(dbl)return ['good',slow?'✓ Doubled, nearing its peak':'✓ Doubled, still rising',(slow?'Usable now, and strongest at the peak, which is close.':up+'. Usable now; strongest near the peak.')];
+  const up='Up '+(now!=null?(Math.max(now,0)*10).toFixed(0)+' mm in the last hour':'and climbing'),dbl=d&&rise>=d,xs=d?1+rise/d:1,mult=xs>=4?Math.floor(xs)+'x':xs>=3?'Tripled':'Doubled',cr=climbRates(feedSegs().slice(-1)[0]),slow=!!(cr&&cr.slowing);
+  if(dbl)return ['good',slow?'✓ '+mult+', nearing its peak':'✓ '+mult+', still rising',(slow?'Usable now, and strongest at the peak, which is close.':up+'. Usable now; strongest near the peak.')];
   return ['ok',slow?'Rising, slowing':'Rising',up+'. Not at its peak yet.'];
 }
 // The feed to do next: this run's recipe, in run.next_vessel if the runs file
