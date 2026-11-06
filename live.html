@@ -93,10 +93,11 @@ input.ingin{width:4.8em;margin:0 6px 0 0;min-height:34px;padding:4px 6px;text-al
 <div class="note" id="rflourgrams" style="margin-top:2px"></div>
 <input id="rflour" type="text" maxlength="100" class="wide-in" hidden placeholder="New flour, e.g. spelt">
 <label class="note" style="display:block;margin-top:6px">Jar <select id="rvesselsel" class="wide-in"></select></label>
-<input id="rvessel" type="text" maxlength="120" class="wide-in" hidden placeholder="New jar, e.g. Weck 500 mL">
+<input id="rvessel" type="text" maxlength="60" class="wide-in" hidden placeholder="New jar, e.g. Weck 500 mL">
+<label class="note" id="rvesselgl" hidden style="display:block;margin-top:4px">Empty weight <input id="rvesselg" type="number" inputmode="decimal" min="0" step="any" class="g"> g <span class="sub">(optional: the clean, empty jar on the scale)</span></label>
 <div class="note" id="rjarnote" style="margin-top:2px"></div>
 <label class="note" id="rjarkeepl" style="display:block;margin-top:4px" hidden><input type="checkbox" id="rjarkeep" checked> Remember it as this jar's empty reading (untick for this feed only)</label>
-<details class="note" style="margin-top:4px"><summary>Your jars</summary><table id="rjars" class="ktab small"></table></details>
+<details class="note" style="margin-top:4px"><summary>Your jars</summary><div class="sub">Saved on the PC and backed up to git, so every device sees the same list.</div><table id="rjars" class="ktab small"></table></details>
 <label class="note" style="display:block;margin-top:6px">Note <input id="rnote" type="text" maxlength="120" class="wide-in" placeholder="optional"></label></div>
 <a class="btn" id="calbtn" href="#" hidden>Calibrate empty jar</a> <a class="btn" id="startbtn" href="#" hidden>Starter in</a> <a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
 <div id="planslot" style="margin-top:10px" hidden></div>
@@ -195,6 +196,7 @@ function recipeIn(){
   const fl=flourText();if(fl)r.flour=fl;
   if(calDrop)r.empty='known';else if(calNow&&!$('rjarkeep').checked)r.empty_once='1';
   const v=vesselIn();if(v)r.vessel=v;
+  const eg=Number($('rvesselg').value);if($('rvesselsel').value==='new'&&eg>0)r.empty_g=eg;
   if($('rnote').value.trim())r.note=$('rnote').value.trim();
   return r;
 }
@@ -203,8 +205,8 @@ function recipeIn(){
 // the current feed's recipe.
 // Flour blends: the share of whole wheat/rye, written out in grams of the
 // flour box ("15 g usual flour + 5 g whole wheat/rye", the runs file's style).
-// Your own flours and jars (+ Add…) are kept in this browser once a feed uses
-// them, and every jar this starter has been in shows up from run.history.
+// Your own flours (+ Add…) are kept in this browser once a feed uses them;
+// jars live in the PC's datastore (run.app, below), plus every jar in run.history.
 const FLOUR_MIXES=[0,0.25,0.5,1],JARS=['Karter 250 mL beaker','Pyrex 400 mL beaker','YILIHCIA jar','Brooklyn mug'];
 const saved=k=>{try{const l=JSON.parse(store.get(k)||'[]');return Array.isArray(l)?l:[]}catch(e){return []}};
 const addSaved=(k,v)=>{const l=saved(k);if(v&&!l.includes(v)){l.push(v);store.set(k,JSON.stringify(l.slice(-20)))}};
@@ -213,6 +215,41 @@ function fillFlours(){
   const s=$('rflourmix');s.querySelectorAll('option[value^="c:"]').forEach(o=>o.remove());
   saved('flours').forEach(n=>s.insertBefore(opt('c:'+n,'All '+n),s.querySelector('option[value="other"]')));
 }
+// The dashboard's datastore: app_data.json on the PC (backed up to git),
+// carried back in run.json as run.app = {jars: {name: {empty_g, hidden}}}.
+// Saving sends "put" to the PC; until a run.json newer than the save comes
+// back, the save is shown from this browser (apppending).
+function pending(){try{const o=JSON.parse(store.get('apppending')||'{}');return o&&typeof o==='object'?o:{}}catch(e){return {}}}
+function appColl(c){
+  const out={},src=(run&&run.app&&run.app[c])||{},upd=run&&run.updated?new Date(run.updated).getTime():0;
+  Object.entries(src).forEach(([k,v])=>out[k]={...v});
+  const pend=pending();let stale=false;
+  Object.entries(pend).forEach(([k,e])=>{
+    const [pc,id]=k.split('\u0001');if(pc!==c)return;
+    if(run&&run.app&&e.at<upd-60e3){stale=true;return}  // the PC has it now
+    const r=out[id]=out[id]||{};Object.entries(e.v).forEach(([f,x])=>{if(x==null)delete r[f];else r[f]=x});
+  });
+  if(stale){Object.keys(pend).forEach(k=>{if(pend[k].at<upd-60e3)delete pend[k]});store.set('apppending',JSON.stringify(pend))}
+  return out;
+}
+async function putApp(c,id,v){
+  const pend=pending(),k=c+'\u0001'+id;
+  pend[k]={at:Date.now(),v:{...((pend[k]||{}).v||{}),...v}};store.set('apppending',JSON.stringify(pend));
+  const key=store.get('pausekey');
+  if(!key){location.replace(CTL+'/put?'+new URLSearchParams({c,id,...Object.fromEntries(Object.entries(v).map(([f,x])=>[f,x==null?'':String(x)]))}));return}
+  try{const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:'put '+JSON.stringify({c,id,v})});if(!r.ok)throw new Error('HTTP '+r.status)}
+  catch(e){alert('Couldn\u2019t reach the PC to save that ('+e.message+'). It shows here for now; try again later.')}
+}
+// Jars and removed jars used to live only in this browser: hand them to the
+// PC once, then forget them here.
+function migrateJars(){
+  if(!run||!run.app||!store.get('pausekey'))return;
+  const pc=run.app.jars||{};
+  saved('jars').forEach(n=>{if(!pc[n])putApp('jars',n,{hidden:false})});
+  saved('hiddenjars').forEach(n=>{if(!(pc[n]&&pc[n].hidden))putApp('jars',n,{hidden:true})});
+  store.set('jars','[]');store.set('hiddenjars','[]');
+}
+const gfmt=g=>(+g).toFixed(1).replace(/\.0$/,'')+' g';
 // The jar table: every jar in the feed log with its latest empty reading.
 // Calibrate a jar once and Starter in saves the reading under its name; the
 // logger reuses it whenever that jar comes back without a calibration.
@@ -226,13 +263,16 @@ const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",
 function fillJars(cur){
   // To recalibrate a jar, pick it above. Removed jars are only hidden from this list (on this device); past feeds
   // keep their own jar and reading in the feed log.
-  const hid=saved('hiddenjars'),s=$('rvesselsel'),l=[...new Set([...JARS,...(run.history||[]).map(r=>r.vessel),run.vessel,...saved('jars'),cur].filter(Boolean))].filter(v=>v===cur||!hid.includes(v));
+  const aj=appColl('jars'),hid=[...saved('hiddenjars'),...Object.keys(aj).filter(n=>aj[n].hidden)],s=$('rvesselsel');
+  const l=[...new Set([...JARS,...(run.history||[]).map(r=>r.vessel),run.vessel,...Object.keys(aj),...saved('jars'),cur].filter(Boolean))].filter(v=>v===cur||!hid.includes(v));
   const jt=new Map(jarTable().filter(j=>l.includes(j.name)).map(j=>[j.name,j]));
   s.replaceChildren(...l.map(v=>opt(v,jt.get(v)?.empty?v+' ✓':v)),opt('new','+ Add a jar…'));s.value=cur||l[0];showJar();
   const day=t=>new Date(t).toLocaleDateString([],{month:'short',day:'numeric'});
   const rows=l.map(v=>jt.get(v)||{name:v,feeds:0,empty:null,at:null});
-  $('rjars').innerHTML='<tr><th>Jar</th><th>Empty</th><th></th></tr>'+rows.map(j=>'<tr><td>'+esc(j.name)+'<div class="sub">'+j.feeds+' feed'+(j.feeds===1?'':'s')+'</div></td><td>'+(j.empty?j.empty.toFixed(1)+' cm<div class="sub">'+day(j.at)+'</div>':'<span class="sub">not yet</span>')+'</td><td>'+
-    jarBtn('hide:'+encodeURIComponent(j.name),'Remove')+'</td></tr>').join('');
+  // Three narrow columns so it fits a phone: Remove sits under the name.
+  $('rjars').innerHTML='<tr><th>Jar</th><th>Empty weight</th><th>Box reading</th></tr>'+rows.map(j=>'<tr><td>'+esc(j.name)+'<div class="sub">'+j.feeds+' feed'+(j.feeds===1?'':'s')+'</div>'+jarBtn('hide:'+encodeURIComponent(j.name),'Remove')+'</td><td>'+
+    (aj[j.name]&&aj[j.name].empty_g?gfmt(aj[j.name].empty_g)+'<br>'+jarBtn('wt:'+encodeURIComponent(j.name),'Edit'):jarBtn('wt:'+encodeURIComponent(j.name),'Add'))+'</td><td>'+
+    (j.empty?j.empty.toFixed(1)+' cm<div class="sub">'+day(j.at)+'</div>':'<span class="sub">not yet</span>')+'</td></tr>').join('');
 }
 // The Jar box: the one place to calibrate. One empty-jar reading per pause,
 // taken before or after picking the jar, in any order. Starter in stores it
@@ -245,8 +285,9 @@ const showJar=()=>{
   const v=$('rvesselsel').value,isNew=v==='new',j=isNew?null:jarTable().find(q=>q.name===v),known=j&&j.empty,n=$('rjarnote');
   const measuring=calib&&calib.cm==null&&!calib.failed,cal=calDrop?null:calNow;
   if(!isNew)lastJar=v;
-  $('rvessel').hidden=!isNew;$('rjarkeepl').hidden=!cal||measuring;
-  let t=isNew?'New jar: type its name above.':known?'<span style="color:var(--ok)">✓ Saved empty reading: '+j.empty.toFixed(1)+' cm.</span>':'No saved empty reading for this jar yet.';
+  $('rvessel').hidden=!isNew;$('rvesselgl').hidden=!isNew;$('rjarkeepl').hidden=!cal||measuring;
+  const wt=isNew?null:(appColl('jars')[v]||{}).empty_g;
+  let t=isNew?'New jar: type its name above.':(wt?'Empty weight: '+gfmt(wt)+'. ':'No empty weight saved yet.'+jarBtn('wt:'+encodeURIComponent(v),'Add it')+' ')+(known?'<span style="color:var(--ok)">✓ Box reading on the empty jar: '+j.empty.toFixed(1)+' cm.</span>':'No box reading on the empty jar yet.');
   if(measuring)t+='<div style="margin-top:4px"><strong style="color:var(--fg)">Measuring…</strong> keep the box still on the empty jar, about 10 seconds.</div>';
   else if(cal){
     const off=known?cal-j.empty:0;
@@ -262,9 +303,14 @@ const showJar=()=>{
   n.innerHTML=t;
 };
 function jarAct(act){
+  if(act.startsWith('wt:')){const v=decodeURIComponent(act.slice(3)),was=(appColl('jars')[v]||{}).empty_g;
+    const a=prompt('Empty weight of "'+v+'" in grams (put the clean, empty jar on the scale, lid off). Leave blank to clear.',was??'');
+    if(a===null)return;const g=Number(a.trim());
+    if(a.trim()!==''&&!(g>0&&g<5000)){alert('That isn\u2019t a weight in grams.');return}
+    putApp('jars',v,{empty_g:a.trim()===''?null:Math.round(g*10)/10});fillJars($('rvesselsel').value);return}
   if(act.startsWith('hide:')){const v=decodeURIComponent(act.slice(5));
     if(!confirm('Remove "'+v+'" from your jar list? Past feeds keep their readings. You can add it back with + Add a jar.'))return;
-    addSaved('hiddenjars',v);store.set('jars',JSON.stringify(saved('jars').filter(x=>x!==v)));
+    putApp('jars',v,{hidden:true});
     fillJars($('rvesselsel').value===v?null:$('rvesselsel').value);refreshNext();if(run)renderPlan();return}
   if(act==='cal'){calDrop=false;sendCtl('calibrate').then(showJar);showJar();return}
   if(act==='drop')calDrop=true;
@@ -331,13 +377,13 @@ function fillRecipe(ps){
   setGrams(pick&&pick.grams||planPick||(run.feed_g||'').split(':'));if(pick&&pick.grams)recipeTouched=true;
   fillFlours();const mix=flourMix(run.flour);$('rflourmix').value=String(mix);$('rflour').value=mix==='other'?(run.flour||'').replace(/^[\d.]+\s*g\s+/,''):'';showFlour();
   const jar=pick&&pick.jar&&pick.jar!=='new'?pick.jar:run.next_vessel||run.vessel;
-  fillJars(jar);$('rvessel').value='';$('rnote').value='';
+  fillJars(jar);$('rvessel').value='';$('rvesselg').value='';$('rnote').value='';
   if(pick&&pick.jar==='new'){$('rvesselsel').value='new';$('rvessel').value=pick.name||'';showJar()}
 }
 async function sendCtl(c){
   if(c==='start'&&$('rvesselsel').value==='new'&&!$('rvessel').value.trim()){$('rvessel').placeholder='Name the new jar first';$('rvessel').scrollIntoView({behavior:'smooth',block:'center'});$('rvessel').focus();return}
   const key=store.get('pausekey'),rec=c==='start'?recipeIn():null;
-  if(rec){if($('rvesselsel').value==='new'){addSaved('jars',rec.vessel);store.set('hiddenjars',JSON.stringify(saved('hiddenjars').filter(x=>x!==rec.vessel)))}if($('rflourmix').value==='other')addSaved('flours',$('rflour').value.trim())}
+  if(rec){if(rec.vessel){store.set('hiddenjars',JSON.stringify(saved('hiddenjars').filter(x=>x!==rec.vessel)));const pend=pending();pend['jars\u0001'+rec.vessel]={at:Date.now(),v:{hidden:false,...(rec.empty_g?{empty_g:rec.empty_g}:{})}};store.set('apppending',JSON.stringify(pend))}if($('rflourmix').value==='other')addSaved('flours',$('rflour').value.trim())}
   if(!key){location.replace(CTL+'/'+c+(rec?'?'+new URLSearchParams(rec):''));return}
   $('pausenote').textContent='Sending…';
   try{
@@ -360,7 +406,7 @@ async function loadRun(){
     const r=await fetch(RUN_URL+'?'+Math.floor(Date.now()/60000));
     if(!r.ok)return;
     const j=await r.json();
-    if(j.fed_at&&j.points){run=j;renderRun()}
+    if(j.fed_at&&j.points){run=j;migrateJars();renderRun()}
   }catch(e){}
 }
 // Start level = median of the first 10 minutes after the feed; "best" = lowest
