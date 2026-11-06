@@ -127,7 +127,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
 <div class="grid">
   <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change"></div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
-  <div class="card wide" id="runcard" hidden><div class="label" id="runlabel">This run</div><div class="big"><span id="runrise">–</span><span class="unit" id="rununit">cm risen</span></div><div class="small" id="runnote"></div><canvas id="runchart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> growth since the feed (1x = just fed) <span style="color:var(--chart-t)">&#9632;</span> room °F <span style="color:var(--muted)">┆</span> fed, 2x, 3x</div></div>
+  <div class="card wide" id="runcard" hidden><div class="label" id="runlabel">This run</div><div class="big"><span id="runrise">–</span><span class="unit" id="rununit">cm risen</span></div><div class="small" id="runnote"></div><div class="small" id="runedit" style="margin:6px 0"></div><canvas id="runchart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> growth since the feed (1x = just fed) <span style="color:var(--chart-t)">&#9632;</span> room °F <span style="color:var(--muted)">┆</span> fed, 2x, 3x</div></div>
   <span id="planhome" hidden></span><div class="card wide" id="plancard" hidden><div class="label">Feed planner · if you fed it now</div>
     <label for="planpeak" class="small"><span id="planpeaklbl">Peak wanted at</span> <b id="plantime">–</b> <span class="note" id="planh"></span></label>
     <input type="range" id="planpeak" min="3" max="24" step="0.5">
@@ -421,12 +421,49 @@ const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim
 let doc=null,etag=null,run=null;
 const clock=t=>new Date(t).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
 const median=a=>{const s=[...a].sort((x,y)=>x-y);return s.length?s[Math.floor(s.length/2)]:NaN};
+// Edit this feed: correct the grams that went in (the PC rewrites the feed in
+// tof_runs.csv and republishes at once). Flour's breakdown scales with it.
+let feedEditOpen=false,feedSaved=null,freshUntil=0;
+const scaleFlour=(t,k)=>t.replace(/(\d+(?:\.\d+)?)(\s*g\b)/g,(m,n,g)=>(+(Math.round(n*k*10)/10))+g);
+function renderRunEdit(){
+  const el=$('runedit');if(!run||!run.fed_at||el.contains(document.activeElement))return;
+  const [s,f,w]=(run.feed_g||'').split(':');
+  const pend=feedSaved&&feedSaved.fed_at===run.fed_at&&feedSaved.feed_g!==run.feed_g&&Date.now()-feedSaved.at<10*60e3;
+  if(!feedEditOpen){
+    el.innerHTML='<button class="chip" data-fe="open">Edit this feed</button> <span class="note">'+(pend
+      ?'Saved as '+esc(feedSaved.feed_g)+'; it shows here once the PC confirms (under a minute).'
+      :'Fed '+esc(s||'?')+' g starter + '+esc(f||'?')+' g flour + '+esc(w||'?')+' g water'+(run.flour?' ('+esc(run.flour)+')':'')+'.')+'</span>';
+    return;
+  }
+  const box=(id,lbl,v)=>'<label class="note">'+lbl+' <input id="'+id+'" type="text" inputmode="decimal" autocomplete="off" class="g" value="'+esc(v||'')+'"></label>';
+  el.innerHTML='<div class="note">What actually went in, in grams:</div><div class="row" style="gap:6px;margin-top:4px">'+box('fe_s','Starter',s)+box('fe_f','Flour',f)+box('fe_w','Water',w)+'</div>'+
+    '<div class="row" style="gap:6px;margin-top:6px"><button data-fe="save">Save</button><button class="chip" data-fe="cancel">Cancel</button><span class="note" id="fenote"></span></div>';
+}
+async function saveFeedEdit(){
+  const v=['fe_s','fe_f','fe_w'].map(id=>Number(String($(id).value).replace(',','.').trim()));
+  if(!(v[0]>0&&v[1]>0&&v[2]>=0)){$('fenote').textContent='Starter and flour need grams.';return}
+  const feed_g=v.map(x=>+(Math.round(x*10)/10)).join(':'),ev={fed_at:run.fed_at,feed_g};
+  const of=Number((run.feed_g||'').split(':')[1]);
+  if(run.flour&&of>0&&v[1]!==of)ev.flour=scaleFlour(run.flour,v[1]/of);
+  const key=store.get('pausekey');
+  if(!key){location.replace(CTL+'/edit?'+new URLSearchParams(ev));return}
+  $('fenote').textContent='Saving…';
+  try{const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:'edit '+JSON.stringify(ev)});if(!r.ok)throw new Error('HTTP '+r.status)}
+  catch(e){$('fenote').textContent='Could not send ('+e.message+'). Try again.';return}
+  feedSaved={fed_at:run.fed_at,feed_g,at:Date.now()};feedEditOpen=false;freshUntil=Date.now()+3*60e3;
+  document.activeElement.blur();renderRunEdit();[15e3,35e3,70e3].forEach(t=>setTimeout(loadRun,t));
+}
+$('runedit').addEventListener('click',e=>{const b=e.target.closest('[data-fe]');if(!b)return;const a=b.dataset.fe;
+  if(a==='open'){feedEditOpen=true;renderRunEdit();$('fe_s').focus()}
+  else if(a==='cancel'){feedEditOpen=false;document.activeElement.blur();renderRunEdit()}
+  else if(a==='save')saveFeedEdit()});
+$('runedit').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.closest('input')){e.preventDefault();saveFeedEdit()}});
 async function loadRun(){
   try{
     // raw.githubusercontent.com can serve a copy up to 5 minutes old whatever
     // the query string, so on opening the page and right after a button the
     // API (uncached, 60 requests an hour per phone) is asked too; newer wins.
-    const pend=ctlNow&&Date.now()-ctlNow.at<10*60e3;
+    const pend=ctlNow&&Date.now()-ctlNow.at<10*60e3||Date.now()<freshUntil;
     const get=u=>fetch(u.url,u.opt).then(r=>r.ok?r.json():null).catch(()=>null);
     const srcs=[{url:RUN_URL+'?'+Math.floor(Date.now()/10000)}];
     if(!run||pend)srcs.push({url:RUN_API+'&t='+Date.now(),opt:{headers:{Accept:'application/vnd.github.raw+json'}}});
@@ -556,7 +593,7 @@ function renderRun(){
   $('rununit').textContent=depth?'its starting size · '+cm+' cm up':'cm risen';
   let t='Fed '+clock(s.fed)+', '+((Date.now()-s.fed)/3600e3).toFixed(1)+' h ago. '+(s.pts.length&&isFinite(s.now)?'Start '+s.start.toFixed(1)+' cm from the sensor, now '+s.now.toFixed(1)+'.':'Collecting the first readings.');
   if(s.best&&s.start-s.best.d>=0.3)t+=' Most risen so far: '+(s.start-s.best.d).toFixed(1)+' cm at '+clock(s.best.t)+' ('+((s.best.t-s.fed)/3600e3).toFixed(1)+' h after feeding).';
-  $('runnote').textContent=t;
+  $('runnote').textContent=t;renderRunEdit();
   const ps=pausedSince();
   // A new feed from Starter in shows up once the logger republishes run.json.
   const started=!ps&&ctlNow&&ctlNow.c==='start'&&new Date(run.fed_at).getTime()<ctlNow.at-90e3;
