@@ -82,7 +82,7 @@ input.ingin{width:4.8em;margin:0 6px 0 0;min-height:34px;padding:4px 6px;text-al
     <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><button class="chip" id="bakreset">Start over</button></div>
     <div class="note" id="bakrecipe" style="margin-top:6px"></div>
     <div id="baksteps" style="margin-top:8px"></div>
-    <div class="note" style="margin-top:6px">Tap Done as you finish each step. Each step shows its usual time and the window around it, counted from when you did the step before, so if one runs late the rest move with it. Tap a done time to fix it. Times are a guide: the dough decides, especially when the bulk rise ends.</div>
+    <div class="note" style="margin-top:6px">Tap Done as you finish each step. Each step shows its usual time and the window around it, counted from when you did the step before, so if one runs late the rest move with it. The end of bulk counts from the mix and follows the temperature instead. Your phone gets a reminder for each step from the salt to the fridge. Tap a done time to fix it. Times are a guide: the dough decides, especially when the bulk rise ends.</div>
     <div class="note" id="baksync" style="margin-top:4px"></div></div>
   <div class="card bknow"><div class="label">Good to know</div><div id="bakknow" class="small" style="color:var(--fg);font-size:.92rem"></div></div>
 </section>
@@ -1313,7 +1313,10 @@ const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},se
 // with the planner's PLAN_F_PER_2X; Gus is best from its peak to USE_H after.
 const BAKE_F=76,BULK_H=5,USE_H=2,GUS_PER_LOAF=100,GUS_MIN=80,GUS_KEEP=15;
 const gusPer=()=>bk.gus!=null&&bk.gus>=GUS_MIN?bk.gus:GUS_PER_LOAF;
-const bakeF=()=>doc&&doc.temp_c!=null?doc.temp_c*9/5+32:BAKE_F;
+// The PC's plan for the open bake (run.json "bake"): bulk measured from the
+// mix at the real temperature, the same numbers its reminders use.
+const bakePlan=()=>{const b=run&&run.bake;return b&&bk.done.mix&&Math.abs(new Date(b.mix).getTime()-bk.done.mix)<10*60e3?b:null};
+const bakeF=()=>{const b=bakePlan();return b&&b.temp_f_now!=null?b.temp_f_now:doc&&doc.temp_c!=null?doc.temp_c*9/5+32:BAKE_F};
 const warmBy=F=>Math.pow(2,(BAKE_F-F)/PLAN_F_PER_2X);
 let bk={loaves:1,done:{},amt:{}},bkGus=null;
 try{bk={...bk,...JSON.parse(store.get('bakerun')||'{}')}}catch(e){}
@@ -1349,7 +1352,11 @@ function bakeTimes(){
     let t=bk.done[st.id];
     if(!t){
       if(st.id==='mix')t=now;
-      else if(st.bulk)t=T.mix+bh*3600e3;
+      else if(st.bulk){
+        const b=bakePlan();
+        if(b&&b.bulk_due){t=new Date(b.bulk_due).getTime();W.bulk=[new Date(b.bulk_check).getTime(),new Date(b.bulk_late).getTime()]}
+        else t=T.mix+bh*3600e3;
+      }
       else if(st.heat){
         // 7 h after the fridge, but not in the middle of the night.
         t=T.fridge+7*3600e3;const d=new Date(t),hr=d.getHours();
@@ -1431,12 +1438,14 @@ function bakeTab(force){
   $('baksteps').innerHTML=BAKE_STEPS.map(st=>{
     const d=bk.done[st.id],isNext=next&&st.id===next.id;
     let when=d?'done<br><input type="time" data-bt="'+st.id+'" value="'+hm(d)+'" style="width:7.4em;min-height:32px;padding:2px 4px;font-size:.85rem">'
-      :st.bulk?'~'+clock(T.mix+(bh-0.5)*3600e3)+'<br>to '+clock(T.mix+(bh+0.5)*3600e3)
+      :st.bulk&&!W.bulk?'~'+clock(T.mix+(bh-0.5)*3600e3)+'<br>to '+clock(T.mix+(bh+0.5)*3600e3)
       :stepWhen(st,isNext,T,W,now,dayOf);
     let what=st.what(n);
+    const bp=st.bulk&&!d&&bakePlan();
+    if(bp&&!bp.bulk_done)what+='<div class="note" style="margin-top:4px">About '+Math.round(bp.progress*100)+'% of the usual bulk, at '+Math.round(bp.temp_f_avg)+'°F on average since mixing ('+(bp.temp_source==='probe'?'dough probe':'room')+'). Warmer dough gets there sooner; when you fold doesn’t change it.</div>';
     if(isNext&&!d&&W[st.id]&&now>W[st.id][1])what+='<div style="color:var(--warn);margin-top:4px">Late is fine: do it now. The steps after it count from when you tap Done.</div>';
     if(st.id==='mix'&&!d&&g&&g.win)what+=' <b>Gus is at its best until about '+clock(g.win)+'.</b>';
-    if(st.bulk&&!d)what+=' At '+F.toFixed(0)+'°F that is about '+bh.toFixed(1)+' h after mixing; warmer is faster.';
+    if(st.bulk&&!d&&!bp)what+=' At '+F.toFixed(0)+'°F that is about '+bh.toFixed(1)+' h after mixing; warmer is faster.';
     if(st.id==='fridge')what+=' Bake between '+dayOf(T.fridge+8*3600e3)+clock(T.fridge+8*3600e3)+' and '+dayOf(T.fridge+16*3600e3)+clock(T.fridge+16*3600e3)+'.';
     const btn=(isNext?'<button data-bd="'+st.id+'" style="margin-top:6px">Done</button> ':'')+(lastDone&&st.id===lastDone.id?'<button class="chip" data-bu="'+st.id+'" style="margin-top:6px">Undo</button>':'');
     return '<div class="bstep'+(isNext?' next':'')+(d?' done':'')+'"><div class="when">'+when+'</div><div class="what"><b>'+st.t+'</b><br>'+what+(btn?'<div>'+btn+'</div>':'')+'</div></div>';
