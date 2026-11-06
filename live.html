@@ -81,6 +81,7 @@ input.ingin{width:4.8em;margin:0 6px 0 0;min-height:34px;padding:4px 6px;text-al
   <div class="card"><div class="label">Steps · mix today, bake tomorrow</div>
     <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><button class="chip" id="bakreset">Start over</button></div>
     <div class="note" id="bakrecipe" style="margin-top:6px"></div>
+    <div class="note" id="bakbox" style="margin-top:8px"></div>
     <div id="baksteps" style="margin-top:8px"></div>
     <div class="note" style="margin-top:6px">Tap Done as you finish each step. Each step shows its usual time and the window around it, counted from when you did the step before, so if one runs late the rest move with it. The end of bulk counts from the mix and follows the temperature instead. Your phone gets a reminder for each step from the salt to the fridge. Tap a done time to fix it. Times are a guide: the dough decides, especially when the bulk rise ends.</div>
     <div class="note" id="baksync" style="margin-top:4px"></div></div>
@@ -1424,11 +1425,52 @@ function bakeGus(){
     '<h3>Does a higher rise in the jar make a taller loaf?</h3>Not really. How high the jar gets mostly depends on how much food it got (bigger feeds rise higher), the flour (whole wheat and rye go higher) and how thick it is (stiffer holds gas better). A taller loaf comes from the dough: strength from the folds, ending the bulk rise at 50–75%, tight shaping, a good proof, and a hot oven with steam. More starter only makes the bulk rise go faster.';
   return {win};
 }
+// Dough mode: the box measures the dough's rise in a straight-sided tub.
+// First on the empty tub (depth to the bottom), then on the dough after
+// mixing. The PC pauses Gus's tracking, since the box is off his jar.
+function boxUI(){
+  const b=bk.box||{},el=$('bakbox'),btn=(a,t)=>' <button class="chip" data-box="'+a+'">'+t+'</button>';
+  if(bk.done.bulk&&!b.on){el.innerHTML='';return}
+  const tb=b.tub;
+  let h='<b style="color:var(--fg)">Sensor box on the dough</b> (optional): measures the rise. Use a straight-sided tub with the box looking down through a hole in the lid. Gus’s tracking pauses while the box is off his jar.<br>';
+  h+=tb&&tb.cm!=null?'1. Empty tub: '+tb.cm.toFixed(1)+' cm to the bottom ✓'+btn('tub','Measure again')
+    :tb&&!tb.failed&&Date.now()-tb.at<90e3?'1. Measuring the empty tub…'
+    :(tb&&tb.failed?'Couldn’t measure: check the box sits flat on the empty, clean tub. ':'')+'1. Box on the empty tub, then'+btn('tub','Measure it');
+  h+='<br>'+(b.on?'2. Box on the dough since '+clock(b.on)+' ✓'+btn('off','Undo')
+    :'2. Right after mixing, put the box on the dough and tap'+btn('on','Box is on'));
+  el.innerHTML=h;
+}
+async function awaitTub(at){
+  const key=store.get('pausekey');
+  if(!key){bk.box.tub=null;bkSave();boxUI();return}  // sendBake has said why
+  for(let i=0;i<20&&bk.box.tub&&bk.box.tub.at===at&&bk.box.tub.cm==null;i++){
+    await new Promise(r=>setTimeout(r,3000));
+    try{
+      const t=await fetch('https://ntfy.sh/'+key+'/json?poll=1&since='+Math.floor(at/1000)).then(r=>r.text());
+      t.split('\n').filter(Boolean).map(l=>JSON.parse(l)).forEach(m=>{
+        const w=(m.message||'').split(' ');if(w[0]!=='tub')return;
+        if(w[1]==='failed')bk.box.tub.failed=true;else bk.box.tub.cm=Number(w[1]);
+      });
+      if(bk.box.tub.failed)break;
+    }catch(e){}
+  }
+  if(bk.box.tub&&bk.box.tub.at===at&&bk.box.tub.cm==null)bk.box.tub.failed=true;
+  bkSave();boxUI();
+}
+$('bakbox').addEventListener('click',e=>{
+  const a=e.target.dataset&&e.target.dataset.box;if(!a)return;
+  bk.box=bk.box||{};
+  if(a==='tub'){const at=Date.now();bk.box.tub={at,cm:null};sendBake('done','tub',at);awaitTub(at)}
+  if(a==='on'){bk.box.on=Date.now();sendBake('done','boxon',bk.box.on)}
+  if(a==='off'){const at=bk.box.on;delete bk.box.on;sendBake('undo','boxon',at)}
+  bkSave();boxUI();
+});
 function bakeTab(force){
   const g=bakeGus();
   // Don't redraw under a box being typed in (the minute refresh); a tap on
   // Done or Undo always redraws, even though the tapped button has focus.
   {const ae=document.activeElement;if(!force&&ae&&ae.tagName==='INPUT'&&$('baksteps').contains(ae))return}
+  boxUI();
   const n=bk.loaves,{T,W,bh,F}=bakeTimes(),next=BAKE_STEPS.find(st=>!bk.done[st.id]),now=Date.now();
   if(document.activeElement!==$('bakn'))$('bakn').value=n;
   bakeSummary();
@@ -1442,6 +1484,8 @@ function bakeTab(force){
       :stepWhen(st,isNext,T,W,now,dayOf);
     let what=st.what(n);
     const bp=st.bulk&&!d&&bakePlan();
+    const dg=bp&&bp.dough;
+    if(dg)what+='<div class="note" style="margin-top:4px;color:var(--fg)">Box: up '+(dg.pct!=null?dg.pct+'% ('+dg.rise_cm.toFixed(1)+' cm)':dg.rise_cm.toFixed(1)+' cm (measure the empty tub to get %)')+' '+(dg.since_mix?'since mixing':'since the box went on')+(dg.settled_now?'':', settling after a fold')+'. Aim for 50–75%.</div>';
     if(bp&&!bp.bulk_done)what+='<div class="note" style="margin-top:4px">About '+Math.round(bp.progress*100)+'% of the usual bulk, at '+Math.round(bp.temp_f_avg)+'°F on average since mixing ('+(bp.temp_source==='probe'?'dough probe':'room')+'). Warmer dough gets there sooner; when you fold doesn’t change it.</div>';
     if(isNext&&!d&&W[st.id]&&now>W[st.id][1])what+='<div style="color:var(--warn);margin-top:4px">Late is fine: do it now. The steps after it count from when you tap Done.</div>';
     if(st.id==='mix'&&!d&&g&&g.win)what+=' <b>Gus is at its best until about '+clock(g.win)+'.</b>';
@@ -1512,7 +1556,7 @@ $('baksteps').addEventListener('input',e=>{
 });
 $('baksteps').addEventListener('focusout',()=>setTimeout(()=>{if(!$('baksteps').contains(document.activeElement))bakeTab()},0));
 $('bakn').oninput=e=>{const v=parseFloat(e.target.value);if(v>0){bk.loaves=v;bk.amt={};bkSave();bakeTab()}};
-$('bakreset').onclick=()=>{if(confirm('Start over? This clears the step times.')){bk.done={};bk.amt={};bkSave();bakeTab()}};
+$('bakreset').onclick=()=>{if(confirm('Start over? This clears the step times.')){bk.done={};bk.amt={};bk.box={};bkSave();bakeTab()}};
 function ago(s){if(s<90)return Math.round(s)+' s ago';if(s<5400)return Math.round(s/60)+' min ago';return (s/3600).toFixed(1)+' h ago'}
 async function load(){
   try{
