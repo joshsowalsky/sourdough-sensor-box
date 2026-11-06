@@ -940,7 +940,11 @@ function showBake(){
 }
 function readBake(){
   const n=(id,d)=>{const v=Number($(id).value);return v>=0&&$(id).value!==''?v:d};
+  const wasOn=bake.on;
   bake={on:$('bakeon').checked,loaves:n('bakeloaves',1),per:n('bakeper',100),keep:n('bakekeep',15),again:$('bakeagain').checked,days:$('bakedays').value};
+  // Switching bake planning on or off starts the time over (the peak of the
+  // ratio you just fed), so a far-off mix time doesn't carry into a plain feed.
+  if(bake.on!==wasOn)planSet=false;
   store.set('bake',JSON.stringify(bake));showBake();recipeTouched=false;if(run)renderPlan();
 }
 function renderPlan(){
