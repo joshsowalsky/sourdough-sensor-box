@@ -249,6 +249,7 @@ function migrateJars(){
   saved('hiddenjars').forEach(n=>{if(!(pc[n]&&pc[n].hidden))putApp('jars',n,{hidden:true})});
   store.set('jars','[]');store.set('hiddenjars','[]');
 }
+let jarEdit=null;  // the jar whose empty weight is being typed in the list
 const gfmt=g=>(+g).toFixed(1).replace(/\.0$/,'')+' g';
 // The jar table: every jar in the feed log with its latest empty reading.
 // Calibrate a jar once and Starter in saves the reading under its name; the
@@ -271,7 +272,8 @@ function fillJars(cur){
   const rows=l.map(v=>jt.get(v)||{name:v,feeds:0,empty:null,at:null});
   // Three narrow columns so it fits a phone: Remove sits under the name.
   $('rjars').innerHTML='<tr><th>Jar</th><th>Empty weight</th><th>Box reading</th></tr>'+rows.map(j=>'<tr><td>'+esc(j.name)+'<div class="sub">'+j.feeds+' feed'+(j.feeds===1?'':'s')+'</div>'+jarBtn('hide:'+encodeURIComponent(j.name),'Remove')+'</td><td>'+
-    (aj[j.name]&&aj[j.name].empty_g?gfmt(aj[j.name].empty_g)+'<br>'+jarBtn('wt:'+encodeURIComponent(j.name),'Edit'):jarBtn('wt:'+encodeURIComponent(j.name),'Add'))+'</td><td>'+
+    (jarEdit===j.name?'<input id="jarwt" type="number" inputmode="decimal" min="0" max="5000" step="0.1" class="g" style="margin-left:0;width:4em" value="'+(aj[j.name]&&aj[j.name].empty_g||'')+'"> g<br>'+jarBtn('wtsave:'+encodeURIComponent(j.name),'Save')+'<br>'+jarBtn('wtcancel','Cancel')
+      :aj[j.name]&&aj[j.name].empty_g?gfmt(aj[j.name].empty_g)+'<br>'+jarBtn('wt:'+encodeURIComponent(j.name),'Edit'):jarBtn('wt:'+encodeURIComponent(j.name),'Add'))+'</td><td>'+
     (j.empty?j.empty.toFixed(1)+' cm<div class="sub">'+day(j.at)+'</div>':'<span class="sub">not yet</span>')+'</td></tr>').join('');
 }
 // The Jar box: the one place to calibrate. One empty-jar reading per pause,
@@ -303,11 +305,14 @@ const showJar=()=>{
   n.innerHTML=t;
 };
 function jarAct(act){
-  if(act.startsWith('wt:')){const v=decodeURIComponent(act.slice(3)),was=(appColl('jars')[v]||{}).empty_g;
-    const a=prompt('Empty weight of "'+v+'" in grams (put the clean, empty jar on the scale, lid off). Leave blank to clear.',was??'');
-    if(a===null)return;const g=Number(a.trim());
-    if(a.trim()!==''&&!(g>0&&g<5000)){alert('That isn\u2019t a weight in grams.');return}
-    putApp('jars',v,{empty_g:a.trim()===''?null:Math.round(g*10)/10});fillJars($('rvesselsel').value);return}
+  // Weight: the row's cell turns into a number field in grams (the list opens
+  // if it was closed). Blank and Save clears it.
+  if(act.startsWith('wt:')){jarEdit=decodeURIComponent(act.slice(3));fillJars($('rvesselsel').value);
+    const d=$('rjars').closest('details');d.open=true;const f=$('jarwt');f.scrollIntoView({block:'center'});f.focus();return}
+  if(act==='wtcancel'){jarEdit=null;fillJars($('rvesselsel').value);return}
+  if(act.startsWith('wtsave:')){const v=decodeURIComponent(act.slice(7)),f=$('jarwt'),a=f.value.trim(),g=Number(a);
+    if(a!==''&&!(g>0&&g<5000)){f.style.borderColor='var(--warn)';f.focus();return}
+    jarEdit=null;putApp('jars',v,{empty_g:a===''?null:Math.round(g*10)/10});fillJars($('rvesselsel').value);return}
   if(act.startsWith('hide:')){const v=decodeURIComponent(act.slice(5));
     if(!confirm('Remove "'+v+'" from your jar list? Past feeds keep their readings. You can add it back with + Add a jar.'))return;
     putApp('jars',v,{hidden:true});
@@ -1670,6 +1675,7 @@ if(store.get('glock'))$('rglock').checked=true;  // remembered; locks on the gra
 $('rflourmix').onchange=$('rflour').oninput=()=>{showFlour();refreshNext()};
 $('rvessel').addEventListener('input',()=>{refreshNext();keepPick()});
 $('rvesselsel').onchange=()=>{showJar();keepPick();refreshNext();if(!$('rvessel').hidden)$('rvessel').focus()};
+$('rjars').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='jarwt'&&jarEdit){e.preventDefault();jarAct('wtsave:'+encodeURIComponent(jarEdit))}});
 $('rjarnote').onclick=$('rjars').onclick=e=>{const b=e.target.closest('[data-jar]');if(b){e.preventDefault();jarAct(b.dataset.jar)}};
 $('fctrack').onclick=e=>{const b=e.target.closest('[data-fcfed]');if(!b)return;fcView=b.dataset.fcfed?Number(b.dataset.fcfed):null;forecast();$('fccard').scrollIntoView({behavior:'smooth',block:'start'})};
 $('fcrange').oninput=e=>{const F=fcCompute();if(!F)return;const i=Number(e.target.value);fcView=i<F.track.length?F.track[i].fed:null;forecast()};
