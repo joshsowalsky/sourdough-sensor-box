@@ -923,7 +923,7 @@ function forecast(){
 // finished feed that rose, corrected to the chosen room temp: twice as fast
 // per PLAN_F_PER_2X warmer. Ratios keep that feed's flour:water.
 const PLAN_LAG=1,PLAN_F_PER_2X=15,PLAN_RATIOS=[0.5,1,1.5,2,2.5,3,4,5,6,8,10,12,15,20,25,30,40,50,75,100];
-let planSet=false;
+let planSet=false,ratioPick=null;  // a ratio tapped in the planner table (the slider clears it)
 function planBasis(){
   const segs=feedSegs(),hist=run.history||[];
   for(let i=hist.length-1;i>=0;i--){
@@ -949,7 +949,7 @@ function readBake(){
   bake={on:$('bakeon').checked,loaves:n('bakeloaves',1),per:n('bakeper',100),keep:n('bakekeep',15),again:$('bakeagain').checked,days:$('bakedays').value};
   // Switching bake planning on or off starts the time over (the peak of the
   // ratio you just fed), so a far-off mix time doesn't carry into a plain feed.
-  if(bake.on!==wasOn)planSet=false;
+  if(bake.on!==wasOn){planSet=false;ratioPick=null}
   store.set('bake',JSON.stringify(bake));showBake();recipeTouched=false;if(run)renderPlan();
 }
 function renderPlan(){
@@ -971,6 +971,7 @@ function renderPlan(){
   $('planpeaklbl').textContent=bake.on?'Mix the dough at':'Peak wanted at';
   $('planh').textContent='('+H+' h from now)';$('planf').textContent=F+'°F';$('plannow').textContent=fNow.toFixed(0)+'°F';
   let best=PLAN_RATIOS[0];PLAN_RATIOS.forEach(r=>{if(Math.abs(hrsAt(r,F)-H)<Math.abs(hrsAt(best,F)-H))best=r});
+  if(ratioPick!=null)best=ratioPick;
   // Gus typed in Starter: never more than the jar holds. Room for a 2.5x
   // rise (Gus has topped out around 2.3x) under the box, from the mL in the
   // jar's name. The slider then only matters below that.
@@ -1028,8 +1029,14 @@ function renderPlan(){
   $('planusenote').textContent=typed!=null?'Starter in is using your '+gr(typed)+' g with these flour and water.':$('recipe').hidden?'Pause for a new jar and these grams are filled in for you.'
     :recipeTouched?'Your typed grams are kept; tap to switch to these.':'Starter in is using these grams.';
   const td='<td style="padding:0 14px 2px 0">';
-  $('plantable').innerHTML='<tr style="color:var(--muted)">'+td+'Ratio</td><td>Peaks around</td></tr>'+
-    [1,2,3,5,10].map(r=>'<tr'+(r===best?' style="font-weight:700"':'')+'>'+td+lbl(r)+'</td><td>'+clockAt(hrsAt(r,F))+' ('+hrsAt(r,F).toFixed(1)+' h)</td></tr>').join('');
+  // Every common ratio with its grams (from the Gus you typed, or the same
+  // jar total) and peak time. Tap a row to feed that: the way to keep a feed
+  // small, since the slider alone picks whatever ratio hits its time.
+  const stAt=r=>typed??Math.max(2,(bake.on?Math.ceil:Math.round)(total/(1+r+r*b.hyd)));
+  $('plantable').innerHTML='<tr style="color:var(--muted)">'+td+'Ratio</td>'+td+'Feed</td><td>Peaks around</td></tr>'+
+    [1,2,3,5,10,20].map(r=>{const s=stAt(r);return '<tr data-r="'+r+'" style="cursor:pointer'+(r===best?';font-weight:700':'')+'">'+td+'<u>'+lbl(r)+'</u></td>'+td+
+      gr(s)+' + '+gr(r*s)+' + '+gr(r*b.hyd*s)+' g</td><td>'+clockAt(hrsAt(r,F))+' ('+hrsAt(r,F).toFixed(1)+' h)</td></tr>'}).join('')+
+    '<tr><td colspan="3" class="note" style="padding-top:2px">Tap a ratio to feed that ('+who+' + flour + water).</td></tr>';
   $('planbasis').textContent='Estimate from the '+new Date(b.fed).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+' feed: '+
     lbl(b.fl/b.st)+' at '+b.f.toFixed(0)+'°F peaked '+b.peakH.toFixed(1)+' h after feeding. '+
     'Gus is getting stronger each feed, so expect earlier peaks than this; it updates after every feed.';
@@ -1692,7 +1699,11 @@ function chart(){
 $('mark').onclick=()=>{if(doc){store.set('start',String(doc.distance_cm));render()}};
 $('clear').onclick=()=>{store.del('start');render()};
 $('depth').value=store.get('depth')||'';
-$('planpeak').oninput=$('plantemp').oninput=()=>{if(run)renderPlan()};
+$('planpeak').oninput=()=>{ratioPick=null;if(run)renderPlan()};
+$('plantemp').oninput=()=>{if(run)renderPlan()};
+// Tap a row of the planner table: feed that ratio, and the slider shows its peak.
+$('plantable').onclick=e=>{const tr=e.target.closest('tr[data-r]');if(!tr||!run)return;ratioPick=Number(tr.dataset.r);
+  if(!gusTyped)recipeTouched=false;renderPlan();if(planModel)$('planpeak').value=Math.min(24,Math.max(3,Math.round(2*planModel.hrsAt(ratioPick,planModel.F))/2));renderPlan()};
 try{bake={...BAKE_DEF,...JSON.parse(store.get('bake')||'{}')}}catch(e){}
 showBake();['bakeon','bakeagain','bakedays'].forEach(id=>$(id).onchange=readBake);['bakeloaves','bakeper','bakekeep'].forEach(id=>$(id).oninput=readBake);
 ['rg_s','rg_f','rg_w'].forEach(id=>$(id).addEventListener('input',()=>{recipeTouched=true;gusTyped=id==='rg_s'&&Number($(id).value)>0;keepPick();lockFollow(id);if(run)renderPlan();showFlour()}));
