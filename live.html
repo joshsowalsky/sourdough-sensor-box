@@ -72,6 +72,7 @@ input.ingin{width:4.8em;margin:0 6px 0 0;min-height:34px;padding:4px 6px;text-al
 .verdict.good{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 16%,var(--panel))}.verdict.good b{color:var(--ok)}
 .verdict.near{border-color:var(--accent)}.verdict.near b{color:var(--accent)}
 .verdict.feed{border-color:var(--warn)}.verdict.feed b{color:var(--warn)}
+body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.note{display:none!important}
 </style></head><body><main>
 <h1 class="keep">Sourdough Live</h1>
 <div class="status keep"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
@@ -171,6 +172,9 @@ const URL_='https://api.github.com/repos/joshsowalsky/sourdough-sensor-box/conte
 const CTL='http://192.168.1.238:8766';
 (()=>{const m=location.hash.match(/pausekey=([\w-]+)/);if(m){try{localStorage.setItem('pausekey',m[1])}catch(e){}history.replaceState(null,'',location.pathname+location.search)}})();
 let ctlNow=null;  // {c:'pause'|'resume'|'calibrate'|'start',at:ms} from a button press in this page
+// Kept across a reload for 10 minutes: run.json can lag the button by a few
+// minutes (GitHub's cache), and a reload used to show "paused" again.
+try{const k=JSON.parse(localStorage.getItem('ctlnow')||'null');if(k&&Date.now()-k.at<10*60e3)ctlNow=k}catch(e){}
 // The empty-jar measurement: {at:ms, cm:number|null, failed:bool}. The logger
 // answers "empty <cm>" (or "empty failed") on the same private topic, ~10 s in.
 let calib=null;
@@ -400,13 +404,14 @@ async function sendCtl(c){
   try{
     const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:rec?'start '+JSON.stringify(rec):c});
     if(!r.ok)throw new Error('HTTP '+r.status);
-    ctlNow={c,at:Date.now()};$('pausenote').textContent='';
+    ctlNow={c,at:Date.now()};try{localStorage.setItem('ctlnow',JSON.stringify(ctlNow))}catch(e){}$('pausenote').textContent='';setTimeout(loadRun,20e3);
     if(c==='calibrate'){calib={at:ctlNow.at,cm:null,failed:false};awaitCalib(key,ctlNow.at)}
     if(c==='start'||c==='resume')calib=null;
     renderRun();
   }catch(e){$('pausenote').textContent='Could not send ('+e.message+'). Try again.'}
 }
-const RUN_URL='https://raw.githubusercontent.com/joshsowalsky/sourdough-sensor-box/runs/run.json';
+const RUN_URL='https://raw.githubusercontent.com/joshsowalsky/sourdough-sensor-box/runs/run.json',
+  RUN_API='https://api.github.com/repos/joshsowalsky/sourdough-sensor-box/contents/run.json?ref=runs';
 const $=id=>document.getElementById(id);
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 let doc=null,etag=null,run=null;
@@ -414,10 +419,20 @@ const clock=t=>new Date(t).toLocaleTimeString([],{hour:'numeric',minute:'2-digit
 const median=a=>{const s=[...a].sort((x,y)=>x-y);return s.length?s[Math.floor(s.length/2)]:NaN};
 async function loadRun(){
   try{
-    const r=await fetch(RUN_URL+'?'+Math.floor(Date.now()/60000));
-    if(!r.ok)return;
-    const j=await r.json();
-    if(j.fed_at&&j.points){run=j;migrateJars();renderRun()}
+    // raw.githubusercontent.com can serve a copy up to 5 minutes old whatever
+    // the query string, so on opening the page and right after a button the
+    // API (uncached, 60 requests an hour per phone) is asked too; newer wins.
+    const pend=ctlNow&&Date.now()-ctlNow.at<10*60e3;
+    const get=u=>fetch(u.url,u.opt).then(r=>r.ok?r.json():null).catch(()=>null);
+    const srcs=[{url:RUN_URL+'?'+Math.floor(Date.now()/10000)}];
+    if(!run||pend)srcs.push({url:RUN_API+'&t='+Date.now(),opt:{headers:{Accept:'application/vnd.github.raw+json'}}});
+    const got=(await Promise.all(srcs.map(get))).filter(j=>j&&j.fed_at&&j.points);
+    if(!got.length)return;
+    const j=got.reduce((a,b)=>new Date(b.updated)>new Date(a.updated)?b:a);
+    if(run&&new Date(j.updated)<new Date(run.updated))return;
+    run=j;migrateJars();renderRun();
+    // Until run.json shows the button just pressed, look again every 20 s.
+    if(ctlNow&&Date.now()-ctlNow.at<10*60e3&&!(new Date(j.updated).getTime()>=ctlNow.at-60e3))setTimeout(loadRun,20e3);
   }catch(e){}
 }
 // Start level = median of the first 10 minutes after the feed; "best" = lowest
@@ -523,7 +538,7 @@ function pausedSince(){
   return run.paused?new Date(run.paused).getTime():null;
 }
 function renderRun(){
-  if(!run)return;
+  if(!run)return;document.body.classList.add('ready');
   const s=runStats();
   // During a run, nothing from before the feed is shown: the box records while
   // it's being handled, and those readings aren't the starter.
