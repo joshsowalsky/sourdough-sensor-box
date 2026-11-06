@@ -133,6 +133,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <input type="range" id="planpeak" min="3" max="24" step="0.5">
     <label for="plantemp" class="small">Room temp <b id="planf">–</b> <span class="note">(now: <span id="plannow">–</span>)</span></label>
     <input type="range" id="plantemp" min="64" max="84" step="1">
+    <label class="small" style="display:block;margin-top:4px">Starter to use <input id="planst" type="text" inputmode="decimal" autocomplete="off" class="g" placeholder="any"> g <span class="note">(try amounts here; blank keeps the jar's total)</span></label>
     <label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="bakeon"> Planning a bake</label>
     <div id="bakebox" class="note" hidden>
       <div class="row" style="gap:6px;margin-top:4px"><label>Loaves <input id="bakeloaves" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><label>× <input id="bakeper" type="number" inputmode="decimal" min="10" step="5" class="g"> g starter each</label></div>
@@ -1033,7 +1034,7 @@ function renderPlan(){
   // Gus typed in Starter: never more than the jar holds. Room for a 2.5x
   // rise (Gus has topped out around 2.3x) under the box, from the mL in the
   // jar's name. The slider then only matters below that.
-  const typed=gusTyped&&gNum('rg_s')>0?gNum('rg_s'):null;
+  const typed=gNum('planst')>0?gNum('planst'):gusTyped&&gNum('rg_s')>0?gNum('rg_s'):null;
   const jarSel=(recipeFor!=null&&vesselIn())||run.next_vessel||run.vessel||'',capSel=Number((jarSel.match(/(\d+)\s*ml/i)||[])[1]);
   let capped=false;
   if(typed!=null&&capSel){
@@ -1062,7 +1063,7 @@ function renderPlan(){
   }else{
     out+=step(clockAt(T),'<b style="display:inline">At its peak</b>, if the room stays '+F+'°F: use it, or feed again. For the next feed keep about '+gr(st)+' g; the other ~'+Math.max(0,Math.round(N-st-JAR_LOSS))+' g is discard.');
   }
-  if(typed!=null)out+='<div class="note" style="margin-top:6px">Using the '+gr(typed)+' g of '+who+' you typed in Starter. '+
+  if(typed!=null)out+='<div class="note" style="margin-top:6px">Using '+gr(typed)+' g of '+who+'. '+
     (capped?'<b style="display:inline">That\u2019s the biggest feed that fits the '+esc(jarSel)+'</b> with room to rise, so it peaks sooner than the slider asks. For a later peak, use a bigger jar. '
       :capSel?'Move the slider and the flour and water change with it, up to what fits the '+esc(jarSel)+'. '
       :'Move the slider and the flour and water change with it. Pick the jar in Starter in (one with its size in mL in the name) and it will keep to what fits. ')+
@@ -1759,6 +1760,8 @@ $('clear').onclick=()=>{store.del('start');render()};
 $('depth').value=store.get('depth')||'';
 $('planpeak').oninput=()=>{ratioPick=null;if(run)renderPlan()};
 $('plantemp').oninput=()=>{if(run)renderPlan()};
+// Scenarios: any amount of Gus, any time, any temp; nothing is sent anywhere.
+$('planst').addEventListener('input',()=>{if(run)renderPlan()});
 // Tap a row of the planner table: feed that ratio, and the slider shows its peak.
 $('plantable').onclick=e=>{const tr=e.target.closest('tr[data-r]');if(!tr||!run)return;ratioPick=Number(tr.dataset.r);typedIds.delete('rg_f');typedIds.delete('rg_w');
   if(!gusTyped)recipeTouched=false;renderPlan();if(planModel)$('planpeak').value=Math.min(24,Math.max(3,Math.round(2*planModel.hrsAt(ratioPick,planModel.F))/2));renderPlan()};
