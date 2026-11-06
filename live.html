@@ -350,9 +350,13 @@ let recipeFor=null,recipeTouched=false,planPick=null;
 // slider sets the flour and water (what you have, fed for when you want it).
 // Typing flour or water, Lock ratio, "Use in Starter in" or a new pause end it.
 let gusTyped=false;
+// Boxes you typed in this pause. The planner never overwrites those: it once
+// replaced typed 10 g flour/water with its own 5 g, and that feed went out.
+// Only "Use in Starter in", a tapped ratio or a new pause replace them.
+const typedIds=new Set();
 // Never rewrites the box you're typing in: doing that on a phone ate the "." of 2.5.
 const gNum=id=>Number(String($(id).value).replace(',','.').trim());
-const setGrams=([s,f,w])=>{[['rg_s',s],['rg_f',f],['rg_w',w]].forEach(([id,v])=>{if(document.activeElement!==$(id))$(id).value=v??''});showFlour();if($('rglock').checked)setLock(true)};
+const setGrams=([s,f,w])=>{[['rg_s',s],['rg_f',f],['rg_w',w]].forEach(([id,v])=>{if(document.activeElement!==$(id)&&!typedIds.has(id))$(id).value=v??''});showFlour();if($('rglock').checked)setLock(true)};
 // Lock ratio: type what actually went in (a gram or two extra flour) and the
 // other two follow at the same ratio, so nothing has to be fished out. The
 // note says how much more of each to add, from the grams when it was locked.
@@ -386,7 +390,7 @@ function keepPick(){
 }
 function fillRecipe(ps){
   const key=pauseKey(ps);
-  if(samePause(recipeFor,key))return;recipeFor=key;recipeTouched=false;gusTyped=false;
+  if(samePause(recipeFor,key))return;recipeFor=key;recipeTouched=false;gusTyped=false;typedIds.clear();
   let pick=null;try{pick=JSON.parse(store.get('pick')||'null')}catch(e){}
   if(!pick||!samePause(pick.pause,key))pick=null;
   setGrams(pick&&pick.grams||planPick||(run.feed_g||'').split(':'));if(pick&&pick.grams)recipeTouched=true;
@@ -1719,11 +1723,11 @@ $('depth').value=store.get('depth')||'';
 $('planpeak').oninput=()=>{ratioPick=null;if(run)renderPlan()};
 $('plantemp').oninput=()=>{if(run)renderPlan()};
 // Tap a row of the planner table: feed that ratio, and the slider shows its peak.
-$('plantable').onclick=e=>{const tr=e.target.closest('tr[data-r]');if(!tr||!run)return;ratioPick=Number(tr.dataset.r);
+$('plantable').onclick=e=>{const tr=e.target.closest('tr[data-r]');if(!tr||!run)return;ratioPick=Number(tr.dataset.r);typedIds.delete('rg_f');typedIds.delete('rg_w');
   if(!gusTyped)recipeTouched=false;renderPlan();if(planModel)$('planpeak').value=Math.min(24,Math.max(3,Math.round(2*planModel.hrsAt(ratioPick,planModel.F))/2));renderPlan()};
 try{bake={...BAKE_DEF,...JSON.parse(store.get('bake')||'{}')}}catch(e){}
 showBake();['bakeon','bakeagain','bakedays'].forEach(id=>$(id).onchange=readBake);['bakeloaves','bakeper','bakekeep'].forEach(id=>$(id).oninput=readBake);
-['rg_s','rg_f','rg_w'].forEach(id=>$(id).addEventListener('input',()=>{recipeTouched=true;gusTyped=id==='rg_s'&&gNum(id)>0;keepPick();lockFollow(id);if(run)renderPlan();showFlour()}));
+['rg_s','rg_f','rg_w'].forEach(id=>$(id).addEventListener('input',()=>{recipeTouched=true;typedIds.add(id);gusTyped=id==='rg_s'?gNum(id)>0:gusTyped;keepPick();lockFollow(id);if(run)renderPlan();showFlour()}));
 $('rglock').onchange=e=>{e.target.checked?store.set('glock','1'):store.del('glock');setLock(e.target.checked);if(run)renderPlan()};
 if(store.get('glock'))$('rglock').checked=true;  // remembered; locks on the grams once they're filled in
 $('rflourmix').onchange=$('rflour').oninput=()=>{showFlour();refreshNext()};
@@ -1733,7 +1737,7 @@ $('rjars').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='jar
 $('rjarnote').onclick=$('rjars').onclick=e=>{const b=e.target.closest('[data-jar]');if(b){e.preventDefault();jarAct(b.dataset.jar)}};
 $('fctrack').onclick=e=>{const b=e.target.closest('[data-fcfed]');if(!b)return;fcView=b.dataset.fcfed?Number(b.dataset.fcfed):null;forecast();$('fccard').scrollIntoView({behavior:'smooth',block:'start'})};
 $('fcrange').oninput=e=>{const F=fcCompute();if(!F)return;const i=Number(e.target.value);fcView=i<F.track.length?F.track[i].fed:null;forecast()};
-$('planuse').onclick=()=>{if(!planPick)return;recipeTouched=false;gusTyped=false;setGrams(planPick);if(run)renderPlan();if(!$('recipe').hidden)$('recipe').scrollIntoView({behavior:'smooth',block:'center'})};
+$('planuse').onclick=()=>{if(!planPick)return;recipeTouched=false;gusTyped=false;typedIds.clear();setGrams(planPick);if(run)renderPlan();if(!$('recipe').hidden)$('recipe').scrollIntoView({behavior:'smooth',block:'center'})};
 $('depth').oninput=e=>{const v=parseFloat(e.target.value);v>0?store.set('depth',String(v)):store.del('depth');render()};
 addEventListener('resize',()=>{chart();renderRun()});
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{chart();renderRun()});
