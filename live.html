@@ -133,7 +133,8 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <input type="range" id="planpeak" min="3" max="24" step="0.5">
     <label for="plantemp" class="small">Room temp <b id="planf">–</b> <span class="note">(now: <span id="plannow">–</span>)</span></label>
     <input type="range" id="plantemp" min="64" max="84" step="1">
-    <label class="small" style="display:block;margin-top:4px">Starter to use <input id="planst" type="text" inputmode="decimal" autocomplete="off" class="g" placeholder="any"> g <span class="note">(try amounts here; blank keeps the jar's total)</span></label>
+    <div class="row" style="gap:6px;margin-top:6px"><label class="small">Starter <input id="planst" type="text" inputmode="decimal" autocomplete="off" class="g"></label><label class="small">Flour <input id="planfl" type="text" inputmode="decimal" autocomplete="off" class="g"></label><label class="small">Water <input id="planwa" type="text" inputmode="decimal" autocomplete="off" class="g"></label><span class="small">g</span><button class="chip" id="planclear">Clear</button></div>
+    <div class="note">Try amounts: type one and the time slider fills in the rest (grey). Type starter and flour and it shows when that peaks. Nothing is sent.</div>
     <label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="bakeon"> Planning a bake</label>
     <div id="bakebox" class="note" hidden>
       <div class="row" style="gap:6px;margin-top:4px"><label>Loaves <input id="bakeloaves" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><label>× <input id="bakeper" type="number" inputmode="decimal" min="10" step="5" class="g"> g starter each</label></div>
@@ -982,7 +983,7 @@ function forecast(){
 // finished feed that rose, corrected to the chosen room temp: twice as fast
 // per PLAN_F_PER_2X warmer. Ratios keep that feed's flour:water.
 const PLAN_LAG=1,PLAN_F_PER_2X=15,PLAN_RATIOS=[0.5,1,1.5,2,2.5,3,4,5,6,8,10,12,15,20,25,30,40,50,75,100];
-let planSet=false,ratioPick=null;  // a ratio tapped in the planner table (the slider clears it)
+let planSet=false,ratioPick=null;const planTyped=new Set();  // a ratio tapped in the planner table (the slider clears it)
 function planBasis(){
   const segs=feedSegs(),hist=run.history||[];
   for(let i=hist.length-1;i>=0;i--){
@@ -1025,34 +1026,41 @@ function renderPlan(){
     $('planpeak').value=Math.min(24,Math.max(3,Math.round(2*hrsAt(st0&&fl0?fl0/st0:2,Math.round(fNow)))/2));
     planSet=true;
   }
+  // Scenario boxes: starter and flour (or water) typed fix the ratio, so the
+  // peak follows from it and the slider moves to show it.
+  const pv=id=>planTyped.has(id)&&gNum(id)>0?gNum(id):null,ps=pv('planst'),pf=pv('planfl'),pw=pv('planwa');
+  const fixedR=ps&&pf?pf/ps:ps&&pw?pw/ps/b.hyd:null;
+  if(fixedR!=null)$('planpeak').value=Math.min(24,Math.max(3,Math.round(2*hrsAt(fixedR,Number($('plantemp').value)))/2));
   const H=Number($('planpeak').value),F=Number($('plantemp').value),at=Date.now()+H*3600e3;
   $('plantime').textContent=new Date(at).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
   $('planpeaklbl').textContent=bake.on?'Mix the dough at':'Peak wanted at';
   $('planh').textContent='('+H+' h from now)';$('planf').textContent=F+'°F';$('plannow').textContent=fNow.toFixed(0)+'°F';
   let best=PLAN_RATIOS[0];PLAN_RATIOS.forEach(r=>{if(Math.abs(hrsAt(r,F)-H)<Math.abs(hrsAt(best,F)-H))best=r});
   if(ratioPick!=null)best=ratioPick;
+  if(fixedR!=null)best=fixedR;
   // Gus typed in Starter: never more than the jar holds. Room for a 2.5x
   // rise (Gus has topped out around 2.3x) under the box, from the mL in the
   // jar's name. The slider then only matters below that.
-  const typed=gNum('planst')>0?gNum('planst'):gusTyped&&gNum('rg_s')>0?gNum('rg_s'):null;
+  const typed=ps??(gusTyped&&gNum('rg_s')>0?gNum('rg_s'):null);
   const jarSel=(recipeFor!=null&&vesselIn())||run.next_vessel||run.vessel||'',capSel=Number((jarSel.match(/(\d+)\s*ml/i)||[])[1]);
   let capped=false;
-  if(typed!=null&&capSel){
+  if(typed!=null&&capSel&&fixedR==null){
     const fits=PLAN_RATIOS.filter(r=>typed*(1+r+r*b.hyd)*ML_PER_G*PEAK_ROOM_X<=capSel),mx=fits.length?fits[fits.length-1]:PLAN_RATIOS[0];
     if(best>mx){best=mx;capped=true}
   }
   // Same total in the jar at any ratio: less starter as the ratio goes up.
   const gr=x=>x<20?Math.round(x*10)/10:Math.round(x);
-  const st=typed??Math.max(2,(bake.on?Math.ceil:Math.round)(total/(1+best+best*b.hyd))),g=v=>gr(v*st)+' g',clockAt=h=>clock(Date.now()+h*3600e3);
-  const lbl=r=>'1:'+r+':'+(+(r*b.hyd).toFixed(1));
+  const st=typed??(pf?pf/best:pw?pw/(best*b.hyd):Math.max(2,(bake.on?Math.ceil:Math.round)(total/(1+best+best*b.hyd)))),g=v=>gr(v*st)+' g',clockAt=h=>clock(Date.now()+h*3600e3);
+  const flG=pf??best*st,waG=pw??best*b.hyd*st;
+  const lbl=r=>'1:'+(+r.toFixed(1))+':'+(+(r*b.hyd).toFixed(1));
   const same=st0&&fl0&&Math.abs(fl0/st0-best)<0.01;
   // The plan as a short story: what goes in now and how much that makes,
   // what happens at the peak (bake or feed), and what is left after.
-  const who=(run.starter||'starter').replace(/^./,c=>c.toUpperCase()),mult=1+best+best*b.hyd,N=Math.round(st*mult),T=hrsAt(best,F);
+  const who=(run.starter||'starter').replace(/^./,c=>c.toUpperCase()),mult=1+best+best*b.hyd,N=Math.round(st+flG+waG),T=hrsAt(best,F);
   const have=Math.max(0,jarNow-JAR_LOSS),jar=(recipeFor!=null&&vesselIn())||run.next_vessel||run.vessel||'';
   const step=(when,what)=>'<div style="display:flex;gap:8px;margin-top:6px"><span class="note" style="flex:0 0 5.2em">'+when+'</span><span>'+what+'</span></div>';
   let out='<b style="font-size:1.3rem;display:inline">Feed '+lbl(best)+'</b>'+(same&&!bake.on?' <span class="note">(the ratio you just fed)</span>':'');
-  out+=step('Now',g(1)+' '+who+' + '+g(best)+' flour + '+g(best*b.hyd)+' water: about '+N+' g in '+(jar?'the '+esc(jar):'the jar')+'.');
+  out+=step('Now',gr(st)+' g '+who+' + '+gr(flG)+' g flour + '+gr(waG)+' g water: about '+N+' g in '+(jar?'the '+esc(jar):'the jar')+'.');
   if(bake.on){
     const dough=Math.round(bake.loaves*bake.per),lv=bake.loaves===1?'1 loaf':g1(bake.loaves)+' loaves',left=Math.max(0,Math.round(N-dough-JAR_LOSS));
     out+=step(clockAt(T),'<b style="display:inline">Mix the dough</b> at its peak, if the room stays '+F+'°F: take '+dough+' g for '+lv+' ('+g1(bake.per)+' g each).');
@@ -1083,7 +1091,9 @@ function renderPlan(){
   if(hrsAt(PLAN_RATIOS[0],F)>H+0.75)out+='<div class="note">Even '+lbl(PLAN_RATIOS[0])+' won\'t peak that soon at '+F+'°F. Somewhere warmer, or a later peak.</div>';
   if(hrsAt(PLAN_RATIOS[PLAN_RATIOS.length-1],F)<H-0.75)out+='<div class="note">That\'s further out than '+lbl(PLAN_RATIOS[PLAN_RATIOS.length-1])+' reaches at '+F+'°F. Feed later, or somewhere cooler.</div>';
   $('planout').innerHTML=out;
-  planPick=[gr(st),gr(best*st),gr(best*b.hyd*st)];planModel={hrsAt,F,H};
+  planPick=[gr(st),gr(flG),gr(waG)];planModel={hrsAt,F,H};
+  // The boxes you didn't type show what goes with yours, in grey.
+  [['planst',st],['planfl',flG],['planwa',waG]].forEach(([id,v])=>{const e=$(id);e.placeholder=gr(v);if(!planTyped.has(id)&&document.activeElement!==e)e.value=''});
   if(!recipeTouched||typed!=null)setGrams(planPick);refreshNext();
   $('planusenote').textContent=typed!=null?'Starter in is using your '+gr(typed)+' g with these flour and water.':$('recipe').hidden?'Pause for a new jar and these grams are filled in for you.'
     :recipeTouched?'Your typed grams are kept; tap to switch to these.':'Starter in is using these grams.';
@@ -1091,7 +1101,7 @@ function renderPlan(){
   // Every common ratio with its grams (from the Gus you typed, or the same
   // jar total) and peak time. Tap a row to feed that: the way to keep a feed
   // small, since the slider alone picks whatever ratio hits its time.
-  const stAt=r=>typed??Math.max(2,(bake.on?Math.ceil:Math.round)(total/(1+r+r*b.hyd)));
+  const stAt=r=>typed??(pf?pf/r:pw?pw/(r*b.hyd):Math.max(2,(bake.on?Math.ceil:Math.round)(total/(1+r+r*b.hyd))));
   $('plantable').innerHTML='<tr style="color:var(--muted)">'+td+'Ratio</td>'+td+'Feed</td><td>Peaks around</td></tr>'+
     [1,2,3,5,10,20].map(r=>{const s=stAt(r);return '<tr data-r="'+r+'" style="cursor:pointer'+(r===best?';font-weight:700':'')+'">'+td+'<u>'+lbl(r)+'</u></td>'+td+
       gr(s)+' + '+gr(r*s)+' + '+gr(r*b.hyd*s)+' g</td><td>'+clockAt(hrsAt(r,F))+' ('+hrsAt(r,F).toFixed(1)+' h)</td></tr>'}).join('')+
@@ -1758,12 +1768,13 @@ function chart(){
 $('mark').onclick=()=>{if(doc){store.set('start',String(doc.distance_cm));render()}};
 $('clear').onclick=()=>{store.del('start');render()};
 $('depth').value=store.get('depth')||'';
-$('planpeak').oninput=()=>{ratioPick=null;if(run)renderPlan()};
+$('planpeak').oninput=()=>{ratioPick=null;if(planTyped.has('planst')&&(planTyped.has('planfl')||planTyped.has('planwa')))['planfl','planwa'].forEach(id=>{planTyped.delete(id);$(id).value=''});if(run)renderPlan()};
 $('plantemp').oninput=()=>{if(run)renderPlan()};
 // Scenarios: any amount of Gus, any time, any temp; nothing is sent anywhere.
-$('planst').addEventListener('input',()=>{if(run)renderPlan()});
+['planst','planfl','planwa'].forEach(id=>$(id).addEventListener('input',()=>{if($(id).value.trim())planTyped.add(id);else planTyped.delete(id);ratioPick=null;if(run)renderPlan()}));
+$('planclear').onclick=()=>{planTyped.clear();['planst','planfl','planwa'].forEach(id=>$(id).value='');ratioPick=null;if(run)renderPlan()};
 // Tap a row of the planner table: feed that ratio, and the slider shows its peak.
-$('plantable').onclick=e=>{const tr=e.target.closest('tr[data-r]');if(!tr||!run)return;ratioPick=Number(tr.dataset.r);typedIds.delete('rg_f');typedIds.delete('rg_w');
+$('plantable').onclick=e=>{const tr=e.target.closest('tr[data-r]');if(!tr||!run)return;ratioPick=Number(tr.dataset.r);if(planTyped.has('planst'))['planfl','planwa'].forEach(id=>{planTyped.delete(id);$(id).value=''});typedIds.delete('rg_f');typedIds.delete('rg_w');
   if(!gusTyped)recipeTouched=false;renderPlan();if(planModel)$('planpeak').value=Math.min(24,Math.max(3,Math.round(2*planModel.hrsAt(ratioPick,planModel.F))/2));renderPlan()};
 try{bake={...BAKE_DEF,...JSON.parse(store.get('bake')||'{}')}}catch(e){}
 showBake();['bakeon','bakeagain','bakedays'].forEach(id=>$(id).onchange=readBake);['bakeloaves','bakeper','bakekeep'].forEach(id=>$(id).oninput=readBake);
