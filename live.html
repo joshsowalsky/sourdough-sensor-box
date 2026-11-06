@@ -936,6 +936,7 @@ function planBasis(){
 }
 // Planning a bake (off by default): size the feed for the loaves plus a bit
 // to keep, instead of the same jarful as last time. Remembered per device.
+const PEAK_ROOM_X=2.5;  // jar room for the rise when sizing a feed to the jar
 const BAKE_DEF={on:false,loaves:1,per:100,keep:15,again:false,days:'1'},JAR_LOSS=5,ML_PER_G=0.854;
 let bake={...BAKE_DEF},planBake=null;  // loaded from storage at startup, below
 function showBake(){
@@ -970,8 +971,17 @@ function renderPlan(){
   $('planpeaklbl').textContent=bake.on?'Mix the dough at':'Peak wanted at';
   $('planh').textContent='('+H+' h from now)';$('planf').textContent=F+'°F';$('plannow').textContent=fNow.toFixed(0)+'°F';
   let best=PLAN_RATIOS[0];PLAN_RATIOS.forEach(r=>{if(Math.abs(hrsAt(r,F)-H)<Math.abs(hrsAt(best,F)-H))best=r});
+  // Gus typed in Starter: never more than the jar holds. Room for a 2.5x
+  // rise (Gus has topped out around 2.3x) under the box, from the mL in the
+  // jar's name. The slider then only matters below that.
+  const typed=gusTyped&&Number($('rg_s').value)>0?Number($('rg_s').value):null;
+  const jarSel=(recipeFor!=null&&vesselIn())||run.next_vessel||run.vessel||'',capSel=Number((jarSel.match(/(\d+)\s*ml/i)||[])[1]);
+  let capped=false;
+  if(typed!=null&&capSel){
+    const fits=PLAN_RATIOS.filter(r=>typed*(1+r+r*b.hyd)*ML_PER_G*PEAK_ROOM_X<=capSel),mx=fits.length?fits[fits.length-1]:PLAN_RATIOS[0];
+    if(best>mx){best=mx;capped=true}
+  }
   // Same total in the jar at any ratio: less starter as the ratio goes up.
-  const typed=gusTyped&&!$('rglock').checked&&Number($('rg_s').value)>0?Number($('rg_s').value):null;
   const gr=x=>x<10?Math.round(x*10)/10:Math.round(x);
   const st=typed??Math.max(2,(bake.on?Math.ceil:Math.round)(total/(1+best+best*b.hyd))),g=v=>gr(v*st)+' g',clockAt=h=>clock(Date.now()+h*3600e3);
   const lbl=r=>'1:'+r+':'+(+(r*b.hyd).toFixed(1));
@@ -993,7 +1003,10 @@ function renderPlan(){
   }else{
     out+=step(clockAt(T),'<b style="display:inline">At its peak</b>, if the room stays '+F+'°F: use it, or feed again. For the next feed keep about '+gr(st)+' g; the other ~'+Math.max(0,Math.round(N-st-JAR_LOSS))+' g is discard.');
   }
-  if(typed!=null)out+='<div class="note" style="margin-top:6px">Using the '+gr(typed)+' g of '+who+' you typed in Starter. Move the slider and the flour and water change with it.'+
+  if(typed!=null)out+='<div class="note" style="margin-top:6px">Using the '+gr(typed)+' g of '+who+' you typed in Starter. '+
+    (capped?'<b style="display:inline">That\u2019s the biggest feed that fits the '+esc(jarSel)+'</b> with room to rise, so it peaks sooner than the slider asks. For a later peak, use a bigger jar. '
+      :capSel?'Move the slider and the flour and water change with it, up to what fits the '+esc(jarSel)+'. '
+      :'Move the slider and the flour and water change with it. Pick the jar in Starter in (one with its size in mL in the name) and it will keep to what fits. ')+
     (bake.on&&N-JAR_LOSS<need?' <span style="color:var(--warn)">That makes about '+N+' g; the bake needs about '+Math.round(need+JAR_LOSS)+' g. Slide the time later: a thinner feed makes more from the same '+who+'.</span>':'')+'</div>';
   if(best>8)out+='<div class="note">'+who+' hasn\u2019t been tracked on a feed thinner than about 1:8 yet, so treat this time as a rough guess.</div>';
   // Not enough Gus for this: what would work instead.
