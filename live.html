@@ -108,9 +108,9 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
 <div class="card" id="fccard" hidden><div class="label" id="fclabel">Peak forecast · this feed</div>
   <div id="fcscrub" style="margin:4px 0 2px"><input type="range" id="fcrange" min="0" step="1" style="touch-action:none"><div class="note" style="display:flex;justify-content:space-between"><span id="fcfirst"></span><span>drag to flip through feeds</span><span>this feed</span></div></div>
   <div class="big"><span id="fcnow">–</span><span class="unit" id="fcunit"></span></div>
-  <div class="small" id="fcnote"></div>
   <canvas id="fcchart" style="height:170px;margin-top:8px"></canvas>
   <div class="small" id="fckey"></div>
+  <div class="small" id="fcnote" style="margin-top:8px"></div>
   <div class="label" id="fctraillabel" style="margin-top:12px">How the forecast moved</div>
   <canvas id="fctrail" style="height:150px;margin-top:4px"></canvas>
   <div class="small" id="fctrailnote"></div>
@@ -1800,7 +1800,14 @@ $('rvesselsel').onchange=()=>{showJar();keepPick();refreshNext();if(!$('rvessel'
 $('rjars').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='jarwt'&&jarEdit){e.preventDefault();jarAct('wtsave:'+encodeURIComponent(jarEdit))}});
 $('rjarnote').onclick=$('rjars').onclick=e=>{const b=e.target.closest('[data-jar]');if(b){e.preventDefault();jarAct(b.dataset.jar)}};
 $('fctrack').onclick=e=>{const b=e.target.closest('[data-fcfed]');if(!b)return;fcView=b.dataset.fcfed?Number(b.dataset.fcfed):null;forecast();$('fccard').scrollIntoView({behavior:'smooth',block:'start'})};
-$('fcrange').oninput=e=>{const F=fcCompute();if(!F)return;const i=Number(e.target.value);fcView=i<F.track.length?F.track[i].fed:null;forecast()};
+// Flipping feeds changes how long the text is. Each block keeps the tallest
+// height it has had (at this width), so the charts below don't jump.
+function holdH(el){
+  const w=el.clientWidth;if(el._w!==w){el._w=w;el._h=0}
+  el.style.minHeight='';const h=el.offsetHeight;if(h>el._h)el._h=h;el.style.minHeight=el._h+'px';
+}
+$('fcrange').oninput=e=>{const F=fcCompute();if(!F)return;const i=Number(e.target.value);fcView=i<F.track.length?F.track[i].fed:null;forecast();
+  [$('fcnow').parentNode,$('fckey'),$('fcnote'),$('fctrailnote')].forEach(holdH)};
 $('planuse').onclick=()=>{if(!planPick)return;recipeTouched=false;gusTyped=false;typedIds.clear();setGrams(planPick);if(run)renderPlan();if(!$('recipe').hidden)$('recipe').scrollIntoView({behavior:'smooth',block:'center'})};
 $('depth').oninput=e=>{const v=parseFloat(e.target.value);v>0?store.set('depth',String(v)):store.del('depth');render()};
 addEventListener('resize',()=>{chart();renderRun()});
