@@ -33,6 +33,8 @@ input[type=checkbox]{width:18px;height:18px;min-height:0;padding:0;margin:0 4px 
 #rglock+*,label:has(#rglock){white-space:nowrap}
 button{cursor:pointer}
 a.btn{display:inline-flex;align-items:center;text-decoration:none;margin-top:10px;font-weight:600}
+#fridgebtn{display:flex;justify-content:center;width:100%;box-sizing:border-box;min-height:64px;font-size:1.25em;margin-top:12px;border:2px solid #5b9bd5;color:#5b9bd5;background:color-mix(in srgb,#5b9bd5 12%,var(--panel))}
+#fridgebtn[hidden]{display:none}
 button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .wide{grid-column:1/-1}
 /* Tabs: Starter (everything else) and Bake (#baketab). */
@@ -100,7 +102,8 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
 <label class="note" id="rjarkeepl" style="display:block;margin-top:4px" hidden><input type="checkbox" id="rjarkeep" checked> Remember it as this jar's empty reading (untick for this feed only)</label>
 <details class="note" style="margin-top:4px"><summary>Your jars</summary><div class="sub">Saved on the PC and backed up to git, so every device sees the same list.</div><table id="rjars" class="ktab small"></table></details>
 <label class="note" style="display:block;margin-top:6px">Note <input id="rnote" type="text" maxlength="120" class="wide-in" placeholder="optional"></label></div>
-<a class="btn" id="calbtn" href="#" hidden>Calibrate empty jar</a> <a class="btn" id="startbtn" href="#" hidden>Starter in</a> <a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span></div>
+<a class="btn" id="calbtn" href="#" hidden>Calibrate empty jar</a> <a class="btn" id="startbtn" href="#" hidden>Starter in</a> <a class="btn" id="pausebtn" href="#">Pause tracking</a> <span class="note" id="pausenote"></span>
+<a class="btn" id="fridgebtn" href="#">&#10052;&#xFE0E; Into the fridge</a></div>
 <div id="planslot" style="margin-top:10px" hidden></div>
 <div class="card" id="fccard" hidden><div class="label" id="fclabel">Peak forecast · this feed</div>
   <div id="fcscrub" style="margin:4px 0 2px"><input type="range" id="fcrange" min="0" step="1" style="touch-action:none"><div class="note" style="display:flex;justify-content:space-between"><span id="fcfirst"></span><span>drag to flip through feeds</span><span>this feed</span></div></div>
@@ -577,8 +580,14 @@ function pausedSince(){
   const q=new URLSearchParams(location.search);
   let c=q.get('ctl'),at=Number(q.get('at'))*1000;
   if(ctlNow){c=ctlNow.c;at=ctlNow.at}
-  if(c&&Date.now()-at<10*60e3&&!(new Date(run.updated).getTime()>at+60e3))return c==='pause'||c==='calibrate'?at:null;
+  if(c&&Date.now()-at<10*60e3&&!(new Date(run.updated).getTime()>at+60e3))return c==='pause'||c==='calibrate'||c==='fridge'?at:null;
   return run.paused?new Date(run.paused).getTime():null;
+}
+// In the fridge (the Fridge button): when it went in, or null.
+function fridgeSince(){
+  if(!pausedSince())return null;
+  if(ctlNow&&ctlNow.c==='fridge'&&Date.now()-ctlNow.at<10*60e3&&!(new Date(run.updated).getTime()>ctlNow.at+60e3))return ctlNow.at;
+  const f=run.pause&&run.pause.fridge;return f?new Date(f).getTime():null;
 }
 function renderRun(){
   if(!run)return;document.body.classList.add('ready');
@@ -605,7 +614,9 @@ function renderRun(){
   if(ps&&recipeFor!=null)showJar();
   const swap=calib&&calib.cm==null&&!calib.failed?'Measuring the empty jar: keep the box still, about 10 seconds.'
     :'Set the grams and the jar below, pour in the starter, put the box back on, and tap Starter in.';
+  const fz=started?null:fridgeSince();
   const [cls,head,note]=started?['ok','New feed started','Fed '+clock(ctlNow.at)+'. The page switches to the new run within a few minutes.']
+    :fz?['ok','In the fridge','Since '+(new Date(fz).toDateString()===new Date().toDateString()?'':new Date(fz).toLocaleDateString([],{weekday:'short'})+' ')+clock(fz)+'. Tracking is paused. When you take it out, feed it: set the grams and the jar below, put the box on, and tap Starter in.']
     :ps?['near',calib&&calib.cm==null&&!calib.failed?'Calibrating…':'Paused','Tracking paused since '+clock(ps)+'. '+swap]:runVerdict(s);
   $('calbtn').hidden=true;$('startbtn').hidden=$('recipe').hidden=!ps;  // calibrating lives in the Jar box
   // Paused = feeding: the planner moves up right under this card, and back after.
@@ -615,6 +626,8 @@ function renderRun(){
   $('startbtn').href=CTL+'/start';$('startbtn').onclick=e=>{e.preventDefault();sendCtl('start')};
   $('pausebtn').textContent=ps?'Resume (same starter)':'Pause tracking';$('pausebtn').href=CTL+(ps?'/resume':'/pause');
   $('pausebtn').onclick=e=>{e.preventDefault();sendCtl(ps?'resume':'pause')};
+  $('fridgebtn').hidden=!!fz||started;$('fridgebtn').href=CTL+'/fridge';
+  $('fridgebtn').onclick=e=>{e.preventDefault();sendCtl('fridge')};
   if(!store.get('pausekey')&&!$('pausenote').textContent)$('pausenote').textContent='home Wi-Fi only on this device (no pause key)';
   $('verdict').className='verdict '+cls;$('verdict').hidden=false;
   nextOn=!started&&(ps||cls==='feed'||cls==='near'||/At its peak/.test(head));nextWarm=/no rise|dead/i.test(head);
