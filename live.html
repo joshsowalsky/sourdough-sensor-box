@@ -70,6 +70,10 @@ input.ingin{width:4.8em;margin:0 6px 0 0;min-height:34px;padding:4px 6px;text-al
 .ktab td{padding:6px 6px 6px 0;border-top:1px solid var(--line);vertical-align:top;white-space:nowrap;color:var(--fg)}
 .ktab .sub{display:block;color:var(--muted);font-size:.75rem}
 .ktab .ok{color:var(--ok)}
+#fridgestate .fs{display:flex;gap:8px;align-items:baseline;padding:3px 0;font-size:.92rem}
+#fridgestate .fs i{flex:none;width:9px;height:9px;border-radius:50%;display:inline-block}
+#fridgestate .fs .w{flex:none;width:6.2em;white-space:nowrap;color:var(--muted);font-size:.85rem}
+#fridgestate .fs.past{opacity:.45}#fridgestate .fs.now{font-weight:700}
 .verdict.ok{border-color:var(--ok)}.verdict.ok b{color:var(--ok)}
 .verdict.good{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 16%,var(--panel))}.verdict.good b{color:var(--ok)}
 .verdict.near{border-color:var(--accent)}.verdict.near b{color:var(--accent)}
@@ -90,7 +94,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div class="note" id="baksync" style="margin-top:4px"></div></div>
   <div class="card bknow"><div class="label">Good to know</div><div id="bakknow" class="small" style="color:var(--fg);font-size:.92rem"></div></div>
 </section>
-<div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div class="small" id="outlook" hidden></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><div id="kpiwrap"><table id="kpis" class="ktab small"></table></div><div id="recipe" hidden style="margin-top:10px"><div class="label">What you fed</div>
+<div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div id="fridgestate" hidden style="margin-top:8px"></div><div class="small" id="outlook" hidden></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><div id="kpiwrap"><table id="kpis" class="ktab small"></table></div><div id="recipe" hidden style="margin-top:10px"><div class="label">What you fed</div>
 <div class="row" style="margin-top:4px;gap:6px"><label class="note">Starter <input id="rg_s" type="text" inputmode="decimal" autocomplete="off" class="g"></label><label class="note">Flour <input id="rg_f" type="text" inputmode="decimal" autocomplete="off" class="g"></label><label class="note">Water <input id="rg_w" type="text" inputmode="decimal" autocomplete="off" class="g"></label><span class="note">grams</span><label class="note"><input type="checkbox" id="rglock"> Lock ratio</label></div><div class="note" id="rglocknote" hidden></div>
 <label class="note" style="display:block;margin-top:6px">Flour <select id="rflourmix" class="wide-in"><option value="0">All usual flour</option><option value="0.25">¾ usual + ¼ whole wheat/rye</option><option value="0.5">Half usual, half whole wheat/rye</option><option value="1">All whole wheat/rye</option><option value="other">+ Add a flour…</option></select></label>
 <div class="note" id="rflourgrams" style="margin-top:2px"></div>
@@ -589,6 +593,42 @@ function fridgeSince(){
   if(ctlNow&&ctlNow.c==='fridge'&&Date.now()-ctlNow.at<10*60e3&&!(new Date(run.updated).getTime()>ctlNow.at+60e3))return ctlNow.at;
   const f=run.pause&&run.pause.fridge;return f?new Date(f).getTime():null;
 }
+// Gus in the fridge: a guess at how he's doing, since nothing measures him in
+// there. Cold (~38°F) runs him about FRIDGE_SLOW times slower than the counter,
+// so his clock keeps going: hours past his peak = time on the counter after the
+// peak + fridge hours / FRIDGE_SLOW. The stages are by those hours.
+const FRIDGE_SLOW=12,FRIDGE_STAGES=[
+  [-1e9,'Still rising, slowly','var(--accent)','He went in before his peak, so he keeps climbing a little in the cold.'],
+  [0,'Full and resting','var(--ok)','Fed and happy. Nothing to do.'],
+  [3,'Asleep, a bit hungry','var(--ok)','Fine. He has eaten most of his food and is slowly getting sour.'],
+  [8,'Hungry, getting sour','var(--warn)','Still fine. Feed him within a few days to keep him lively.'],
+  [16,'Very hungry, hooch likely','var(--warn)','Still fine: a grey liquid on top is normal. Pour it off or stir it in, and feed him.'],
+  [30,'Starving','#d9665b','Still alive. He needs 2–3 feeds to get back to full strength before baking.'],
+  [90,'Dormant','#d9665b','Most likely still revivable: feed him twice a day for a few days.']];
+function fridgeState(s,fz){
+  const H=3600e3,peakT=s.best&&s.start-s.best.d>=0.3?s.best.t:null;
+  const pb=planBasis(),usualH=pb?pb.peakH:8;
+  const peakH=peakT?(peakT-s.fed)/H:usualH;          // feed to peak, this run
+  const p0=(fz-(peakT||s.fed+usualH*H))/H;             // past the peak when he went in
+  const at=x=>fz+(x-p0)*FRIDGE_SLOW*H,eq=p0+(Date.now()-fz)/H/FRIDGE_SLOW;
+  let i=0;while(i+1<FRIDGE_STAGES.length&&eq>=FRIDGE_STAGES[i+1][0])i++;
+  const when=t=>(t-Date.now())/864e5<6?new Date(t).toLocaleString([],{weekday:'short',hour:'numeric'}):new Date(t).toLocaleDateString([],{month:'short',day:'numeric'});
+  const fh=(Date.now()-fz)/H,dur=fh<48?Math.round(fh)+' h':(fh/24).toFixed(1)+' days';
+  let rows='';
+  for(let j=Math.max(1,i-1);j<FRIDGE_STAGES.length&&j<=i+2;j++){
+    const [x,name,col]=FRIDGE_STAGES[j],cls=j<i?'past':j===i?'now':'';
+    if(j<i&&j!==i-1)continue;
+    rows+='<div class="fs '+cls+'"><span class="w">'+(j===i?'Now':j<i?'Before':'~'+when(at(x)))+'</span><i style="background:'+col+'"></i><span>'+name+'</span></div>';
+  }
+  if(i===0)rows='<div class="fs now"><span class="w">Now</span><i style="background:'+FRIDGE_STAGES[0][2]+'"></i><span>'+FRIDGE_STAGES[0][1]+'</span></div>'+rows;
+  const st=FRIDGE_STAGES[i];
+  const feed=i>=5?'Out of the fridge he needs 2–3 feeds before he\'s ready to bake.'
+    :'The first feed out of the fridge usually peaks '+(i>=4?'2–4':'1–2')+' h later than the time below.';
+  return {head:'In the fridge: '+st[1].toLowerCase(),
+    html:'<div style="font-size:.95rem">'+st[3]+'</div><div style="margin-top:6px">'+rows+'</div>'+
+      '<div style="margin-top:6px;font-size:.92rem">'+feed+'</div>'+
+      '<div class="note" style="margin-top:6px">A guess: nothing measures him in the fridge. In for '+dur+'; went in '+(p0>=0?g1(p0)+' h after his peak':'before his peak')+'. Assumes a fridge around 38°F, where he runs about '+FRIDGE_SLOW+'× slower than on the counter.</div>'};
+}
 function renderRun(){
   if(!run)return;document.body.classList.add('ready');
   const s=runStats();
@@ -616,7 +656,7 @@ function renderRun(){
     :'Set the grams and the jar below, pour in the starter, put the box back on, and tap Starter in.';
   const fz=started?null:fridgeSince();
   const [cls,head,note]=started?['ok','New feed started','Fed '+clock(ctlNow.at)+'. The page switches to the new run within a few minutes.']
-    :fz?['ok','In the fridge','Since '+(new Date(fz).toDateString()===new Date().toDateString()?'':new Date(fz).toLocaleDateString([],{weekday:'short'})+' ')+clock(fz)+'. Tracking is paused. When you take it out, feed it: set the grams and the jar below, put the box on, and tap Starter in.']
+    :fz?['ok',fridgeState(s,fz).head,'Since '+(new Date(fz).toDateString()===new Date().toDateString()?'':new Date(fz).toLocaleDateString([],{weekday:'short'})+' ')+clock(fz)+'. Tracking is paused. When you take him out and feed him: set the grams and the jar below, put the box on, and tap Starter in.']
     :ps?['near',calib&&calib.cm==null&&!calib.failed?'Calibrating…':'Paused','Tracking paused since '+clock(ps)+'. '+swap]:runVerdict(s);
   $('calbtn').hidden=true;$('startbtn').hidden=$('recipe').hidden=!ps;  // calibrating lives in the Jar box
   // Paused = feeding: the planner moves up right under this card, and back after.
@@ -630,6 +670,7 @@ function renderRun(){
   $('fridgebtn').onclick=e=>{e.preventDefault();sendCtl('fridge')};
   if(!store.get('pausekey')&&!$('pausenote').textContent)$('pausenote').textContent='home Wi-Fi only on this device (no pause key)';
   $('verdict').className='verdict '+cls;$('verdict').hidden=false;
+  $('fridgestate').hidden=!fz;$('fridgestate').innerHTML=fz?fridgeState(s,fz).html:'';
   nextOn=!started&&(ps||cls==='feed'||cls==='near'||/At its peak/.test(head));nextWarm=/no rise|dead/i.test(head);
   if(nextOn)refreshNext();else $('nextstep').textContent=started?'':cls==='good'?'Use it any time now; feed again once it peaks.':'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
   const ol=!started&&!ps&&(cls==='ok'||cls==='good')?peakOutlook():null;$('outlook').hidden=!ol;$('outlook').innerHTML=ol||'';if(ol)$('outlook').style.marginTop='6px';
@@ -1212,7 +1253,8 @@ function readiness(){
   // The streak is proven by past feeds; the running feed only has to rise
   // (or, once it has missed, it breaks the streak).
   const missed=cur.dblH!=null?!good(cur):Date.now()>=by;
-  if(streak>=READY_RUNS&&good(cur))txt='<b style="font-size:1.1rem;display:inline;color:var(--ok)">✓ Ready to bake.</b> Kept a healthy pace '+streak+' feeds in a row. Mix your dough with it now, while it is near the top.';
+  if(streak>=READY_RUNS&&fridgeSince())txt='<b style="font-size:1.1rem;display:inline;color:var(--ok)">Strong enough to bake.</b> Kept a healthy pace '+streak+' feeds in a row before the fridge. Feed him when he comes out and use that feed near its peak.';
+  else if(streak>=READY_RUNS&&good(cur))txt='<b style="font-size:1.1rem;display:inline;color:var(--ok)">✓ Ready to bake.</b> Kept a healthy pace '+streak+' feeds in a row. Mix your dough with it now, while it is near the top.';
   else if(streak>=READY_RUNS&&!missed)txt='<b style="font-size:1.1rem;display:inline;color:var(--ok)">Ready to bake once this feed is up.</b> Kept a healthy pace '+streak+' feeds in a row. Use this one near its peak.';
   else txt='<b style="font-size:1.1rem;display:inline">Ready to bake: not yet</b> ('+(missed?0:Math.min(streak,READY_RUNS))+' of '+READY_RUNS+'). Ready once it doubles at a healthy pace for its ratio and temperature, '+READY_RUNS+' feeds in a row ('+READY_H+' h for 1:2:2 at '+STD_F+'°F; sooner for 1:1:1, later for 1:5:5).';
   $('ready').innerHTML=txt+curTxt;
