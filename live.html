@@ -145,6 +145,8 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <input type="range" id="plantemp" min="64" max="84" step="1">
     <div class="row" style="gap:6px;margin-top:6px"><label class="small">Starter <input id="planst" type="text" inputmode="decimal" autocomplete="off" class="g"></label><label class="small">Flour <input id="planfl" type="text" inputmode="decimal" autocomplete="off" class="g"></label><label class="small">Water <input id="planwa" type="text" inputmode="decimal" autocomplete="off" class="g"></label><span class="small">g</span><button class="chip" id="planclear">Clear</button></div>
     <div class="note">Try amounts: type one and the time slider fills in the rest (grey). Type starter and flour and it shows when that peaks. Nothing is sent.</div>
+    <label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="keepon"> Just keeping him happy (least flour)</label>
+    <div id="keepbox" class="note" hidden><label>Next feed in <select id="keepwhere"><option value="fridge">about a week: he lives in the fridge</option><option value="counter">about a day: he lives on the counter</option></select></label></div>
     <label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="bakeon"> Planning a bake</label>
     <div id="bakebox" class="note" hidden>
       <div class="row" style="gap:6px;margin-top:4px"><label>Loaves <input id="bakeloaves" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><label>× <input id="bakeper" type="number" inputmode="decimal" min="10" step="5" class="g"> g starter each</label></div>
@@ -1100,6 +1102,17 @@ function planBasis(){
 const PEAK_ROOM_X=2.5;  // jar room for the rise when sizing a feed to the jar
 const BAKE_DEF={on:false,loaves:1,per:100,keep:15,again:false,days:'1'},JAR_LOSS=5,ML_PER_G=0.854;
 let bake={...BAKE_DEF},planBake=null;  // loaded from storage at startup, below
+// Just keeping him happy (off by default): no peak time to hit, so the least
+// flour that keeps him fed until the next feed. In the fridge that is a small
+// 1:5:5 once a week (an hour or two out first so it gets going); on the
+// counter a 1:10:10 lasts about a day. Remembered per device.
+const KEEP_ST=2,KEEP_R={fridge:5,counter:10};
+let keep={on:false,where:'fridge'};
+function readKeep(e){
+  keep={on:$('keepon').checked,where:$('keepwhere').value};
+  if(keep.on&&bake.on&&e&&e.target.id==='keepon'){$('bakeon').checked=false;readBake()}
+  store.set('keep',JSON.stringify(keep));$('keepbox').hidden=!keep.on;recipeTouched=false;if(run)renderPlan();
+}
 function showBake(){
   $('bakeon').checked=bake.on;$('bakebox').hidden=!bake.on;$('bakeloaves').value=bake.loaves;$('bakeper').value=bake.per;$('bakekeep').value=bake.keep;
   $('bakeagain').checked=bake.again;$('bakeagainbox').hidden=!bake.again;$('bakedays').value=bake.days;
@@ -1111,6 +1124,7 @@ function readBake(){
   // Switching bake planning on or off starts the time over (the peak of the
   // ratio you just fed), so a far-off mix time doesn't carry into a plain feed.
   if(bake.on!==wasOn){planSet=false;ratioPick=null}
+  if(bake.on&&keep.on){keep.on=false;$('keepon').checked=false;$('keepbox').hidden=true;store.set('keep',JSON.stringify(keep))}
   store.set('bake',JSON.stringify(bake));showBake();recipeTouched=false;if(run)renderPlan();
 }
 function renderPlan(){
@@ -1126,6 +1140,30 @@ function renderPlan(){
     $('plantemp').value=Math.round(fNow);
     $('planpeak').value=Math.min(24,Math.max(3,Math.round(2*hrsAt(st0&&fl0?fl0/st0:2,Math.round(fNow)))/2));
     planSet=true;
+  }
+  // Keeping him happy: the planner's time slider and ratio table don't apply.
+  [$('planpeak'),$('planpeak').previousElementSibling,$('plantable')].forEach(e=>e.style.display=keep.on?'none':'');
+  if(keep.on){
+    const F=Number($('plantemp').value),fr=keep.where==='fridge',r=KEEP_R[keep.where],st=KEEP_ST,fl=st*r,wa=st*r*b.hyd;
+    const who=(run.starter||'starter').replace(/^./,c=>c.toUpperCase()),lbl='1:'+r+':'+(+(r*b.hyd).toFixed(1));
+    const step=(when,what)=>'<div style="display:flex;gap:8px;margin-top:6px"><span class="note" style="flex:0 0 5.2em">'+when+'</span><span>'+what+'</span></div>';
+    const T=hrsAt(r,F),inFz=clock(Date.now()+1.5*3600e3);
+    let out='<b style="font-size:1.3rem;display:inline">Feed '+lbl+'</b> <span class="note">(least flour)</span>';
+    out+=step('Now',st+' g '+who+' + '+g1(fl)+' g flour + '+g1(wa)+' g water. Discard the rest of the old jar.');
+    out+=fr?step('~'+inFz,'Leave him out 1–2 h so the feed gets going, then <b style="display:inline">into the fridge</b> (tap Into the fridge).')+
+        step('In a week','Same again: take him out, feed '+st+' + '+g1(fl)+' + '+g1(wa)+', back in after 1–2 h. Hooch on top is fine; pour it off.')
+      :step(clock(Date.now()+T*3600e3),'Peaks around now if the room stays '+F+'°F, then slowly gets hungry.')+
+        step('In a day','Same again: '+st+' + '+g1(fl)+' + '+g1(wa)+'.');
+    out+=step('Before a bake','Take him out 1–2 days ahead and give him 1–2 counter feeds; then untick this and plan the bake.');
+    out+='<div class="note" style="margin-top:6px">About '+Math.round(fl*(fr?1:7))+' g of flour a week '+(fr?'in the fridge':'on the counter')+
+      (fr?' (on the counter, feeding daily, it would be about '+Math.round(KEEP_ST*KEEP_R.counter*7)+' g).':' (in the fridge, fed weekly, it would be about '+Math.round(KEEP_ST*KEEP_R.fridge)+' g).')+
+      ' The ratio barely changes the flour; how often you feed does. A layer this thin makes the box’s rise readings noisy, so don’t judge his strength from these feeds.</div>';
+    $('planout').innerHTML=out;
+    planPick=[st,fl,wa];planModel={hrsAt,F,H:Math.round(T*2)/2};planBake=null;
+    [['planst',st],['planfl',fl],['planwa',wa]].forEach(([id,v])=>{const e=$(id);e.placeholder=g1(v);if(!planTyped.has(id)&&document.activeElement!==e)e.value=''});
+    if(!recipeTouched)setGrams(planPick);refreshNext();
+    $('planusenote').textContent=$('recipe').hidden?'Pause for a new jar and these grams are filled in for you.':recipeTouched?'Your typed grams are kept; tap to switch to these.':'Starter in is using these grams.';
+    return;
   }
   // Scenario boxes: starter and flour (or water) typed fix the ratio, so the
   // peak follows from it and the slider moves to show it.
@@ -1879,6 +1917,10 @@ $('planclear').onclick=()=>{planTyped.clear();['planst','planfl','planwa'].forEa
 $('plantable').onclick=e=>{const tr=e.target.closest('tr[data-r]');if(!tr||!run)return;ratioPick=Number(tr.dataset.r);if(planTyped.has('planst'))['planfl','planwa'].forEach(id=>{planTyped.delete(id);$(id).value=''});typedIds.delete('rg_f');typedIds.delete('rg_w');
   if(!gusTyped)recipeTouched=false;renderPlan();if(planModel)$('planpeak').value=Math.min(24,Math.max(3,Math.round(2*planModel.hrsAt(ratioPick,planModel.F))/2));renderPlan()};
 try{bake={...BAKE_DEF,...JSON.parse(store.get('bake')||'{}')}}catch(e){}
+try{keep={...keep,...JSON.parse(store.get('keep')||'{}')}}catch(e){}
+if(keep.on&&bake.on)keep.on=false;
+$('keepon').checked=keep.on;$('keepwhere').value=keep.where==='counter'?'counter':'fridge';$('keepbox').hidden=!keep.on;
+['keepon','keepwhere'].forEach(id=>$(id).onchange=readKeep);
 showBake();['bakeon','bakeagain','bakedays'].forEach(id=>$(id).onchange=readBake);['bakeloaves','bakeper','bakekeep'].forEach(id=>$(id).oninput=readBake);
 ['rg_s','rg_f','rg_w'].forEach(id=>$(id).addEventListener('input',()=>{recipeTouched=true;typedIds.add(id);gusTyped=id==='rg_s'?gNum(id)>0:gusTyped;keepPick();lockFollow(id);if(run)renderPlan();showFlour()}));
 $('rglock').onchange=e=>{e.target.checked?store.set('glock','1'):store.del('glock');setLock(e.target.checked);if(run)renderPlan()};
