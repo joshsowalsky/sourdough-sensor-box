@@ -81,6 +81,7 @@ input.ingin{width:4.8em;margin:0 6px 0 0;min-height:34px;padding:4px 6px;text-al
 .verdict.good{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 16%,var(--panel))}.verdict.good b{color:var(--ok)}
 .verdict.near{border-color:var(--accent)}.verdict.near b{color:var(--accent)}
 .verdict.feed{border-color:var(--warn)}.verdict.feed b{color:var(--warn)}
+body.pro .wordy{display:none!important}
 body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.note{display:none!important}
 </style></head><body><main>
 <h1 class="keep">Sourdough Live</h1>
@@ -89,13 +90,13 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
 <section id="baketab" class="keep">
   <div class="card"><div class="label">Is Gus ready?</div><div id="bakegus" class="small" style="color:var(--fg);font-size:.95rem">Loading…</div></div>
   <div class="card"><div class="label">Steps · mix today, bake tomorrow</div>
-    <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><button class="chip" id="bakreset">Start over</button></div>
+    <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><label class="note">Autolyse <select id="bakaut"><option value="0">none</option><option value="30">30 min</option><option value="60">1 h</option><option value="120">2 h</option></select></label><label class="note">Level <select id="bakexp"><option value="new">new</option><option value="pro">experienced</option></select></label><button class="chip" id="bakreset">Start over</button></div>
     <div class="note" id="bakrecipe" style="margin-top:6px"></div>
     <div class="note" id="bakbox" style="margin-top:8px"></div>
     <div id="baksteps" style="margin-top:8px"></div>
-    <div class="note" style="margin-top:6px">Tap Done as you finish each step. Each step shows its usual time and the window around it, counted from when you did the step before, so if one runs late the rest move with it. The end of bulk counts from the mix and follows the temperature instead. Your phone gets a reminder for each step from the salt to the fridge. Tap a done time to fix it. Times are a guide: the dough decides, especially when the bulk rise ends.</div>
+    <div class="note wordy" style="margin-top:6px">Tap Done as you finish each step. Each step shows its usual time and the window around it, counted from when you did the step before, so if one runs late the rest move with it. The end of bulk counts from the mix and follows the temperature instead. Your phone gets a reminder for each step from the salt to the fridge. Tap a done time to fix it. Times are a guide: the dough decides, especially when the bulk rise ends.</div>
     <div class="note" id="baksync" style="margin-top:4px"></div></div>
-  <div class="card bknow"><div class="label">Good to know</div><div id="bakknow" class="small" style="color:var(--fg);font-size:.92rem"></div></div>
+  <div class="card bknow wordy"><div class="label">Good to know</div><div id="bakknow" class="small" style="color:var(--fg);font-size:.92rem"></div></div>
 </section>
 <div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div id="fridgestate" hidden style="margin-top:8px"></div><div id="breadclock" hidden style="margin-top:10px"></div><div class="small" id="outlook" hidden></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><div id="kpiwrap"><table id="kpis" class="ktab small"></table></div><div id="recipe" hidden style="margin-top:10px"><div class="label">What you fed</div>
 <div class="row" style="margin-top:4px;gap:6px"><label class="note">Starter <input id="rg_s" type="text" inputmode="decimal" autocomplete="off" class="g"></label><label class="note">Flour <input id="rg_f" type="text" inputmode="decimal" autocomplete="off" class="g"></label><label class="note">Water <input id="rg_w" type="text" inputmode="decimal" autocomplete="off" class="g"></label><span class="note">grams</span><label class="note"><input type="checkbox" id="rglock"> Lock ratio</label></div><div class="note" id="rglocknote" hidden></div>
@@ -144,7 +145,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <label for="plantemp" class="small">Room temp <b id="planf">–</b> <span class="note">(now: <span id="plannow">–</span>)</span></label>
     <input type="range" id="plantemp" min="64" max="84" step="1">
     <div class="row" style="gap:6px;margin-top:6px"><label class="small">Starter <input id="planst" type="text" inputmode="decimal" autocomplete="off" class="g"></label><label class="small">Flour <input id="planfl" type="text" inputmode="decimal" autocomplete="off" class="g"></label><label class="small">Water <input id="planwa" type="text" inputmode="decimal" autocomplete="off" class="g"></label><span class="small">g</span><button class="chip" id="planclear">Clear</button></div>
-    <div class="note">Try amounts: type one and the time slider fills in the rest (grey). Type starter and flour and it shows when that peaks. Nothing is sent.</div>
+    <div class="note wordy">Try amounts: type one and the time slider fills in the rest (grey). Type starter and flour and it shows when that peaks. Nothing is sent.</div>
     <label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="keepon"> Just keeping him happy (least flour)</label>
     <div id="keepbox" class="note" hidden><label>Next feed in <select id="keepwhere"><option value="fridge">about a week: he lives in the fridge</option><option value="counter">about a day: he lives on the counter</option></select></label></div>
     <label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="bakeon"> Planning a bake</label>
@@ -157,7 +158,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div id="planout" style="margin-top:6px"></div>
     <table id="plantable" class="small" style="margin-top:6px;border-collapse:collapse"></table>
     <div class="row" style="margin-top:8px"><button id="planuse">Use in Starter in</button><span class="note" id="planusenote"></span></div>
-    <div class="note" id="planbasis" style="margin-top:6px"></div></div>
+    <div class="note wordy" id="planbasis" style="margin-top:6px"></div></div>
   <div class="card wide" id="seriescard" hidden><div class="label" id="serieslabel">Every feed</div>
     <div class="row" style="margin:6px 0 0;gap:6px"><button class="chip" data-mode="overlay">Compare feeds</button><button class="chip" data-mode="timeline">Timeline</button></div>
     <div class="row" id="serieswin" style="margin:6px 0 4px;gap:6px"><button class="chip" data-h="12">12 h</button><button class="chip" data-h="24">1 day</button><button class="chip" data-h="72">3 days</button><button class="chip" data-h="0">All</button><button class="chip" id="seriesnow" hidden>Back to now</button></div>
@@ -632,18 +633,20 @@ function fridgeState(s,fz){
   return {stage:i,head:'In the fridge: '+st[1].toLowerCase(),
     html:'<div style="font-size:.95rem">'+st[3]+'</div><div style="margin-top:6px">'+rows+'</div>'+
       '<div style="margin-top:6px;font-size:.92rem">'+feed+'</div>'+
-      '<div class="note" style="margin-top:6px">A guess: nothing measures him in the fridge. In for '+dur+'; went in '+(p0>=0?g1(p0)+' h after his peak':'before his peak')+'. Assumes a fridge around 38°F, where he runs about '+FRIDGE_SLOW+'× slower than on the counter.</div>'};
+      '<div class="note wordy" style="margin-top:6px">A guess: nothing measures him in the fridge. In for '+dur+'; went in '+(p0>=0?g1(p0)+' h after his peak':'before his peak')+'. Assumes a fridge around 38°F, where he runs about '+FRIDGE_SLOW+'× slower than on the counter.</div>'};
 }
 // Bread clock: from what's in the jar right now (how much, how strong, how
 // warm), the next step and when bread comes out of the oven if every step
 // happens when it's due. Feed times are the planner's (planBasis); the dough
 // follows the Bake tab's steps: folds, bulk by temperature, shape, fridge
 // overnight, preheat no earlier than 7 AM, bake.
+// Bulk: BULK_H at BAKE_F with 20% Gus; more Gus is faster, warmer is faster.
+function bulkHours(F){return Math.max(160/60,(BULK_H+2*Math.log2(0.2/Math.max(0.05,gusPct())))*warmBy(F))}
 function breadTimes(mix,F){
-  const H=3600e3,bulk=mix+Math.max(BULK_H*warmBy(F),160/60)*H,fridge=bulk+30*60e3;
+  const H=3600e3,bh=bulkHours(F),bulk=mix+bh*H,fridge=bulk+30*60e3;
   let heat=fridge+7*H;const d=new Date(heat),hr=d.getHours();
   if(hr>=22||hr<7){if(hr>=22)d.setDate(d.getDate()+1);d.setHours(7,0,0,0);heat=Math.min(d.getTime(),fridge+15*H)}
-  return {bulk,fridge,bake:heat+55*60e3,out:heat+100*60e3};
+  return {bh,bulk,fridge,bake:heat+55*60e3,out:heat+100*60e3};
 }
 function breadClock(s,fz,ps){
   const b=planBasis();if(!b)return '';
@@ -661,21 +664,29 @@ function breadClock(s,fz,ps){
   if(fz){const sg=fridgeState(s,fz).stage;
     if(sg>=5){next='Take him out. Two rebuilding feeds first, then '+feed;ready=now+(2*hrs(2)+hrs(r)+1.5)*H}
     else{next='Take him out and '+feed;ready=now+(hrs(r)+(sg>=4?3:1.5))*H}}
-  else if(ps){next=feed.replace(/^f/,'F');ready=now+hrs(r)*H}
+  else if(ps){
+    // Paused (box lifted): if this feed peaked before the pause and is still
+    // within its use window, the dough can go now.
+    const segs=feedSegs(),k=segs.length?feedKpis(segs[segs.length-1]):null,pk=k&&k.peakH!=null&&k.peak>=1.3?s.fed+k.peakH*H:null;
+    if(pk&&pk<=ps&&now-pk<USE_H*warmBy(roomF)*H&&onHand>=need){next='Mix the dough now (peaked '+clock(pk)+')';ready=now}
+    else{next=feed.replace(/^f/,'F');ready=now+hrs(r)*H}}
   else if(peakT&&peakT>now){if(onHand>=need){next='Wait for his peak, then mix';ready=peakT}else{next='Let him peak, then '+feed+' for the bake';ready=peakT+hrs(r)*H}}
   else if(peakT&&now-peakT<USE_H*H&&onHand>=need){next='Mix the dough now';ready=now}
   else{next=feed.replace(/^f/,'F')+' now';ready=now+hrs(r)*H}
+  // Autolyse: flour and water start that long before Gus goes in.
+  const aut=bk.aut>0?bk.aut*60e3:0;let a0=ready-aut;if(aut&&a0<now){a0=now;ready=now+aut}
   const t=breadTimes(ready,roomF);
   const when=x=>(new Date(x).toDateString()===new Date().toDateString()?'':new Date(x).toLocaleDateString([],{weekday:'short'})+' ')+clock(x);
   const away=(t.out-now)/H,aw=away<36?Math.round(away)+' h':(away/24).toFixed(1)+' days';
   const row=(w,x,c)=>'<div class="bc'+(c?' '+c:'')+'"><span class="w">'+w+'</span><span>'+x+'</span></div>';
   return '<div class="label">Bread clock · '+(n===1?'1 loaf':g1(n)+' loaves')+', starting now</div>'+
     row('Start',next+'.')+
-    row(ready-now<15*60e3?'Now':'~'+when(ready),'Ready to mix')+
-    row('~'+when(t.bulk),'Bulk done; shape it and into the fridge')+
+    (aut?row(a0-now<15*60e3?'Now':'~'+when(a0),'Autolyse: flour + water ('+(bk.aut<60?bk.aut+' min':bk.aut/60+' h')+')'):'')+
+    row(ready-now<15*60e3?'Now':'~'+when(ready),(aut?'Add Gus':'Mix')+'; bulk starts')+
+    row('~'+when(t.bulk),'Bulk ends ('+t.bh.toFixed(1)+' h); shape, fridge')+
     row('~'+when(t.bake),'Bake')+
     row('~'+when(t.out),'Bread out of the oven · '+aw+' from now','big')+
-    '<div class="note" style="margin-top:4px">Room '+Math.round(roomF)+'°F. Needs '+Math.round(need)+' g of Gus ('+Math.round(n*gusPer())+' for the dough + '+GUS_KEEP+' to keep); about '+Math.round(onHand)+' g in the jar. Assumes each step happens when it\'s due. Loaves: Bake tab.</div>';
+    '<div class="note wordy" style="margin-top:4px">Room '+Math.round(roomF)+'°F. Needs '+Math.round(need)+' g of Gus ('+Math.round(n*gusPer())+' for the dough + '+GUS_KEEP+' to keep); about '+Math.round(onHand)+' g in the jar. Assumes each step happens when it\'s due. Loaves: Bake tab.</div>';
 }
 function renderRun(){
   if(!run)return;document.body.classList.add('ready');
@@ -1089,10 +1100,15 @@ const PLAN_LAG=1,PLAN_F_PER_2X=15,PLAN_RATIOS=[0.5,1,1.5,2,2.5,3,4,5,6,8,10,12,1
 let planSet=false,ratioPick=null;const planTyped=new Set();  // a ratio tapped in the planner table (the slider clears it)
 function planBasis(){
   const segs=feedSegs(),hist=run.history||[];
-  for(let i=hist.length-1;i>=0;i--){
-    const k=feedKpis(segs[i]),[st,fl,wa]=(hist[i].feed_g||'').split(':').map(Number);
+  // This feed counts too once it has clearly peaked (or tracking paused after
+  // it rose), so the first feed out of the fridge isn't left with nothing.
+  const kc=feedKpis(segs[segs.length-1]),fs=run.points.filter(p=>p.f!=null).map(p=>p.f);
+  const curDone=kc.peak!=null&&kc.peak>=1.3&&(pausedSince()||kc.last!=null&&kc.peak-kc.last>=0.1);
+  const all=curDone?[...hist,{...run,room_f_avg:fs.length?fs.reduce((a,b)=>a+b)/fs.length:null}]:hist;
+  for(let i=all.length-1;i>=0;i--){
+    const k=feedKpis(segs[i]),[st,fl,wa]=(all[i].feed_g||'').split(':').map(Number);
     if(k.peakH==null||k.peak<1.3||!st||!fl)continue;  // never really rose
-    const p=st/(st+fl+(wa||0)),f=hist[i].room_f_avg||75;
+    const p=st/(st+fl+(wa||0)),f=all[i].room_f_avg||75;
     return {fed:k.fed,peak:k.peak,peakH:k.peakH,f,st,fl,wa:wa||0,hyd:(wa||0)/fl,D:k.peakH/(Math.log2(1/p)+PLAN_LAG)};
   }
   return null;
@@ -1158,7 +1174,7 @@ function renderPlan(){
       :step(clock(Date.now()+T*3600e3),'Peaks around now if the room stays '+F+'°F, then slowly gets hungry.')+
         step('In a day','Same again: '+st+' + '+g1(fl)+' + '+g1(wa)+'.');
     out+=step('Before a bake','Take him out 1–2 days ahead and give him 1–2 counter feeds; then untick this and plan the bake.');
-    out+='<div class="note" style="margin-top:6px">About '+Math.round(fl*(fr?1:7))+' g of flour a week '+(fr?'in the fridge':'on the counter')+
+    out+='<div class="note wordy" style="margin-top:6px">About '+Math.round(fl*(fr?1:7))+' g of flour a week '+(fr?'in the fridge':'on the counter')+
       (fr?' (on the counter, feeding daily, it would be about '+Math.round(KEEP_ST*KEEP_R.counter*7)+' g).':' (in the fridge, fed weekly, it would be about '+Math.round(KEEP_ST*KEEP_R.fridge)+' g).')+
       ' The ratio barely changes the flour; how often you feed does. A layer this thin makes the box’s rise readings noisy, so don’t judge his strength from these feeds.</div>';
     $('planout').innerHTML=out;
@@ -1645,19 +1661,30 @@ let bk={loaves:1,done:{},amt:{}},bkGus=null;
 try{bk={...bk,...JSON.parse(store.get('bakerun')||'{}')}}catch(e){}
 const bkSave=()=>store.set('bakerun',JSON.stringify(bk));
 const BAKE_STEPS=[
-  {id:'mix',t:'Mix',what:n=>'In a big bowl:'+ingEdit(BAKE_ING.mix)+'Squish until no dry flour is left, then cover. Leave about '+GUS_KEEP+' g of Gus in the jar for next time.'},
-  {id:'salt',t:'Add the salt',after:['mix',40,30,60],what:n=>ingEdit(BAKE_ING.salt)+'Sprinkle the salt evenly over the dough and pour the water over it. With a wet hand, pinch hard through the dough all over, then fold it over itself a few times, until you can’t feel grit or slippery patches. If any is left, rest 10 min and pinch again. (Don’t try to dissolve it in a cup first: 10 g of salt needs about 30 g of water to dissolve.)'},
-  {id:'f1',t:'Stretch and fold 1 of 4',after:['salt',30,20,45],what:()=>'Wet your hand. Lift one side of the dough, fold it over the top, turn the bowl a quarter, and repeat 4 times. Cover.'},
-  {id:'f2',t:'Fold 2 of 4',after:['f1',30,20,45],what:()=>'Same as the first.'},
-  {id:'f3',t:'Fold 3 of 4',after:['f2',30,20,45],what:()=>'Same again. It should feel smoother and hold its shape more.'},
-  {id:'f4',t:'Fold 4 of 4',after:['f3',30,20,45],what:()=>'Last one. Then leave it covered and alone.'},
-  {id:'bulk',t:'Bulk rise ends',bulk:true,what:()=>'Done when it is up about 50–75%, domed, jiggly when you shake the bowl, with bubbles on the sides and top. Judge the dough, not the clock; a strip of tape at the starting level helps.'},
-  {id:'pre',t:'Pre-shape',after:['bulk',0,0,15],what:()=>'Tip it onto the counter, fold it into a loose round, and let it rest uncovered 20–30 min.'},
-  {id:'shape',t:'Shape',after:['pre',25,20,30],what:()=>'Shape it tight, then put it seam-side up in a floured basket or towel-lined bowl. Cover.'},
-  {id:'fridge',t:'Proof in the fridge',after:['shape',5,0,10],what:()=>'This is the proof: the shaped loaf’s last rise, done cold overnight, 8–16 h. Longer is more sour. No need to check it; it goes straight from the fridge to the oven.'},
-  {id:'heat',t:'Preheat',heat:true,what:()=>'Oven and Dutch oven (lid on) to 500°F for 45–60 min.'},
-  {id:'bake',t:'Bake',after:['heat',55,45,60],what:()=>'Straight from the fridge: turn it out onto parchment, score the top, into the pot. 20 min lid on at 475°F, then 20–25 min lid off until deep brown.'},
-  {id:'cool',t:'Cool, then cut',after:['bake',45,40,50],what:()=>'At least 1 h on a rack. It is still cooking inside.'}];
+  {id:'mix',t:'Mix',s:'Squish until no dry flour; cover.',what:n=>'In a big bowl:'+ingEdit(BAKE_ING.mix)+'Squish until no dry flour is left, then cover. Leave about '+GUS_KEEP+' g of Gus in the jar for next time.'},
+  {id:'salt',t:'Add the salt',after:['mix',40,30,60],s:'Over the dough with the water; pinch in.',what:n=>ingEdit(BAKE_ING.salt)+'Sprinkle the salt evenly over the dough and pour the water over it. With a wet hand, pinch hard through the dough all over, then fold it over itself a few times, until you can’t feel grit or slippery patches. If any is left, rest 10 min and pinch again. (Don’t try to dissolve it in a cup first: 10 g of salt needs about 30 g of water to dissolve.)'},
+  {id:'f1',t:'Stretch and fold 1 of 4',after:['salt',30,20,45],s:'4 sides, wet hand; cover.',what:()=>'Wet your hand. Lift one side of the dough, fold it over the top, turn the bowl a quarter, and repeat 4 times. Cover.'},
+  {id:'f2',t:'Fold 2 of 4',after:['f1',30,20,45],s:'',what:()=>'Same as the first.'},
+  {id:'f3',t:'Fold 3 of 4',after:['f2',30,20,45],s:'',what:()=>'Same again. It should feel smoother and hold its shape more.'},
+  {id:'f4',t:'Fold 4 of 4',after:['f3',30,20,45],s:'Then leave it alone.',what:()=>'Last one. Then leave it covered and alone.'},
+  {id:'bulk',t:'Bulk rise ends',bulk:true,s:'Up 50–75%, domed, jiggly.',what:()=>'Done when it is up about 50–75%, domed, jiggly when you shake the bowl, with bubbles on the sides and top. Judge the dough, not the clock; a strip of tape at the starting level helps.'},
+  {id:'pre',t:'Pre-shape',after:['bulk',0,0,15],s:'Loose round; rest 20–30 min.',what:()=>'Tip it onto the counter, fold it into a loose round, and let it rest uncovered 20–30 min.'},
+  {id:'shape',t:'Shape',after:['pre',25,20,30],s:'Tight; seam up in the basket.',what:()=>'Shape it tight, then put it seam-side up in a floured basket or towel-lined bowl. Cover.'},
+  {id:'fridge',t:'Proof in the fridge',after:['shape',5,0,10],s:'8–16 h.',what:()=>'This is the proof: the shaped loaf’s last rise, done cold overnight, 8–16 h. Longer is more sour. No need to check it; it goes straight from the fridge to the oven.'},
+  {id:'heat',t:'Preheat',heat:true,s:'500°F, Dutch oven in, 45–60 min.',what:()=>'Oven and Dutch oven (lid on) to 500°F for 45–60 min.'},
+  {id:'bake',t:'Bake',after:['heat',55,45,60],s:'Score; 20 min lid on at 475°F, 20–25 off.',what:()=>'Straight from the fridge: turn it out onto parchment, score the top, into the pot. 20 min lid on at 475°F, then 20–25 min lid off until deep brown.'},
+  {id:'cool',t:'Cool, then cut',after:['bake',45,40,50],s:'1 h on a rack.',what:()=>'At least 1 h on a rack. It is still cooking inside.'}];
+// Autolyse (Bake tab setting, minutes): flour and water first, Gus after.
+// Gus going in is still the "mix" step, so bulk and the PC's plan count
+// from it as before.
+function bakeSteps(){
+  const a=bk.aut>0?bk.aut:0;if(!a)return BAKE_STEPS;
+  return [{id:'aut',t:'Autolyse',ing:['flour','ww','water'],s:'Mix; cover.',what:()=>'Flour and water only:'+ingEdit(['flour','ww','water'])+'Mix until no dry flour is left, then cover.'},
+    {...BAKE_STEPS[0],t:'Add Gus',after:['aut',a,Math.max(20,a/2),a+60],ing:['gus'],s:'Squish in until even; cover. Bulk starts.',
+      what:()=>ingEdit(['gus'])+'Dimple it in, then squish and fold until even. Cover. Bulk starts now. Leave about '+GUS_KEEP+' g of Gus in the jar.'},
+    ...BAKE_STEPS.slice(1)];
+}
+const stepIng=st=>st.ing||BAKE_ING[st.id]||null;
 function r0(v){return Math.round(v)}
 // Every amount has a default (per loaf) and a box to type what you really used.
 const ING={flour:{name:'bread flour',per:450},ww:{name:'whole wheat',per:50},water:{name:'water (room temp)',per:350},
@@ -1669,12 +1696,12 @@ const ingEdit=keys=>'<ul class="ing">'+keys.map(k=>'<li><input type="number" inp
 const gusPct=()=>amt('gus')/Math.max(1,amt('flour')+amt('ww'));
 const ingList=rows=>'<ul class="ing">'+rows.map(([g,t])=>'<li><b>'+g1d(g)+' g</b>'+t+'</li>').join('')+'</ul>';
 function bakeTimes(){
-  const T={},W={},now=Date.now(),F=bakeF(),bh=(BULK_H+2*Math.log2(0.2/Math.max(0.05,gusPct())))*warmBy(F);
+  const T={},W={},now=Date.now(),F=bakeF(),bh=bulkHours(F);
   let prev=0;
-  for(const st of BAKE_STEPS){
+  for(const st of bakeSteps()){
     let t=bk.done[st.id];
     if(!t){
-      if(st.id==='mix')t=now;
+      if(!st.after&&!st.bulk&&!st.heat)t=now;
       else if(st.bulk){
         const b=bakePlan();
         if(b&&b.bulk_due){t=new Date(b.bulk_due).getTime();W.bulk=[new Date(b.bulk_check).getTime(),new Date(b.bulk_late).getTime()]}
@@ -1754,7 +1781,7 @@ function boxUI(){
   const b=bk.box||{},el=$('bakbox'),btn=(a,t)=>' <button class="chip" data-box="'+a+'">'+t+'</button>';
   if(bk.done.bulk&&!b.on){el.innerHTML='';return}
   const tb=b.tub;
-  let h='<b style="color:var(--fg)">Sensor box on the dough</b> (optional): measures the rise. Use a straight-sided tub with the box looking down through a hole in the lid. Gus’s tracking pauses while the box is off his jar.<br>';
+  let h='<b style="color:var(--fg)">Sensor box on the dough</b> (optional)<span class="wordy">: measures the rise. Use a straight-sided tub with the box looking down through a hole in the lid. Gus’s tracking pauses while the box is off his jar.</span><br>';
   h+=tb&&tb.cm!=null?'1. Empty tub: '+tb.cm.toFixed(1)+' cm to the bottom ✓'+btn('tub','Measure again')
     :tb&&!tb.failed&&Date.now()-tb.at<90e3?'1. Measuring the empty tub…'
     :(tb&&tb.failed?'Couldn’t measure: check the box sits flat on the empty, clean tub. ':'')+'1. Box on the empty tub, then'+btn('tub','Measure it');
@@ -1793,25 +1820,26 @@ function bakeTab(force){
   // Done or Undo always redraws, even though the tapped button has focus.
   {const ae=document.activeElement;if(!force&&ae&&ae.tagName==='INPUT'&&$('baksteps').contains(ae))return}
   boxUI();
-  const n=bk.loaves,{T,W,bh,F}=bakeTimes(),next=BAKE_STEPS.find(st=>!bk.done[st.id]),now=Date.now();
+  const SS=bakeSteps(),n=bk.loaves,{T,W,bh,F}=bakeTimes(),next=SS.find(st=>!bk.done[st.id]),now=Date.now(),pro=bk.exp==='pro';
   if(document.activeElement!==$('bakn'))$('bakn').value=n;
+  $('bakaut').value=String(bk.aut||0);$('bakexp').value=pro?'pro':'new';
   bakeSummary();
   const hm=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
   const dayOf=t=>new Date(t).toDateString()===new Date().toDateString()?'':new Date(t).toLocaleDateString([],{weekday:'short'})+' ';
-  const lastDone=[...BAKE_STEPS].reverse().find(st=>bk.done[st.id]);
-  $('baksteps').innerHTML=BAKE_STEPS.map(st=>{
+  const lastDone=[...SS].reverse().find(st=>bk.done[st.id]);
+  $('baksteps').innerHTML=SS.map(st=>{
     const d=bk.done[st.id],isNext=next&&st.id===next.id;
     let when=d?'done<br><input type="time" data-bt="'+st.id+'" value="'+hm(d)+'" style="width:7.4em;min-height:32px;padding:2px 4px;font-size:.85rem">'
       :st.bulk&&!W.bulk?'~'+clock(T.mix+(bh-0.5)*3600e3)+'<br>to '+clock(T.mix+(bh+0.5)*3600e3)
       :stepWhen(st,isNext,T,W,now,dayOf);
-    let what=st.what(n);
+    let what=pro?(stepIng(st)?ingEdit(stepIng(st)):'')+(st.s||''):st.what(n);
     const bp=st.bulk&&!d&&bakePlan();
     const dg=bp&&bp.dough;
     if(dg)what+='<div class="note" style="margin-top:4px;color:var(--fg)">Box: up '+(dg.pct!=null?dg.pct+'% ('+dg.rise_cm.toFixed(1)+' cm)':dg.rise_cm.toFixed(1)+' cm (measure the empty tub to get %)')+' '+(dg.since_mix?'since mixing':'since the box went on')+(dg.settled_now?'':', settling after a fold')+'. Aim for 50–75%.</div>';
     if(bp&&!bp.bulk_done)what+='<div class="note" style="margin-top:4px">About '+Math.round(bp.progress*100)+'% of the usual bulk, at '+Math.round(bp.temp_f_avg)+'°F on average since mixing ('+(bp.temp_source==='probe'?'dough probe':'room')+'). Warmer dough gets there sooner; when you fold doesn’t change it.</div>';
     if(isNext&&!d&&W[st.id]&&now>W[st.id][1])what+='<div style="color:var(--warn);margin-top:4px">Late is fine: do it now. The steps after it count from when you tap Done.</div>';
     if(st.id==='mix'&&!d&&g&&g.win)what+=' <b>Gus is at its best until about '+clock(g.win)+'.</b>';
-    if(st.bulk&&!d&&!bp)what+=' At '+F.toFixed(0)+'°F that is about '+bh.toFixed(1)+' h after mixing; warmer is faster.';
+    if(st.bulk&&!d&&!bp)what+=pro?' ~'+bh.toFixed(1)+' h at '+F.toFixed(0)+'°F.':' At '+F.toFixed(0)+'°F that is about '+bh.toFixed(1)+' h after '+(bk.aut>0?'Gus goes in':'mixing')+'; warmer is faster.';
     if(st.id==='fridge')what+=' Bake between '+dayOf(T.fridge+8*3600e3)+clock(T.fridge+8*3600e3)+' and '+dayOf(T.fridge+16*3600e3)+clock(T.fridge+16*3600e3)+'.';
     const btn=(isNext?'<button data-bd="'+st.id+'" style="margin-top:6px">Done</button> ':'')+(lastDone&&st.id===lastDone.id?'<button class="chip" data-bu="'+st.id+'" style="margin-top:6px">Undo</button>':'');
     return '<div class="bstep'+(isNext?' next':'')+(d?' done':'')+'"><div class="when">'+when+'</div><div class="what"><b>'+st.t+'</b><br>'+what+(btn?'<div>'+btn+'</div>':'')+'</div></div>';
@@ -1833,7 +1861,7 @@ function bakeSummary(){
   const flour=A('flour')+A('ww')+A('gus')*gf,water=A('water')+A('saltw')+A('gus')*(1-gf),pc=v=>Math.round(v*100)+'%';
   $('bakrecipe').innerHTML='<span style="color:var(--fg)">All of it, for '+(n===1?'1 loaf':n+' loaves')+' (type what you really used in the boxes below):</span>'+
     ingList([[A('flour'),'bread flour'],[A('ww'),'whole wheat'],[A('water')+A('saltw'),'water'],[A('gus'),'Gus'],[A('salt'),'salt']])+
-    '<span style="color:var(--fg)">'+pc(water/flour)+' water (counting the water and flour in Gus), Gus '+pc(gusPct())+' of the flour, salt '+pc(A('salt')/flour)+'.</span> Using your own recipe? Type its amounts in and follow these times.';
+    '<span style="color:var(--fg)">'+pc(water/flour)+' water (counting the water and flour in Gus), Gus '+pc(gusPct())+' of the flour, salt '+pc(A('salt')/flour)+'.</span><span class="wordy"> Using your own recipe? Type its amounts in and follow these times.</span>';
 }
 // Each step goes to the PC's bake log too (through the same private topic
 // as Pause), with the amounts used. No pause key: this device only.
@@ -1878,6 +1906,9 @@ $('baksteps').addEventListener('input',e=>{
 });
 $('baksteps').addEventListener('focusout',()=>setTimeout(()=>{if(!$('baksteps').contains(document.activeElement))bakeTab()},0));
 $('bakn').oninput=e=>{const v=parseFloat(e.target.value);if(v>0){bk.loaves=v;bk.amt={};bkSave();bakeTab()}};
+$('bakaut').onchange=e=>{bk.aut=Number(e.target.value)||0;bkSave();bakeTab(true);if(run)renderRun()};
+$('bakexp').onchange=e=>{bk.exp=e.target.value;bkSave();document.body.classList.toggle('pro',bk.exp==='pro');bakeTab(true)};
+document.body.classList.toggle('pro',bk.exp==='pro');
 $('bakreset').onclick=()=>{if(confirm('Start over? This clears the step times.')){bk.done={};bk.amt={};bk.box={};bkSave();bakeTab()}};
 function ago(s){if(s<90)return Math.round(s)+' s ago';if(s<5400)return Math.round(s/60)+' min ago';return (s/3600).toFixed(1)+' h ago'}
 async function load(){
