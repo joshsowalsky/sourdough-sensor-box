@@ -1142,8 +1142,11 @@ function renderPlan(){
     planSet=true;
   }
   // Keeping him happy: the planner's time slider and ratio table don't apply.
-  [$('planpeak'),$('planpeak').previousElementSibling,$('plantable')].forEach(e=>e.style.display=keep.on?'none':'');
+  [$('planpeak'),$('plantable')].forEach(e=>e.style.display=keep.on?'none':'');
+  {const l=$('planpeak').previousElementSibling;l.style.display=keep.on?'block':'';l.style.marginBottom=keep.on?'8px':''}
   if(keep.on){
+    $('planpeaklbl').textContent='No time to aim for while “Just keeping him happy” is ticked.';$('plantime').textContent='';$('planh').textContent='Untick it to get the time slider back.';
+    $('planf').textContent=$('plantemp').value+'°F';$('plannow').textContent=fNow.toFixed(0)+'°F';
     const F=Number($('plantemp').value),fr=keep.where==='fridge',r=KEEP_R[keep.where],st=KEEP_ST,fl=st*r,wa=st*r*b.hyd;
     const who=(run.starter||'starter').replace(/^./,c=>c.toUpperCase()),lbl='1:'+r+':'+(+(r*b.hyd).toFixed(1));
     const step=(when,what)=>'<div style="display:flex;gap:8px;margin-top:6px"><span class="note" style="flex:0 0 5.2em">'+when+'</span><span>'+what+'</span></div>';
