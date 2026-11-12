@@ -1181,11 +1181,6 @@ function renderPlan(){
   // jar's name. The slider then only matters below that.
   const typed=ps??(gusTyped&&gNum('rg_s')>0?gNum('rg_s'):null);
   const jarSel=(recipeFor!=null&&vesselIn())||run.next_vessel||run.vessel||'',capSel=Number((jarSel.match(/(\d+)\s*ml/i)||[])[1]);
-  let capped=false,capMx=null;
-  if(typed!=null&&capSel&&fixedR==null){
-    const fits=PLAN_RATIOS.filter(r=>typed*(1+r+r*b.hyd)*ML_PER_G*PEAK_ROOM_X<=capSel),mx=fits.length?fits[fits.length-1]:PLAN_RATIOS[0];
-    capMx=mx;if(best>mx){best=mx;capped=true}
-  }
   // Planning a bake: the feed must make at least what the bake needs. With
   // the Gus there is (typed, or what's in the jar) that sets the thickest
   // ratio allowed, so the earliest mix time. The slider can't go earlier;
@@ -1195,13 +1190,25 @@ function renderPlan(){
   if(bake.on&&gusAvail>0){
     const rNeed=((need+JAR_LOSS)/gusAvail-1)/(1+b.hyd);
     if(rNeed>PLAN_RATIOS[0]&&rNeed<=20)rMin=Math.ceil(rNeed*2)/2;
-    if(rMin!=null&&fixedR==null&&best<rMin){best=rMin;capped=false;clamped=true;$('planpeak').value=Math.min(24,Math.ceil(2*hrsAt(rMin,F))/2);H=Number($('planpeak').value)}
   }
+  // The jar's room caps the feed, except when the bake needs more than the
+  // jar holds: then the bake wins (a warning says to use a bigger jar) and
+  // the slider stays free above the bake's earliest time.
+  let capped=false,jarSmall=false;
+  if(typed!=null&&capSel&&fixedR==null){
+    const fits=PLAN_RATIOS.filter(r=>typed*(1+r+r*b.hyd)*ML_PER_G*PEAK_ROOM_X<=capSel),mx=fits.length?fits[fits.length-1]:PLAN_RATIOS[0];
+    jarSmall=rMin!=null&&rMin>mx;
+    if(best>mx&&!jarSmall){best=mx;capped=true}
+  }
+  if(rMin!=null&&fixedR==null&&best<rMin){best=rMin;clamped=true;$('planpeak').value=Math.min(24,Math.ceil(2*hrsAt(rMin,F))/2);H=Number($('planpeak').value)}
   $('plantime').textContent=new Date(Date.now()+H*3600e3).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
   $('planh').textContent='('+H+' h from now'+(rMin!=null&&fixedR==null&&best<=rMin?' · the earliest for this bake':'')+')';
   // Same total in the jar at any ratio: less starter as the ratio goes up.
   const gr=x=>x<20?Math.round(x*10)/10:Math.round(x);
-  const st=typed??(pf?pf/best:pw?pw/(best*b.hyd):Math.max(2,(bake.on?Math.ceil:Math.round)(total/(1+best+best*b.hyd)))),g=v=>gr(v*st)+' g',clockAt=h=>clock(Date.now()+h*3600e3);
+  // Jar too small for the bake: thinner feeds use less of the typed Gus, so
+  // the jar holds just what the bake needs instead of growing past it.
+  const useT=r=>typed!=null&&jarSmall?Math.min(typed,Math.ceil(10*total/(1+r+r*b.hyd))/10):typed;
+  const st=useT(best)??(pf?pf/best:pw?pw/(best*b.hyd):Math.max(2,(bake.on?Math.ceil:Math.round)(total/(1+best+best*b.hyd)))),g=v=>gr(v*st)+' g',clockAt=h=>clock(Date.now()+h*3600e3);
   const flG=pf??best*st,waG=pw??best*b.hyd*st;
   const lbl=r=>'1:'+(+r.toFixed(1))+':'+(+(r*b.hyd).toFixed(1));
   const same=st0&&fl0&&Math.abs(fl0/st0-best)<0.01;
@@ -1222,15 +1229,16 @@ function renderPlan(){
   }else{
     out+=step(clockAt(T),'<b style="display:inline">At its peak</b>, if the room stays '+F+'°F: use it, or feed again. For the next feed keep about '+gr(st)+' g; the other ~'+Math.max(0,Math.round(N-st-JAR_LOSS))+' g is discard.');
   }
-  if(typed!=null)out+='<div class="note" style="margin-top:6px">Using '+gr(typed)+' g of '+who+'. '+
+  if(typed!=null)out+='<div class="note" style="margin-top:6px">Using '+(st<typed-0.05?gr(st)+' g of your '+gr(typed)+' g':gr(typed)+' g')+' of '+who+'. '+
     (capped?'<b style="display:inline">That\u2019s the biggest feed that fits the '+esc(jarSel)+'</b> with room to rise, so it peaks sooner than the slider asks. For a later peak, use a bigger jar. '
-      :capSel?'Move the slider and the flour and water change with it, up to what fits the '+esc(jarSel)+'. '
-      :'Move the slider and the flour and water change with it. Pick the jar in Starter in (one with its size in mL in the name) and it will keep to what fits. ')+
+      :capSel&&!jarSmall?'Move the slider and the flour and water change with it, up to what fits the '+esc(jarSel)+'. '
+      :jarSmall?'Move the slider and the flour and water change with it. ':'Move the slider and the flour and water change with it. Pick the jar in Starter in (one with its size in mL in the name) and it will keep to what fits. ')+
 '</div>';
   if(bake.on&&N-JAR_LOSS<need-0.5)out+='<div class="note" style="color:#d9665b;font-weight:700;margin-top:6px">🚨 Too little for the bake: this makes about '+N+' g and the bake needs about '+Math.round(need+JAR_LOSS)+' g. '+
     (fixedR!=null?'Clear the boxes above, or type more flour and water.':'Start with more '+who+', or plan fewer loaves.')+'</div>';
   else if(rMin!=null&&fixedR==null&&best<=rMin)out+='<div class="note" style="margin-top:6px">That’s the earliest mix time for this bake: '+gr(gusAvail)+' g of '+who+' only makes the '+Math.round(need+JAR_LOSS)+' g it needs at '+lbl(rMin)+' or thinner, so the slider stops there. To mix sooner, '+(typed!=null?'start with more '+who:'build up more '+who+' first')+'.'+
-    (capMx!=null&&rMin>capMx?' <span style="color:var(--warn)">It also only just fits the '+esc(jarSel)+' with room to rise, so it can’t go later either; for a later mix use a bigger jar.</span>':'')+'</div>';
+'</div>';
+  if(jarSmall)out+='<div class="note" style="color:var(--warn);margin-top:6px">The bake needs more than the '+esc(jarSel)+' holds with room to rise. Use a bigger jar (pick it in Starter in).</div>';
   if(best>8)out+='<div class="note">'+who+' hasn\u2019t been tracked on a feed thinner than about 1:8 yet, so treat this time as a rough guess.</div>';
   // Not enough Gus for this: what would work instead.
   if(typed==null&&st>Math.ceil(have)){
@@ -1256,7 +1264,7 @@ function renderPlan(){
   // Every common ratio with its grams (from the Gus you typed, or the same
   // jar total) and peak time. Tap a row to feed that: the way to keep a feed
   // small, since the slider alone picks whatever ratio hits its time.
-  const stAt=r=>typed??(pf?pf/r:pw?pw/(r*b.hyd):Math.max(2,(bake.on?Math.ceil:Math.round)(total/(1+r+r*b.hyd))));
+  const stAt=r=>useT(r)??(pf?pf/r:pw?pw/(r*b.hyd):Math.max(2,(bake.on?Math.ceil:Math.round)(total/(1+r+r*b.hyd))));
   $('plantable').innerHTML='<tr style="color:var(--muted)">'+td+'Ratio</td>'+td+'Feed</td><td>Peaks around</td></tr>'+
     [1,2,3,5,10,20].map(r=>{const s=stAt(r),short=rMin!=null&&r<rMin;return (short?'<tr style="color:#d9665b">'+td+'<s>'+lbl(r)+'</s></td>'+td:'<tr data-r="'+r+'" style="cursor:pointer'+(r===best?';font-weight:700':'')+'">'+td+'<u>'+lbl(r)+'</u></td>'+td)+
       gr(s)+' + '+gr(r*s)+' + '+gr(r*b.hyd*s)+' g</td><td>'+clockAt(hrsAt(r,F))+' ('+hrsAt(r,F).toFixed(1)+' h)</td></tr>'}).join('')+
