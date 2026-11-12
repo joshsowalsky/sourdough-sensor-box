@@ -40,6 +40,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 /* Tabs: Starter (everything else) and Bake (#baketab). */
 main.tab-bake>:not(.keep){display:none!important}
 main:not(.tab-bake)>#baketab{display:none!important}
+main.tab-hist>:not(.keep){display:none!important}
+main:not(.tab-hist)>#histtab{display:none!important}
 #baketab{display:flex;flex-direction:column;gap:14px}
 .bstep{display:flex;gap:10px;padding:10px 6px;border-top:1px solid var(--line)}
 .bstep .when{flex:0 0 7.6em;font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -90,7 +92,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
 </style></head><body><main>
 <h1 class="keep">Sourdough Live</h1>
 <div class="status keep"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
-<div class="row keep" id="tabs" style="gap:6px"><button class="chip" data-tab="starter">Starter</button><button class="chip" data-tab="bake">Bake</button></div>
+<div class="row keep" id="tabs" style="gap:6px"><button class="chip" data-tab="starter">Starter</button><button class="chip" data-tab="bake">Bake</button><button class="chip" data-tab="hist">History</button></div>
 <section id="baketab" class="keep">
   <div class="card"><div class="label">Is Gus ready?</div><div id="bakegus" class="small" style="color:var(--fg);font-size:.95rem">Loading…</div></div>
   <div class="card"><div class="label">Steps · mix today, bake tomorrow</div>
@@ -102,7 +104,18 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div class="note" id="baksync" style="margin-top:4px"></div></div>
   <div class="card bknow wordy"><div class="label">Good to know</div><div id="bakknow" class="small" style="color:var(--fg);font-size:.92rem"></div></div>
 </section>
-<div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div id="fridgestate" hidden style="margin-top:8px"></div><div id="breadclock" hidden style="margin-top:10px"></div><div class="small" id="outlook" hidden></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><div id="kpiwrap"><table id="kpis" class="ktab small"></table></div><div id="recipe" hidden style="margin-top:10px"><div class="label">What you fed</div>
+<section id="histtab" class="keep">
+  <div class="card wide" id="seriescard" hidden><div class="label" id="serieslabel">Every feed</div>
+    <div class="row" style="margin:6px 0 0;gap:6px"><button class="chip" data-mode="overlay">Compare feeds</button><button class="chip" data-mode="timeline">Timeline</button></div>
+    <div class="row" id="serieswin" style="margin:6px 0 4px;gap:6px"><button class="chip" data-h="12">12 h</button><button class="chip" data-h="24">1 day</button><button class="chip" data-h="72">3 days</button><button class="chip" data-h="0">All</button><button class="chip" id="seriesnow" hidden>Back to now</button></div>
+    <div class="small" id="seriesread" style="min-height:1.4em">Drag to scroll · pinch to zoom · tap a point</div>
+    <canvas id="serieschart" width="560" height="190" style="touch-action:pan-y;cursor:grab"></canvas><div class="small" id="serieskey"><span style="color:var(--chart-d)">&#9632;</span> growth after each feed (back to 1x at every feed) <span style="color:var(--muted)">┆</span> feeds, 2x</div></div>
+  <div class="card wide" id="strcmpcard" hidden><div class="label" id="strcmplabel">Compare strength</div>
+    <div class="small" id="strcmpread" style="min-height:1.4em;margin-top:6px"></div>
+    <canvas id="strcmpchart" width="560" height="190" style="touch-action:pan-y"></canvas><div class="small" id="strcmpkey"></div></div>
+  <div class="card"><div class="label">Every feed</div><div id="kpiwrap"><table id="kpis" class="ktab small"></table></div></div>
+</section>
+<div class="verdict" id="verdict" hidden><div class="label">Starter status</div><b id="verdicthead">–</b><div class="small" id="verdictnote"></div><div id="fridgestate" hidden style="margin-top:8px"></div><div id="breadclock" hidden style="margin-top:10px"></div><div class="small" id="outlook" hidden></div><div id="nextstep" style="margin-top:8px"></div><div id="ready" style="margin-top:8px"></div><div id="recipe" hidden style="margin-top:10px"><div class="label">What you fed</div>
 <div class="row" style="margin-top:4px;gap:6px"><label class="note">Starter <input id="rg_s" type="text" inputmode="decimal" autocomplete="off" class="g"></label><label class="note">Flour <input id="rg_f" type="text" inputmode="decimal" autocomplete="off" class="g"></label><label class="note">Water <input id="rg_w" type="text" inputmode="decimal" autocomplete="off" class="g"></label><span class="note">grams</span><label class="note"><input type="checkbox" id="rglock"> Lock ratio</label></div><div class="note" id="rglocknote" hidden></div>
 <label class="note" style="display:block;margin-top:6px">Flour <select id="rflourmix" class="wide-in"><option value="0">All usual flour</option><option value="0.25">¾ usual + ¼ whole wheat/rye</option><option value="0.5">Half usual, half whole wheat/rye</option><option value="1">All whole wheat/rye</option><option value="other">+ Add a flour…</option></select></label>
 <div class="note" id="rflourgrams" style="margin-top:2px"></div>
@@ -163,14 +176,6 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <table id="plantable" class="small" style="margin-top:6px;border-collapse:collapse"></table>
     <div class="row" style="margin-top:8px"><button id="planuse">Use in Starter in</button><span class="note" id="planusenote"></span></div>
     <div class="note wordy" id="planbasis" style="margin-top:6px"></div></div>
-  <div class="card wide" id="seriescard" hidden><div class="label" id="serieslabel">Every feed</div>
-    <div class="row" style="margin:6px 0 0;gap:6px"><button class="chip" data-mode="overlay">Compare feeds</button><button class="chip" data-mode="timeline">Timeline</button></div>
-    <div class="row" id="serieswin" style="margin:6px 0 4px;gap:6px"><button class="chip" data-h="12">12 h</button><button class="chip" data-h="24">1 day</button><button class="chip" data-h="72">3 days</button><button class="chip" data-h="0">All</button><button class="chip" id="seriesnow" hidden>Back to now</button></div>
-    <div class="small" id="seriesread" style="min-height:1.4em">Drag to scroll · pinch to zoom · tap a point</div>
-    <canvas id="serieschart" width="560" height="190" style="touch-action:pan-y;cursor:grab"></canvas><div class="small" id="serieskey"><span style="color:var(--chart-d)">&#9632;</span> growth after each feed (back to 1x at every feed) <span style="color:var(--muted)">┆</span> feeds, 2x</div></div>
-  <div class="card wide" id="strcmpcard" hidden><div class="label" id="strcmplabel">Compare strength</div>
-    <div class="small" id="strcmpread" style="min-height:1.4em;margin-top:6px"></div>
-    <canvas id="strcmpchart" width="560" height="190" style="touch-action:pan-y"></canvas><div class="small" id="strcmpkey"></div></div>
   <div class="card wide" id="lastcard" hidden><div class="label">Last 6 hours</div><canvas id="chart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> temperature</div></div>
   <div class="card wide" id="startcard" hidden>
     <div class="label">Start level</div>
@@ -1301,8 +1306,11 @@ function renderPlan(){
 // Every feed of this starter since it came out of the fridge (run.history from
 // the logger, plus this run), end to end: flat, up, feed, flat, up. Each feed
 // is measured against its own start level and vessel, so it restarts at 1x.
-function feedSegs(){
-  return [...(run.history||[]),run].map(r=>{
+// With all: the earlier ones too (run.earlier), for the History tab.
+const wkDay=t=>new Date(t).toLocaleDateString([],Date.now()-t>6*864e5?{month:'short',day:'numeric'}:{weekday:'short'}),
+  wkWhen=t=>wkDay(t)+' '+clock(t);
+function feedSegs(all){
+  return [...(all?run.earlier||[]:[]),...(run.history||[]),run].map(r=>{
     const fed=new Date(r.fed_at).getTime();
     const pts=despike(r.points.map(p=>({t:new Date(p.t).getTime(),d:p.d})).filter(p=>p.t>=fed));
     const start=median(pts.filter(p=>p.t-fed<=15*60e3).map(p=>p.d)),depth=startDepth(r,start);
@@ -1397,18 +1405,18 @@ function readiness(){
   const prov=cur.peak!=null&&cur.last!=null&&cur.peak-cur.last>=0.1?null:(F=>F&&!F.pending?F:null)(fcCompute());
   const speedOf=(k,i)=>{
     const nd=doublingsOf(k);if(!nd)return '–';
-    const last=i===ks.length-1,done=!last||(k.peak!=null&&k.last!=null&&k.peak-k.last>=0.1);
+    const last=i===ka.length-1,done=!last||(k.peak!=null&&k.last!=null&&k.peak-k.last>=0.1);
     if(done)return k.peakH!=null&&k.peak>=1.3?toStdF(k.peakH/nd,k.f).toFixed(1)+' h':'–';
     return prov&&!prov.finished?'~'+toStdF(prov.live.T/nd,k.f).toFixed(1)+' h<span class="sub">forecast</span>':'–';
   };
-  const sub=s=>'<span class="sub">'+s+'</span>';
+  const sub=s=>'<span class="sub">'+s+'</span>',ka=feedSegs(true).map(feedKpis);
   $('kpis').innerHTML='<thead><tr><th>Feed</th><th>Fed as</th><th>Peak</th><th>Speed</th><th>Doubled</th></tr></thead><tbody>'+
-    ks.map((k,i)=>{
-      const d=new Date(k.fed),last=i===ks.length-1,[r,tF]=fedAs(k).split(', ');
+    ka.map((k,i)=>{
+      const d=new Date(k.fed),last=i===ka.length-1,[r,tF]=fedAs(k).split(', ');
       const going=last&&!(k.peak!=null&&k.last!=null&&k.peak-k.last>=0.1),x2=v=>v>=2?v.toFixed(1):Math.min(v,1.99).toFixed(2);
       const pk=k.peak==null?'–':going?x2(k.last??k.peak)+'x'+sub('now, '+f((Date.now()-k.fed)/3600e3)+' h in'):x2(k.peak)+'x'+sub('at '+f(k.peakH)+' h');
       const dbl=(k.dblH==null?(last&&Date.now()<k.fed+paceH(k)*3600e3?'not yet':'never'):(good(k)?'<span class="ok">'+f(k.dblH)+' h ✓</span>':f(k.dblH)+' h'))+sub('pace '+f(paceH(k))+' h');
-      return '<tr><td>'+d.toLocaleDateString([],{weekday:'short'})+sub(d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))+'</td><td>'+r+sub(tF||'')+'</td><td>'+pk+'</td><td>'+speedOf(k,i)+'</td><td>'+dbl+'</td></tr>';
+      return '<tr><td>'+wkDay(k.fed)+sub(d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))+'</td><td>'+r+sub(tF||'')+'</td><td>'+pk+'</td><td>'+speedOf(k,i)+'</td><td>'+dbl+'</td></tr>';
     }).reverse().join('')+'</tbody>';
 }
 // Readings come in whole millimetres and jitter a step or two, which in a
@@ -1426,7 +1434,7 @@ function smooth(pts,key){
   });
 }
 function seriesChart(){
-  const all=feedSegs(),segs=all.filter(z=>z.pts.length);
+  const all=feedSegs(true),segs=all.filter(z=>z.pts.length);
   if(all.length<2||!segs.length){$('seriescard').hidden=$('strcmpcard').hidden=true;return}
   $('seriescard').hidden=false;
   overlayChart(segs,true);
@@ -1434,7 +1442,7 @@ function seriesChart(){
   $('serieswin').hidden=sv.mode==='overlay';
   if(sv.mode==='overlay')return overlayChart(segs);
   $('serieskey').innerHTML='<span style="color:var(--chart-d)">&#9632;</span> growth after each feed (back to 1x at every feed) <span style="color:var(--muted)">┆</span> feeds, 2x';
-  $('serieslabel').textContent='Every feed since '+new Date(all[0].fed).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+' · '+all.length+' feeds';
+  $('serieslabel').textContent='Every feed since '+wkWhen(all[0].fed)+' · '+all.length+' feeds';
   const c=$('serieschart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
   const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
   // The window: sv.win hours wide (0 = everything), ending at sv.end (null =
@@ -1478,7 +1486,7 @@ function seriesChart(){
     const x=X(hit.p.t),y=Y(hit.p.x);
     g.strokeStyle=css('--fg');g.lineWidth=1;g.beginPath();g.moveTo(x,T);g.lineTo(x,T+H);g.stroke();
     g.fillStyle=css('--chart-d');g.beginPath();g.arc(x,y,4.5,0,7);g.fill();
-    $('seriesread').innerHTML='<b>'+hit.p.x.toFixed(2)+'x</b> · '+new Date(hit.p.t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+
+    $('seriesread').innerHTML='<b>'+hit.p.x.toFixed(2)+'x</b> · '+wkWhen(hit.p.t)+
       ' · '+((hit.p.t-hit.z.fed)/3600e3).toFixed(1)+' h after the '+clock(hit.z.fed)+' feed';
   }else $('seriesread').textContent='Drag to scroll · pinch to zoom · tap a point';
   g.restore();
@@ -1503,7 +1511,7 @@ function overlayChart(segs,norm){
   cs.view={overlay:true,t0:0,t1:span,span,L,W};
   const xs=zs.flatMap(o=>o.sm),lo=Math.min(...xs,0.9)-0.1,hi=Math.max(...xs,2)+0.2,Y=v=>T+H*(1-(v-lo)/(hi-lo));
   const col=i=>i===zs.length-1?css('--chart-d'):i===zs.length-2?css('--chart-t'):css('--muted');
-  const day=t=>new Date(t).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
+  const day=wkWhen;
   if(norm)id('label').textContent='Compare strength · hours as a 1:2:2 feed at 75°F · last '+zs.length;
   else $('serieslabel').textContent='Compare feeds · hours since each feed · last '+zs.length;
   g.font='11px system-ui';g.lineWidth=1;g.strokeStyle=css('--line');g.fillStyle=css('--muted');g.textAlign='center';
@@ -1592,7 +1600,7 @@ const sv={win:(()=>{try{const v=localStorage.getItem('serieswin');return v==null
 (function strengthControls(){
   const c=$('strcmpchart');let down=null;
   const tAt=x=>{const v=sc.view,r=c.getBoundingClientRect();return v?v.t0+(x-r.left-v.L)/v.W*v.span:null};
-  const draw=()=>{const segs=feedSegs().filter(z=>z.pts.length);if(run&&segs.length)overlayChart(segs,true)};
+  const draw=()=>{const segs=feedSegs(true).filter(z=>z.pts.length);if(run&&segs.length)overlayChart(segs,true)};
   c.addEventListener('pointerdown',e=>{down={x:e.clientX,was:sc.cursor,moved:false};sc.cursor=tAt(e.clientX);draw()});
   c.addEventListener('pointermove',e=>{if(down){if(Math.abs(e.clientX-down.x)>6)down.moved=true;sc.cursor=tAt(e.clientX);draw()}else if(e.pointerType==='mouse'){sc.cursor=tAt(e.clientX);draw()}});
   const up=e=>{if(!down)return;
@@ -1910,6 +1918,7 @@ async function sendBake(kind,id,at){
 }
 function setTab(t){
   document.querySelector('main').classList.toggle('tab-bake',t==='bake');
+  document.querySelector('main').classList.toggle('tab-hist',t==='hist');
   document.querySelectorAll('#tabs [data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
   store.set('tab',t);
   if(t==='bake')bakeTab();else render();  // charts drawn while hidden have no width
@@ -2033,7 +2042,7 @@ $('planuse').onclick=()=>{if(!planPick)return;recipeTouched=false;gusTyped=false
 $('depth').oninput=e=>{const v=parseFloat(e.target.value);v>0?store.set('depth',String(v)):store.del('depth');render()};
 addEventListener('resize',()=>{chart();renderRun()});
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{chart();renderRun()});
-setTab(location.hash==='#bake'?'bake':store.get('tab')==='bake'?'bake':'starter');
+setTab(location.hash==='#bake'?'bake':['bake','hist'].includes(store.get('tab'))?store.get('tab'):'starter');
 load();setInterval(load,60000);setInterval(render,15000);
 loadRun();setInterval(loadRun,300000);
 </script></body></html>
