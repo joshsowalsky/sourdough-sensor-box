@@ -159,6 +159,8 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
   <span id="planhome" hidden></span><div class="card wide" id="plancard" hidden><div class="label">Feed planner</div>
     <div class="row" id="planmodes" style="gap:6px;margin:4px 0 4px"><button class="chip" data-pm="keep">Keep him alive</button><button class="chip" data-pm="ex">Exercise him</button><button class="chip" data-pm="bake">Bake</button></div>
     <div class="note" id="planmodenote" style="margin-bottom:8px"></div>
+    <div id="exbox" hidden style="margin-bottom:8px"><div class="row" style="gap:8px;align-items:baseline"><span class="small">Peaks at</span> <b id="exatlbl" style="font-size:1.3rem"></b> <span class="note" id="exath"></span> <button class="chip" id="exauto" style="margin-left:auto">Auto</button></div>
+      <input type="range" id="exat" min="0" max="100" step="1" style="display:block;width:100%;margin:6px 0 0"><div class="row note" style="justify-content:space-between"><span id="exmin"></span><span id="exmax"></span></div></div>
     <label for="planat" class="small" style="display:block"><span id="planpeaklbl">Peak wanted at</span> <span class="note" id="planh"></span></label>
     <input type="datetime-local" id="planat" style="display:block;width:100%;box-sizing:border-box;font-size:1rem;min-height:40px;margin:2px 0 6px">
     <span id="plantime" hidden></span><input type="range" id="planpeak" hidden min="0" max="1000" step="any">
@@ -1143,7 +1145,8 @@ let bake={...BAKE_DEF},planBake=null;  // loaded from storage at startup, below
 const KEEP_ST=2,KEEP_R={fridge:5,counter:10};
 // Exercise: cm of starter the box needs to see a rise clearly, the shortest
 // gap between feeds, and the ratios it picks from.
-const EX_DEPTH=2,EX_GAP=6,EX_RATIOS=[2,3,4,5,6,8,10,12,15,20];
+const EX_DEPTH=2,EX_GAP=6,EX_RATIOS=[2,3,4,5,6,8,10,12,15,20],EX_SLIDE=[0.5,20];
+let exAt=null;  // the peak time picked on the Exercise slider (null: auto)
 let keep={on:false,where:'fridge'};
 function readKeep(e){
   keep={on:$('keepon').checked,where:$('keepwhere').value};
@@ -1209,6 +1212,7 @@ function renderPlan(){
     $('planusenote').textContent=$('recipe').hidden?'Pause for a new jar and these grams are filled in for you.':recipeTouched?'Your typed grams are kept; tap to switch to these.':'Starter in is using these grams.';
     return;
   }
+  $('exbox').hidden=mode!=='ex';
   if(mode==='ex'){
     $('planf').textContent=$('plantemp').value+'°F';$('plannow').textContent=fNow.toFixed(0)+'°F';
     const F=planF(fNow),who=(run.starter||'starter').replace(/^./,c=>c.toUpperCase()),lbl=r=>'1:'+r+':'+(+(r*b.hyd).toFixed(1));
@@ -1224,9 +1228,19 @@ function renderPlan(){
     const pick=t=>EX_RATIOS.find(r=>{const h=hrsAt(r,F);return h>=EX_GAP&&awake(t+h*3600e3)})??
       EX_RATIOS.reduce((x,r)=>Math.abs(t+hrsAt(r,F)*3600e3-wake(t))<Math.abs(t+hrsAt(x,F)*3600e3-wake(t))?r:x);
     const step=(when,what)=>'<div style="display:flex;gap:8px;margin-top:6px"><span class="note" style="flex:0 0 5.2em">'+when+'</span><span>'+what+'</span></div>';
-    let t=Date.now(),out='<b style="font-size:1.3rem;display:inline">Exercise '+who+'</b>',first=null,thin=false;
+    // The slider: when this feed should peak. Its ratio follows from that
+    // (snapped to a ratio you can weigh); Auto lets the planner pick.
+    const now=Date.now(),hLo=hrsAt(EX_SLIDE[0],F),hHi=hrsAt(EX_SLIDE[1],F);
+    const rAt=h=>(Math.pow(2,h/(b.D*Math.pow(2,(b.f-F)/PLAN_F_PER_2X))-PLAN_LAG)-1)/(1+b.hyd);
+    const snapR=r=>{const k=r<3?0.5:r<10?1:r<20?2:5;return Math.min(EX_SLIDE[1],Math.max(EX_SLIDE[0],Math.round(r/k)*k))};
+    if(exAt!=null&&(exAt<now+hLo*3600e3||exAt>now+hHi*3600e3))exAt=null;
+    const r0=exAt!=null?snapR(rAt((exAt-now)/3600e3)):pick(now);
+    {const e=$('exat');e.min=Math.ceil(hLo*4);e.max=Math.floor(hHi*4);if(document.activeElement!==e)e.value=Math.round((exAt!=null?(exAt-now)/3600e3:hrsAt(r0,F))*4);
+      const pk0=now+hrsAt(r0,F)*3600e3;$('exatlbl').textContent=whenAt(pk0);$('exath').textContent='(in '+hrsAt(r0,F).toFixed(1)+' h'+(awake(pk0)?'':', while you\u2019re asleep')+')';
+      $('exmin').textContent=whenAt(now+hLo*3600e3);$('exmax').textContent=whenAt(now+hHi*3600e3);$('exauto').classList.toggle('on',exAt==null)}
+    let t=now,out='<b style="font-size:1.3rem;display:inline">Exercise '+who+'</b>',first=null,thin=false;
     for(let i=0;i<3;i++){
-      const r=pick(t),st=Math.max(2,Math.ceil(2*Nmin/(1+r+r*b.hyd))/2),fl=r*st,wa=r*b.hyd*st,h=hrsAt(r,F),pk=t+h*3600e3;
+      const r=i?pick(t):r0,st=Math.max(2,Math.ceil(2*Nmin/(1+r+r*b.hyd))/2),fl=r*st,wa=r*b.hyd*st,h=hrsAt(r,F),pk=t+h*3600e3;
       if(!i)first={st,fl,wa,h};if(r>8)thin=true;
       out+=step(i?whenAt(t):'Now','<b style="display:inline">Feed '+lbl(r)+'</b>: '+st+' g '+who+' + '+g1(fl)+' g flour + '+g1(wa)+' g water (about '+Math.round(st+fl+wa)+' g). Peaks around '+whenAt(pk)+'.'+(i?'':' Discard the rest.'));
       t=pk;
@@ -2124,6 +2138,9 @@ if(keep.on&&bake.on)keep.on=false;
 $('keepon').checked=keep.on;$('keepwhere').value=keep.where==='counter'?'counter':'fridge';$('keepbox').hidden=!keep.on;
 ['keepon','keepwhere'].forEach(id=>$(id).onchange=readKeep);
 showBake();['bakeon','bakeagain','bakedays'].forEach(id=>$(id).onchange=readBake);
+$('exat').oninput=()=>{exAt=Date.now()+Number($('exat').value)/4*3600e3;if(run)renderPlan()};
+$('exat').onchange=()=>{$('exat').blur();if(run)renderPlan()};
+$('exauto').onclick=()=>{exAt=null;if(run)renderPlan()};
 document.querySelectorAll('#planmodes .chip').forEach(x=>x.onclick=()=>{const m=x.dataset.pm;
   keep.on=m==='keep';$('keepon').checked=keep.on;$('keepbox').hidden=!keep.on;store.set('keep',JSON.stringify(keep));
   $('bakeon').checked=m==='bake';readBake()});['bakeloaves','bakeper','bakekeep'].forEach(id=>$(id).oninput=readBake);
