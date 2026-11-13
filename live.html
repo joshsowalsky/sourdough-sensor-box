@@ -1849,7 +1849,7 @@ const BAKE_STEPS=[
   {id:'pre',t:'Pre-shape',after:['bulk',0,0,15],s:'Loose round; rest 20–30 min.',what:()=>'Tip it onto the counter, fold it into a loose round, and let it rest uncovered 20–30 min.'},
   {id:'shape',t:'Shape',after:['pre',25,20,30],s:'Tight; seam up in the basket.',what:()=>'Shape it tight, then put it seam-side up in a floured basket or towel-lined bowl. Cover.'},
   {id:'fridge',t:'Into the fridge',btn:'It’s in the fridge',after:['shape',5,0,10],s:'8–36 h (best 12–24).',what:()=>'Cover it and put it in the fridge, then tap below. This is the proof: the shaped loaf’s last rise, done cold. Anywhere from 8 to about 36 h works in a normal fridge (37–40°F); 12–24 h is the sweet spot. Longer is more sour and a little flatter; a warmer fridge or a long bulk means the shorter end. No need to check it; it goes straight from the fridge to the oven.'},
-  {id:'heat',t:'Preheat',heat:true,s:'500°F, Dutch oven in, 45–60 min.',what:()=>'Oven and Dutch oven (lid on) to 500°F for 45–60 min.'},
+  {id:'heat',t:'Preheat',heat:true,s:'500°F, Dutch oven in, 45–60 min.',what:()=>'Oven and Dutch oven (lid on) to 500°F for 45–60 min. No rush: start it any time in the window on the left; the loaf waits in the fridge.'},
   {id:'bake',t:'Bake',after:['heat',55,45,60],s:'Score; 20 min lid on at 475°F, 20–25 off.',what:()=>'Straight from the fridge: turn it out onto parchment, score the top, into the pot. 20 min lid on at 475°F, then 20–25 min lid off until deep brown.'},
   {id:'cool',t:'Cool, then cut',after:['bake',45,40,50],s:'1 h on a rack.',what:()=>'At least 1 h on a rack. It is still cooking inside.'}];
 // Autolyse (Bake tab setting, minutes): flour and water first, Gus after.
@@ -1873,6 +1873,10 @@ const g1d=v=>String(+(+v).toFixed(1));
 const ingEdit=keys=>'<ul class="ing">'+keys.map(k=>'<li><input type="number" inputmode="decimal" step="any" min="0" class="ingin" data-amt="'+k+'" value="'+g1d(amt(k))+'">g '+ING[k].name+'</li>').join('')+'</ul>';
 const gusPct=()=>amt('gus')/Math.max(1,amt('flour')+amt('ww'));
 const ingList=rows=>'<ul class="ing">'+rows.map(([g,t])=>'<li><b>'+g1d(g)+' g</b>'+t+'</li>').join('')+'</ul>';
+function coldProof(T){
+  const b=bk.bsum,est=b&&b.f?b.hb*warmBy(b.f):null,tot=est&&T.mix&&T.fridge?(T.fridge-T.mix)/3600e3/est:null,long=tot!=null&&tot>1.4;
+  return {long,tot,max:long?16:36};
+}
 function bakeTimes(){
   const T={},W={},now=Date.now(),F=bakeF(),bh=bulkHours(F);
   let prev=0;
@@ -1889,6 +1893,8 @@ function bakeTimes(){
         // 7 h after the fridge, but not in the middle of the night.
         t=T.fridge+7*3600e3;const d=new Date(t),hr=d.getHours();
         if(hr>=22||hr<7){if(hr>=22)d.setDate(d.getDate()+1);d.setHours(7,0,0,0);t=Math.min(d.getTime(),T.fridge+15*3600e3)}
+        // Any time in the cold-proof window, an hour before the bake.
+        W.heat=[T.fridge+7*3600e3,T.fridge+(coldProof(T).max-1)*3600e3];
       }else{
         // Each step's window counts from when the one before it was done
         // (or is expected), so a late step moves everything after it.
@@ -2065,7 +2071,7 @@ function bakeTab(force){
     if(st.id==='fridge'){
       // Cold proof: 8-36 h works, 12-24 h is best. A bulk that ran long
       // (with the counter time before the fridge) moves the end earlier.
-      const b=bk.bsum,est=b&&b.f?b.hb*warmBy(b.f):null,tot=est&&T.mix&&T.fridge?(T.fridge-T.mix)/3600e3/est:null,long=tot!=null&&tot>1.4;
+      const {long,tot}=coldProof(T);
       const at=h=>dayOf(T.fridge+h*3600e3)+clock(T.fridge+h*3600e3);
       what+=' Bake any time from '+at(8)+' to '+at(long?16:36)+(long?'':'; best between '+at(12)+' and '+at(24))+'.'+
         (long?' <b>This dough ran long before the fridge (about '+Math.round(tot*100)+'% of the bulk estimate), so bake it by '+at(16)+'.</b>':'');
