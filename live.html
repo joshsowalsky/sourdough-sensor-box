@@ -162,8 +162,10 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div id="exbox" hidden style="margin-bottom:8px">
       <div class="row" style="gap:8px;align-items:baseline"><span class="small">Peaks at</span> <b id="exatlbl" style="font-size:1.3rem"></b> <span class="note" id="exath"></span> <button class="chip" id="exauto" style="margin-left:auto">Auto</button></div>
       <input type="range" id="exat" min="0" max="10" step="1" style="display:block;width:100%;margin:6px 0 0"><div class="row note" style="justify-content:space-between"><span id="exmin"></span><span id="exmax"></span></div>
+      <label class="small" style="display:block;margin-top:10px">Gus you have <input id="exhave" type="text" inputmode="decimal" autocomplete="off" class="g" style="width:5em"> g</label>
+      <div class="note" id="exhavenote"></div>
       <div class="row" style="gap:8px;align-items:baseline;margin-top:10px"><span class="small">In the jar</span> <b id="exnlbl" style="font-size:1.3rem"></b> <span class="note" id="exnh"></span></div>
-      <input type="range" id="exn" min="1" max="10" step="1" style="display:block;width:100%;margin:6px 0 0"><div class="row note" style="justify-content:space-between"><span id="exnmin"></span><span id="exnmax"></span></div>
+      <input type="range" id="exn" min="1" max="10" step="0.5" style="display:block;width:100%;margin:6px 0 0"><div class="row note" style="justify-content:space-between"><span id="exnmin"></span><span id="exnmax"></span></div>
       <div class="note" id="exwhy" style="margin-top:4px"></div></div>
     <label for="planat" class="small" style="display:block"><span id="planpeaklbl">Peak wanted at</span> <span class="note" id="planh"></span></label>
     <input type="datetime-local" id="planat" style="display:block;width:100%;box-sizing:border-box;font-size:1rem;min-height:40px;margin:2px 0 6px">
@@ -1245,11 +1247,19 @@ function renderPlan(){
     const jar=(recipeFor!=null&&vesselIn())||run.next_vessel||run.vessel||'',kj=Object.keys(CM_PER_10G).find(k=>jar.toLowerCase().includes(k));
     const Nread=Math.ceil(EX_DEPTH/(kj?CM_PER_10G[kj]:CM_PER_10G.karter)*10/5)*5;
     const capMl=Number((jar.match(/(\d+)\s*ml/i)||[])[1]),Nmax=capMl?Math.floor(capMl/(ML_PER_G*PEAK_ROOM_X)):EX_MAX_FEED;
-    const have=Math.max(0,jarNow-JAR_LOSS);
-    // Gus grams allowed at ratio r (first: limited by what you have now).
-    const sLo=r=>Math.max(1,Math.ceil(EX_MIN_FEED/m(r))),sHi=(r,first)=>Math.min(first?Math.floor(have):Infinity,Math.floor(Nmax/m(r)));
-    const fits=first=>r=>sHi(r,first)>=sLo(r);
-    let RS=EX_RS.filter(fits(true));const RSn=EX_RS.filter(fits(false)),why=[];
+    // What you have: what you weighed out (kept until the next feed), else
+    // the last feed less what sticks to the jar.
+    if($('exhave').dataset.fed&&$('exhave').dataset.fed!==String(run.fed_at)){$('exhave').value='';delete $('exhave').dataset.fed}
+    const est=Math.max(0,jarNow-JAR_LOSS),hv=$('exhave'),ht=hv.value.trim(),hn=Number(ht),hOk=ht!==''&&hn>0&&hn<=1000;
+    hv.placeholder='about '+Math.round(est);hv.style.borderColor=ht!==''&&!hOk?'#d9665b':'';
+    const have=hOk?hn:est;
+    $('exhavenote').textContent=ht!==''&&!hOk?'Type the grams you have, like 2.5.':hOk?'':'Weighed less? Type it here.';
+    if(hOk)store.set('exhave',JSON.stringify({g:ht,fed:run.fed_at}));else if(ht==='')store.del('exhave');
+    // Gus grams allowed at ratio r, in half grams: at least 1 g and a
+    // EX_MIN_FEED g feed, at most what's there (avail) and what fits the jar.
+    const sLo=r=>Math.max(1,Math.ceil(2*EX_MIN_FEED/m(r))/2),sHi=(r,avail)=>Math.floor(2*Math.min(avail,Nmax/m(r))+1e-9)/2;
+    const fits=avail=>r=>sHi(r,avail)>=sLo(r);
+    let RS=EX_RS.filter(fits(have));const why=[];
     if(!RS.length){RS=[EX_RS[EX_RS.length-1]];why.push('You have about '+Math.round(have)+' g of '+who+', too little for a '+EX_MIN_FEED+' g feed. Feed it all at '+lbl(RS[0])+'.')}
     const pick=(t,list)=>list.find(r=>{const h=hrsAt(r,F);return h>=EX_GAP&&awake(t+h*3600e3)})??
       list.reduce((x,r)=>Math.abs(t+hrsAt(r,F)*3600e3-wake(t))<Math.abs(t+hrsAt(x,F)*3600e3-wake(t))?r:x);
@@ -1263,23 +1273,26 @@ function renderPlan(){
       const end=r=>whenAt(now+hrsAt(r,F)*3600e3)+' · '+lbl(r);$('exmin').textContent=end(RS[0]);$('exmax').textContent=end(RS[RS.length-1]);
       $('exauto').classList.toggle('on',exR==null&&exN==null)}
     // How much: kept as a total, so moving the time keeps the jar about as full.
-    const sz=(r,first)=>{const lo=sLo(r),hi=Math.max(lo,sHi(r,first));return Math.min(hi,Math.max(lo,Math.round((exN??Nread)/m(r))))};
-    const s0=sz(r0,true),hi0=Math.max(sLo(r0),sHi(r0,true));
+    const sz=(r,avail)=>{const lo=sLo(r),hi=Math.max(lo,sHi(r,avail));return Math.min(hi,Math.max(lo,Math.round(2*(exN??Nread)/m(r))/2))};
+    const s0=sz(r0,have),hi0=Math.max(sLo(r0),sHi(r0,have));
     {const e=$('exn');e.min=sLo(r0);e.max=hi0;if(document.activeElement!==e)e.value=s0;
-      $('exnlbl').textContent=Math.round(s0*m(r0))+' g';$('exnh').textContent='= '+s0+' g '+who+' + '+g1(r0*s0)+' g flour + '+g1(r0*b.hyd*s0)+' g water';
+      $('exnlbl').textContent=Math.round(s0*m(r0))+' g';$('exnh').textContent='= '+g1(s0)+' g '+who+' + '+g1(r0*s0)+' g flour + '+g1(r0*b.hyd*s0)+' g water';
       $('exnmin').textContent=Math.round(sLo(r0)*m(r0))+' g';
-      $('exnmax').textContent=Math.round(hi0*m(r0))+' g'+(hi0===Math.floor(have)&&have<Nmax/m(r0)?' (all your '+who+')':capMl?' (fills the jar)':'')}
+      $('exnmax').textContent=Math.round(hi0*m(r0))+' g'+(have<Nmax/m(r0)?' (all your '+who+')':capMl?' (fills the jar)':'')}
     const N0=s0*m(r0);
-    if(N0<Nread-2)why.push('Under about '+Nread+' g the box can’t read the rise well in '+(jar?'the '+esc(jar):'this jar')+(kj?'':' (I don’t know its width; I assume one like the Karter beaker)')+'.');
+    if(N0<Nread-2&&have*m(r0)<Nread)why.push('With only '+g1(have)+' g of '+who+', this feed is small. That\u2019s fine: it grows him enough for a full-size feed next time.');
+    else if(N0<Nread-2)why.push('Under about '+Nread+' g the box can’t read the rise well in '+(jar?'the '+esc(jar):'this jar')+(kj?'':' (I don’t know its width; I assume one like the Karter beaker)')+'.');
     if(r0<=1.5)why.push('A thick feed: mostly old starter and little food, so he peaks fast and is hungry again soon.');
     if(r0>8)why.push(who+' hasn’t been tracked on a feed thinner than about 1:8 yet, so this time is a rough guess.');
     $('exwhy').innerHTML=why.map(x=>'<div>'+x+'</div>').join('');
     const step=(when,what)=>'<div style="display:flex;gap:8px;margin-top:6px"><span class="note" style="flex:0 0 5.2em">'+when+'</span><span>'+what+'</span></div>';
     let t=now,out='<b style="font-size:1.3rem;display:inline">Exercise '+who+'</b>',first=null,thin=false;
+    // Later feeds use what the one before made (less what sticks to the jar).
+    let avail=have;
     for(let i=0;i<3;i++){
-      const r=i?pick(t,auto(RSn)):r0,h=hrsAt(r,F),pk=t+h*3600e3,st=i?sz(r,false):s0,fl=r*st,wa=r*b.hyd*st;
+      const RSi=EX_RS.filter(fits(avail)),r=i?pick(t,auto(RSi.length?RSi:[EX_RS[EX_RS.length-1]])):r0,h=hrsAt(r,F),pk=t+h*3600e3,st=i?sz(r,avail):s0,fl=r*st,wa=r*b.hyd*st;avail=st+fl+wa-JAR_LOSS;
       if(!i)first={st,fl,wa,h};else if(r>8)thin=true;
-      out+=step(i?whenAt(t):'Now','<b style="display:inline">Feed '+lbl(r)+'</b>: '+st+' g '+who+' + '+g1(fl)+' g flour + '+g1(wa)+' g water (about '+Math.round(st+fl+wa)+' g). Peaks around '+whenAt(pk)+(awake(pk)?'':' (while you’re asleep)')+'.'+(i?'':' Discard the rest.'));
+      out+=step(i?whenAt(t):'Now','<b style="display:inline">Feed '+lbl(r)+'</b>: '+g1(st)+' g '+who+' + '+g1(fl)+' g flour + '+g1(wa)+' g water (about '+Math.round(st+fl+wa)+' g). Peaks around '+whenAt(pk)+(awake(pk)?'':' (while you’re asleep)')+'.'+(i?'':' Discard the rest.'));
       t=pk;
     }
     out+=step('Then','Same again at each peak. After 2 on-pace rises in a row, Starter in says he’s ready to bake; then tap Bake above.');
@@ -2181,6 +2194,9 @@ $('exat').oninput=()=>{if(exCur)exR=exCur.RS[Number($('exat').value)]??exR;if(ru
 $('exn').oninput=()=>{if(exCur)exN=Number($('exn').value)*exCur.m;if(run)renderPlan()};
 ['exat','exn'].forEach(id=>$(id).onchange=()=>{$(id).blur();if(run)renderPlan()});
 $('exauto').onclick=()=>{exR=null;exN=null;if(run)renderPlan()};
+$('exhave').oninput=()=>{if(run)renderPlan()};
+// A weighed amount holds until the next feed.
+try{const h=JSON.parse(store.get('exhave')||'null');if(h&&h.g)$('exhave').value=h.g,$('exhave').dataset.fed=h.fed||''}catch(e){}
 document.querySelectorAll('#planmodes .chip').forEach(x=>x.onclick=()=>{const m=x.dataset.pm;
   keep.on=m==='keep';$('keepon').checked=keep.on;$('keepbox').hidden=!keep.on;store.set('keep',JSON.stringify(keep));
   $('bakeon').checked=m==='bake';readBake()});['bakeloaves','bakeper','bakekeep'].forEach(id=>$(id).oninput=readBake);
