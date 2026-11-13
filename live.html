@@ -116,7 +116,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
   <div class="card"><div class="label">Feed with sliders</div>
     <div id="slout" style="margin-top:4px">Loading…</div>
     <div id="slrows"></div>
-    <div class="note wordy" style="margin-top:10px"><span style="color:var(--ok)">&#9632;</span> fine <span style="color:#d9a91f">&#9632;</span> works, with a catch (it says which) <span style="color:var(--muted)">&#9632;</span> grey: can’t go there from where the others are. Water always equals the flour (his usual), so it isn’t a slider; if you pour a bit off, record what you really used in Starter in. The hard rules: 1:1 to 1:20, at least 1 g of Gus and no more than you have, 20 g to what fits the jar. Moving the time moves the flour (and water with it); moving flour moves the time.</div>
+    <div class="note wordy" style="margin-top:10px"><span style="color:var(--ok)">&#9632;</span> fine <span style="color:#d9a91f">&#9632;</span> works, with a catch (it says which) <span style="color:var(--muted)">&#9632;</span> grey: can’t go there from where the others are. Water always equals the flour (his usual), so it isn’t a slider; if you pour a bit off, record what you really used in Starter in. The hard rules: 1:1 to 1:20, at least 1 g of Gus (if you only have a little, set Gus to that), 20 g to what fits the jar. Moving the time moves the flour (and water with it); moving flour moves the time.</div>
     <div class="row" style="margin-top:10px"><button id="sluse">Use in Starter in</button><span class="note" id="slusenote"></span></div>
     <div class="note" id="slbasis" style="margin-top:6px"></div></div>
 </section>
@@ -2148,7 +2148,7 @@ function slRange(c,x,k){
 // Bring a state back inside the hard rules (after Gus you have drops, or
 // the jar changes): Gus first, then ratio, water, then the total.
 function slFix(c,x){
-  x={...x};x.have=Math.max(1,x.have);x.st=Math.min(x.have,Math.max(1,x.st));
+  x={...x};x.have=1e4;x.st=Math.max(1,x.st);
   // Water isn't a choice: always his usual share of the flour.
   let hy=Math.min(SLH.h[1],Math.max(SLH.h[0],c.b.hyd||1));
   x.fl=Math.min(x.st*SLH.r[1],Math.max(x.st*SLH.r[0],x.fl));
@@ -2170,30 +2170,30 @@ function slAt(c,x,k,v){
   else y[k]=v;
   return y;
 }
-const SL_ROWS=[['t','Peaks at'],['st','Gus'],['fl','Flour'],['have','Gus you have'],['F','Room']];
+const SL_ROWS=[['t','Peaks at'],['st','Gus'],['fl','Flour'],['F','Room']];
 function slTab(){
   const c=slCtx();if(!c){$('slout').textContent='Needs one finished feed of '+(run&&run.starter||'the starter')+' first.';return}
   const who=(run.starter||'starter').replace(/^./,ch=>ch.toUpperCase());
   if(!$('sl_t'))$('slrows').innerHTML=SL_ROWS.map(([k,l])=>'<div class="slrow"><div class="row"><span class="small">'+(k==='st'||k==='have'?l.replace('Gus',who):l)+'</span><span style="white-space:nowrap"><input id="sli_'+k+'" class="slnum" '+(k==='t'?'type="time"':'type="text" inputmode="decimal" autocomplete="off"')+' aria-label="'+l+'"> <span class="small" id="slx_'+k+'"></span></span></div>'+
     '<input type="range" id="sl_'+k+'"><div class="slbar" id="slb_'+k+'"></div><div class="note" id="sln_'+k+'"></div></div>').join('');
   // Start from this feed: what you have, a 1:2 at the readable size.
-  if(!sl||sl.fed!==run.fed_at){const hy=Math.min(1.25,Math.max(0.5,c.b.hyd||1)),st=Math.min(c.est,Math.max(1,Math.round(c.Nread/(1+2*(1+hy)))));
-    sl={fed:run.fed_at,have:c.est,st,fl:2*st,wa:2*st*hy,F:Math.round(c.fNow)}}
+  if(!sl||sl.fed!==run.fed_at){const hy=Math.min(1.25,Math.max(0.5,c.b.hyd||1)),st=Math.max(1,Math.round(c.Nread/(1+2*(1+hy))));
+    sl={fed:run.fed_at,have:1e4,st,fl:2*st,wa:2*st*hy,F:Math.round(c.fNow)}}
   sl=slFix(c,sl);store.set('sl',JSON.stringify(sl));
   const x=sl,H=slHrs(c,x),now=Date.now(),hyMax=SLH.h[1];
-  const scale={t:[0,Math.ceil(slSpeed(c,x.F)*(Math.log2(1+SLH.r[1]*(1+hyMax))+PLAN_LAG)),1/12],st:[0,Math.max(5,Math.ceil(x.have)),0.5],fl:[0,c.Nmax,0.5],wa:[0,c.Nmax,0.5],have:[0,150,0.5],F:[55,90,1]};
+  const scale={t:[0,Math.ceil(slSpeed(c,x.F)*(Math.log2(1+SLH.r[1]*(1+hyMax))+PLAN_LAG)),1/12],st:[0,Math.ceil(c.Nmax/3),0.5],fl:[0,c.Nmax,0.5],wa:[0,c.Nmax,0.5],have:[0,150,0.5],F:[55,90,1]};
   const val={t:H,st:x.st,fl:x.fl,wa:x.wa,have:x.have,F:x.F};
   const ok=css('--ok'),warn='#d9a91f',red=css('--line');
   for(const [k] of SL_ROWS){
     const e=$('sl_'+k),[lo,hi,step]=scale[k];e.min=lo;e.max=hi;e.step=step;if(document.activeElement!==e)e.value=val[k];
     // The bar: each stretch colored by what that value would make.
-    const N=60,cols=[];for(let i=0;i<N;i++){const v=lo+(hi-lo)*(i+0.5)/N,y=slAt(c,x,k,v);
-      cols.push(k==='have'?(v<1?red:ok):k==='F'?ok:!slValid(c,y)?red:slSoft(c,y).length?warn:ok)}
+    const N=60,cols=[];for(let i=0;i<N;i++){const v=lo+(hi-lo)*(i+0.5)/N,y=k==='st'?slFix(c,{...x,st:Math.max(1,v)}):slAt(c,x,k,v);
+      cols.push(k==='st'?(v<1?red:slSoft(c,y).length?warn:ok):k==='F'?ok:!slValid(c,y)?red:slSoft(c,y).length?warn:ok)}
     $('slb_'+k).style.background='linear-gradient(to right,'+cols.map((col,i)=>col+' '+(100*i/N).toFixed(2)+'% '+(100*(i+1)/N).toFixed(2)+'%').join(',')+')';
-    const rg=slRange(c,x,k),u=k==='t'?'':' g';
+    const rg=k==='st'?null:slRange(c,x,k),u=k==='t'?'':' g';
     const tOf=fl=>slHrs(c,{...x,fl,wa:fl*x.wa/x.fl});
     $('sln_'+k).textContent=rg?(k==='t'?'From '+whenAt(now+tOf(rg[0])*3600e3)+' to '+whenAt(now+tOf(rg[2])*3600e3):'From '+g1(rg[0])+' to '+g1(rg[2])+u)+': earlier, '+rg[1]+'; later, '+rg[3]+'.':
-      k==='have'?'What’s in the jar to feed from. It starts at the last feed less what sticks to the jar; set it to what you weighed.':'Times assume the room stays here. Now: '+Math.round(c.fNow)+'°F.';
+      k==='have'?'What’s in the jar to feed from. It starts at the last feed less what sticks to the jar; set it to what you weighed.':k==='st'?'Any amount from 1 g. If the flour would make it thinner than 1:20 or thicker than 1:1, the flour moves to fit.':'Times assume the room stays here. Now: '+Math.round(c.fNow)+'°F.';
     if(rg&&k!=='t')$('sln_'+k).textContent=$('sln_'+k).textContent.replace('earlier','less').replace('later','more');
   }
   const pk=now+H*3600e3,r=x.fl/x.st,hy=x.wa/x.fl,T=x.st+x.fl+x.wa;
@@ -2202,7 +2202,7 @@ function slTab(){
     for(const [k] of SL_ROWS){const e=$('sli_'+k);if(slForce||document.activeElement!==e)e.value=num[k]}slForce=false;
     const day=pd.toDateString()===new Date().toDateString()?'':pd.toLocaleDateString([],{weekday:'short'})+', ';
     $('slx_t').textContent='('+day+'in '+H.toFixed(1)+' h)';$('slx_st').textContent='g';$('slx_fl').textContent='g, 1:'+(+r.toFixed(1))+' + '+g1(x.wa)+' g water';
-    $('slx_have').textContent='g';$('slx_F').textContent='\u00b0F'}
+    $('slx_F').textContent='\u00b0F'}
   const soft=slSoft(c,x);
   $('slout').innerHTML='<b style="font-size:1.5rem;display:block">Feed 1:'+(+r.toFixed(1))+':'+(+(r*hy).toFixed(1))+'</b>'+
     '<div style="font-size:1.1rem">'+g1(x.st)+' g '+who+' + '+g1(x.fl)+' g flour + '+g1(x.wa)+' g water = '+Math.round(T)+' g</div>'+
@@ -2222,6 +2222,7 @@ function slInput(k,typed){
       while(y.st+y.fl+y.wa<SLH.min-E&&y.wa+0.5<=y.fl*SLH.h[1]+E)y.wa+=0.5}
     else y[k]=Math.min(rg[2],Math.max(rg[0],half(y[k])));
     x=y}
+  if(k==='st'){x={...sl,st:Math.min(Math.ceil(c.Nmax/3),Math.max(1,half(v)))};x=slFix(c,x)}
   sl=x;store.set('sl',JSON.stringify(sl));slTab();
 }
 // A typed number: same rules as the slider. If it can't go there, it goes
