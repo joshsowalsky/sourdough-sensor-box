@@ -108,7 +108,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div class="note" id="bakrecipe" style="margin-top:6px"></div>
     <div class="note" id="bakbox" style="margin-top:8px"></div>
     <div id="baksteps" style="margin-top:8px"></div>
-    <div class="note wordy" style="margin-top:6px">Tap Done as you finish each step. Each step shows its usual time and the window around it, counted from when you did the step before, so if one runs late the rest move with it. The end of bulk counts from the mix and follows the temperature instead. Your phone gets a reminder for each step from the salt to the fridge. Tap a done time to fix it. Times are a guide: the dough decides, especially when the bulk rise ends.</div>
+    <div class="note wordy" style="margin-top:6px">Tap Done as you finish each step. Each step shows its usual time and the window around it, counted from when you did the step before, so if one runs late the rest move with it. The end of bulk counts from the mix and follows the temperature instead. Your phone gets a reminder for each step from the salt to the fridge, and for the oven (hot, lid off, crust). Tap a done time to fix it. Times are a guide: the dough decides, especially when the bulk rise ends.</div>
     <div class="note" id="baksync" style="margin-top:4px"></div></div>
   <div class="card bknow wordy"><div class="label">Good to know</div><div id="bakknow" class="small" style="color:var(--fg);font-size:.92rem"></div></div>
 </section>
@@ -1849,9 +1849,9 @@ const BAKE_STEPS=[
   {id:'pre',t:'Pre-shape',after:['bulk',0,0,15],s:'Loose round; rest 20–30 min.',what:()=>'Tip it onto the counter, fold it into a loose round, and let it rest uncovered 20–30 min.'},
   {id:'shape',t:'Shape',after:['pre',25,20,30],s:'Tight; seam up in the basket.',what:()=>'Shape it tight, then put it seam-side up in a floured basket or towel-lined bowl. Cover.'},
   {id:'fridge',t:'Into the fridge',btn:'It’s in the fridge',after:['shape',5,0,10],s:'8–36 h (best 12–24).',what:()=>'Cover it and put it in the fridge, then tap below. This is the proof: the shaped loaf’s last rise, done cold. Anywhere from 8 to about 36 h works in a normal fridge (37–40°F); 12–24 h is the sweet spot. Longer is more sour and a little flatter; a warmer fridge or a long bulk means the shorter end. No need to check it; it goes straight from the fridge to the oven.'},
-  {id:'heat',t:'Preheat',heat:true,s:'500°F, Dutch oven in, 45–60 min.',what:()=>'Oven and Dutch oven (lid on) to 500°F for 45–60 min. No rush: start it any time in the window on the left; the loaf waits in the fridge.'},
-  {id:'bake',t:'Bake',after:['heat',55,45,60],s:'Score; 20 min lid on at 475°F, 20–25 off.',what:()=>'Straight from the fridge: turn it out onto parchment, score the top, into the pot. 20 min lid on at 475°F, then 20–25 min lid off until deep brown.'},
-  {id:'cool',t:'Cool, then cut',after:['bake',45,40,50],s:'1 h on a rack.',what:()=>'At least 1 h on a rack. It is still cooking inside.'}];
+  {id:'heat',t:'Preheat',heat:true,btn:'Start preheat',s:'500°F, Dutch oven in, 45–60 min.',what:()=>'Oven and Dutch oven (lid on) to 500°F for 45–60 min. No rush: start it any time in the window on the left; the loaf waits in the fridge. Tap Start preheat as you turn the oven on: a clock starts here and your phone gets a push when it\u2019s hot.'},
+  {id:'bake',t:'Bake',btn:'It\u2019s in the oven',after:['heat',55,45,60],s:'Score; 20 min lid on at 475°F, 20–25 off.',what:()=>'Straight from the fridge: turn it out onto parchment, score the top, into the pot. 20 min lid on at 475°F, then 20–25 min lid off until deep brown.'},
+  {id:'cool',t:'Cool, then cut',btn:'It\u2019s out of the oven',after:['bake',45,40,50],s:'1 h on a rack.',what:()=>'At least 1 h on a rack. It is still cooking inside.'}];
 // Autolyse (Bake tab setting, minutes): flour and water first, Gus after.
 // Gus going in is still the "mix" step, so bulk and the PC's plan count
 // from it as before.
@@ -2068,6 +2068,8 @@ function bakeTab(force){
     if(st.id==='mix'&&!d&&g&&g.win)what+=' <b>Gus is at its best until about '+clock(g.win)+'.</b>';
     if(st.bulk&&!d&&!bp)what+=pro?' ~'+bh.toFixed(1)+' h at '+F.toFixed(0)+'°F.':' At '+F.toFixed(0)+'°F that is about '+bh.toFixed(1)+' h after '+(bk.aut>0?'Gus goes in':'mixing')+'; warmer is faster.';
     if(st.bulk&&d)what+=bulkReport(T);
+    if(st.id==='bake'&&!d&&bk.done.heat)what+='<div class="btimer" data-k="heat" data-from="'+bk.done.heat+'"></div>';
+    if(st.id==='cool'&&!d&&bk.done.bake)what+='<div class="btimer" data-k="oven" data-from="'+bk.done.bake+'"></div>';
     if(st.id==='fridge'){
       // Cold proof: 8-36 h works, 12-24 h is best. A bulk that ran long
       // (with the counter time before the fridge) moves the end earlier.
@@ -2079,7 +2081,26 @@ function bakeTab(force){
     const btn=(isNext?'<button data-bd="'+st.id+'" style="margin-top:6px">'+(st.btn||'Done')+'</button> ':'')+(lastDone&&st.id===lastDone.id?'<button class="chip" data-bu="'+st.id+'" style="margin-top:6px">Undo</button>':'');
     return '<div class="bstep'+(isNext?' next':'')+(d?' done':'')+'"><div class="when">'+when+'</div><div class="what"><b>'+st.t+'</b><br>'+what+(btn?'<div>'+btn+'</div>':'')+'</div></div>';
   }).join('');
+  ovenTick();
 }
+// The oven clocks, every second: minutes since Start preheat (hot at 45) or
+// since it went in (lid off at 20, crust at 40-45).
+function ovenTick(){
+  const now=Date.now(),mmss=ms=>{ms=Math.max(0,ms);const m=Math.floor(ms/60e3),s=Math.floor(ms%60e3/1e3);return m+':'+String(s).padStart(2,'0')};
+  document.querySelectorAll('.btimer').forEach(e=>{
+    const t0=Number(e.dataset.from),el=now-t0,at=m=>clock(t0+m*60e3),left=m=>mmss(t0+m*60e3-now);
+    let big,small;
+    if(e.dataset.k==='heat'){
+      big='Heating '+mmss(el);
+      small=el<45*60e3?'Hot at '+at(45)+', in '+left(45)+'.':el<60*60e3?'<b>Hot: bake now</b> (any time until '+at(60)+').':'<b>Hot: bake now.</b>';
+    }else{
+      big='In the oven '+mmss(el);
+      small=el<20*60e3?'Lid off at '+at(20)+', in '+left(20)+'.':el<40*60e3?'Lid off. Out at '+at(40)+'\u2013'+at(45)+', in '+left(40)+'.':'<b>Check the crust:</b> out when it\u2019s deep brown (by '+at(45)+').';
+    }
+    e.innerHTML='<div style="font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums;margin-top:6px">'+big+'</div><div>'+small+'</div>';
+  });
+}
+setInterval(ovenTick,1000);
 // The when column: a usual time and the window around it. The next step says
 // Now / until, or Late once its window has passed.
 function stepWhen(st,isNext,T,W,now,dayOf){
