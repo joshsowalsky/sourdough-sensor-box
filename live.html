@@ -160,7 +160,9 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div class="row" id="planmodes" style="gap:6px;margin:4px 0 4px"><button class="chip" data-pm="keep">Keep him alive</button><button class="chip" data-pm="ex">Exercise him</button><button class="chip" data-pm="bake">Bake</button></div>
     <div class="note" id="planmodenote" style="margin-bottom:8px"></div>
     <div id="exbox" hidden style="margin-bottom:8px"><div class="row" style="gap:8px;align-items:baseline"><span class="small">Peaks at</span> <b id="exatlbl" style="font-size:1.3rem"></b> <span class="note" id="exath"></span> <button class="chip" id="exauto" style="margin-left:auto">Auto</button></div>
-      <input type="range" id="exat" min="0" max="100" step="1" style="display:block;width:100%;margin:6px 0 0"><div class="row note" style="justify-content:space-between"><span id="exmin"></span><span id="exmax"></span></div></div>
+      <input type="range" id="exat" min="0" max="100" step="1" style="display:block;width:100%;margin:6px 0 0"><div class="row note" style="justify-content:space-between"><span id="exmin"></span><span id="exmax"></span></div>
+      <div class="small" style="margin-top:10px">Use at most (grams)</div><div class="small" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:2px"><label>Gus<input id="exlims" type="text" inputmode="decimal" autocomplete="off" class="g" placeholder="any" style="width:100%;box-sizing:border-box"></label><label>Flour<input id="exlimf" type="text" inputmode="decimal" autocomplete="off" class="g" placeholder="any" style="width:100%;box-sizing:border-box"></label><label>Water<input id="exlimw" type="text" inputmode="decimal" autocomplete="off" class="g" placeholder="any" style="width:100%;box-sizing:border-box"></label></div>
+      <div class="note">Leave a box empty for no limit. The time stays; everything shrinks together to fit.</div></div>
     <label for="planat" class="small" style="display:block"><span id="planpeaklbl">Peak wanted at</span> <span class="note" id="planh"></span></label>
     <input type="datetime-local" id="planat" style="display:block;width:100%;box-sizing:border-box;font-size:1rem;min-height:40px;margin:2px 0 6px">
     <span id="plantime" hidden></span><input type="range" id="planpeak" hidden min="0" max="1000" step="any">
@@ -1238,15 +1240,24 @@ function renderPlan(){
     {const e=$('exat');e.min=Math.ceil(hLo*4);e.max=Math.floor(hHi*4);if(document.activeElement!==e)e.value=Math.round((exAt!=null?(exAt-now)/3600e3:hrsAt(r0,F))*4);
       const pk0=now+hrsAt(r0,F)*3600e3;$('exatlbl').textContent=whenAt(pk0);$('exath').textContent='(in '+hrsAt(r0,F).toFixed(1)+' h'+(awake(pk0)?'':', while you\u2019re asleep')+')';
       $('exmin').textContent=whenAt(now+hLo*3600e3);$('exmax').textContent=whenAt(now+hHi*3600e3);$('exauto').classList.toggle('on',exAt==null)}
-    let t=now,out='<b style="font-size:1.3rem;display:inline">Exercise '+who+'</b>',first=null,thin=false;
+    // Your limits: the ratio (so the time) stays and the feed shrinks to fit.
+    // The Gus limit is for this feed; flour and water hold for every feed.
+    const lim=id=>{const v=parseFloat($(id).value);return v>0?v:Infinity},Ls=lim('exlims'),Lf=lim('exlimf'),Lw=lim('exlimw');
+    let t=now,out='<b style="font-size:1.3rem;display:inline">Exercise '+who+'</b>',first=null,thin=false,small=null;
     for(let i=0;i<3;i++){
-      const r=i?pick(t):r0,st=Math.max(2,Math.ceil(2*Nmin/(1+r+r*b.hyd))/2),fl=r*st,wa=r*b.hyd*st,h=hrsAt(r,F),pk=t+h*3600e3;
+      const r=i?pick(t):r0,h=hrsAt(r,F),pk=t+h*3600e3;
+      let st=Math.max(2,Math.ceil(2*Nmin/(1+r+r*b.hyd))/2);
+      const k=Math.min(1,(i?Infinity:Ls)/st,Lf/(r*st),b.hyd>0?Lw/(r*b.hyd*st):Infinity);
+      if(k<1)st=Math.max(0.5,Math.floor(2*st*k)/2);
+      const fl=r*st,wa=r*b.hyd*st;
+      if(st+fl+wa<Nmin*0.9&&small==null)small=Math.round(st+fl+wa);
       if(!i)first={st,fl,wa,h};if(r>8)thin=true;
       out+=step(i?whenAt(t):'Now','<b style="display:inline">Feed '+lbl(r)+'</b>: '+st+' g '+who+' + '+g1(fl)+' g flour + '+g1(wa)+' g water (about '+Math.round(st+fl+wa)+' g). Peaks around '+whenAt(pk)+'.'+(i?'':' Discard the rest.'));
       t=pk;
     }
     out+=step('Then','Same again at each peak. After 2 on-pace rises in a row, Starter in says he’s ready to bake; then tap Bake above.');
     const have=Math.max(0,jarNow-JAR_LOSS);
+    if(small!=null)out+='<div class="note" style="color:var(--warn);margin-top:6px">Your limits make about '+small+' g, under the ~'+Nmin+' g the box needs, so its rise readings will be rough. Times are the same.</div>';
     if(thin)out+='<div class="note" style="margin-top:6px">'+who+' hasn’t been tracked on a feed thinner than about 1:8 yet, so the overnight time is a rough guess.</div>';
     if(first.st>have+0.5)out+='<div class="note" style="color:var(--warn);margin-top:6px">That needs '+first.st+' g of '+who+' and you have about '+Math.round(have)+' g. Feed what you have at the same ratio.</div>';
     out+='<div class="note wordy" style="margin-top:6px">Each feed is about '+Nmin+' g so there’s about '+EX_DEPTH+' cm of starter in '+(jar?'the '+esc(jar):'the jar')+
@@ -2141,6 +2152,9 @@ showBake();['bakeon','bakeagain','bakedays'].forEach(id=>$(id).onchange=readBake
 $('exat').oninput=()=>{exAt=Date.now()+Number($('exat').value)/4*3600e3;if(run)renderPlan()};
 $('exat').onchange=()=>{$('exat').blur();if(run)renderPlan()};
 $('exauto').onclick=()=>{exAt=null;if(run)renderPlan()};
+// Limits are remembered on this device.
+try{const l=JSON.parse(store.get('exlim')||'{}');['exlims','exlimf','exlimw'].forEach(id=>{if(l[id])$(id).value=l[id]})}catch(e){}
+['exlims','exlimf','exlimw'].forEach(id=>$(id).addEventListener('input',()=>{const l={};['exlims','exlimf','exlimw'].forEach(i=>{if($(i).value.trim())l[i]=$(i).value.trim()});store.set('exlim',JSON.stringify(l));if(run)renderPlan()}));
 document.querySelectorAll('#planmodes .chip').forEach(x=>x.onclick=()=>{const m=x.dataset.pm;
   keep.on=m==='keep';$('keepon').checked=keep.on;$('keepbox').hidden=!keep.on;store.set('keep',JSON.stringify(keep));
   $('bakeon').checked=m==='bake';readBake()});['bakeloaves','bakeper','bakekeep'].forEach(id=>$(id).oninput=readBake);
