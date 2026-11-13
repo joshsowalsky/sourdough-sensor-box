@@ -1906,7 +1906,9 @@ function bulkReport(T){
     :r<=1.25?'A bit slower than the estimate, still inside the check window.'
     :'Well past the estimate: Gus may have been weaker, or the dough cooler than the '+(b.src==='probe'?'probe':'room')+'.';
   return '<div class="note" style="margin-top:4px;color:var(--fg)">Took '+hm(took)+' at '+Math.round(b.f)+'°F on average. The estimate was '+hm(est)+', so it ran '+
-    (pc<3?'right on time':pc+'% '+(r<1?'short':'long'))+'. '+how+(b.pct!=null?' Box: up '+b.pct+'% at the end.':'')+'</div>';
+    (pc<3?'right on time':pc+'% '+(r<1?'short':'long'))+'. '+how+(b.pct!=null?' Box: up '+b.pct+'% at the end.':'')+
+    // It keeps fermenting until it's cold: the counter time after bulk counts.
+    (bk.done.fridge>end?' Then '+hm((bk.done.fridge-end)/3600e3)+' on the counter before the fridge (pre-shape and shape usually take about 1 h), still fermenting, so about '+Math.round(100*(bk.done.fridge-T.mix)/3600e3/est)+'% of the bulk estimate in all.':'')+'</div>';
 }
 function bakeTab(force){
   const g=bakeGus();
