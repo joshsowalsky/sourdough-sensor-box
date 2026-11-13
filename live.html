@@ -1682,7 +1682,7 @@ const BAKE_STEPS=[
   {id:'bulk',t:'Bulk rise ends',bulk:true,s:'Up 50–75%, domed, jiggly.',what:()=>'Done when it is up about 50–75%, domed, jiggly when you shake the bowl, with bubbles on the sides and top. Judge the dough, not the clock; a strip of tape at the starting level helps.'},
   {id:'pre',t:'Pre-shape',after:['bulk',0,0,15],s:'Loose round; rest 20–30 min.',what:()=>'Tip it onto the counter, fold it into a loose round, and let it rest uncovered 20–30 min.'},
   {id:'shape',t:'Shape',after:['pre',25,20,30],s:'Tight; seam up in the basket.',what:()=>'Shape it tight, then put it seam-side up in a floured basket or towel-lined bowl. Cover.'},
-  {id:'fridge',t:'Proof in the fridge',after:['shape',5,0,10],s:'8–16 h.',what:()=>'This is the proof: the shaped loaf’s last rise, done cold overnight, 8–16 h. Longer is more sour. No need to check it; it goes straight from the fridge to the oven.'},
+  {id:'fridge',t:'Into the fridge',btn:'It’s in the fridge',after:['shape',5,0,10],s:'8–16 h.',what:()=>'Cover it and put it in the fridge, then tap below. This is the proof: the shaped loaf’s last rise, done cold overnight, 8–16 h. Longer is more sour. No need to check it; it goes straight from the fridge to the oven.'},
   {id:'heat',t:'Preheat',heat:true,s:'500°F, Dutch oven in, 45–60 min.',what:()=>'Oven and Dutch oven (lid on) to 500°F for 45–60 min.'},
   {id:'bake',t:'Bake',after:['heat',55,45,60],s:'Score; 20 min lid on at 475°F, 20–25 off.',what:()=>'Straight from the fridge: turn it out onto parchment, score the top, into the pot. 20 min lid on at 475°F, then 20–25 min lid off until deep brown.'},
   {id:'cool',t:'Cool, then cut',after:['bake',45,40,50],s:'1 h on a rack.',what:()=>'At least 1 h on a rack. It is still cooking inside.'}];
@@ -1890,12 +1890,12 @@ function bakeTab(force){
     const dg=bp&&bp.dough;
     if(dg)what+='<div class="note" style="margin-top:4px;color:var(--fg)">Box: up '+(dg.pct!=null?dg.pct+'% ('+dg.rise_cm.toFixed(1)+' cm)':dg.rise_cm.toFixed(1)+' cm (measure the empty tub to get %)')+' '+(dg.since_mix?'since mixing':'since the box went on')+(dg.settled_now?'':', settling after a fold')+'. Aim for 50–75%.</div>';
     if(bp&&!bp.bulk_done&&!pro)what+='<div class="note" style="margin-top:4px">Timed at '+Math.round(bp.temp_f_avg)+'°F on average since mixing ('+(bp.temp_source==='probe'?'dough probe':'room')+'). Warmer gets there sooner; folds don’t change it.</div>';
-    if(isNext&&!d&&W[st.id]&&now>W[st.id][1])what+='<div style="color:var(--warn);margin-top:4px">Late is fine: do it now. The steps after it count from when you tap Done.</div>';
+    if(isNext&&!d&&W[st.id]&&now>W[st.id][1])what+='<div style="color:var(--warn);margin-top:4px">Late is fine: do it now. The steps after it count from when you tap “'+(st.btn||'Done')+'”.</div>';
     if(st.id==='mix'&&!d&&g&&g.win)what+=' <b>Gus is at its best until about '+clock(g.win)+'.</b>';
     if(st.bulk&&!d&&!bp)what+=pro?' ~'+bh.toFixed(1)+' h at '+F.toFixed(0)+'°F.':' At '+F.toFixed(0)+'°F that is about '+bh.toFixed(1)+' h after '+(bk.aut>0?'Gus goes in':'mixing')+'; warmer is faster.';
     if(st.bulk&&d)what+=bulkReport(T);
     if(st.id==='fridge')what+=' Bake between '+dayOf(T.fridge+8*3600e3)+clock(T.fridge+8*3600e3)+' and '+dayOf(T.fridge+16*3600e3)+clock(T.fridge+16*3600e3)+'.';
-    const btn=(isNext?'<button data-bd="'+st.id+'" style="margin-top:6px">Done</button> ':'')+(lastDone&&st.id===lastDone.id?'<button class="chip" data-bu="'+st.id+'" style="margin-top:6px">Undo</button>':'');
+    const btn=(isNext?'<button data-bd="'+st.id+'" style="margin-top:6px">'+(st.btn||'Done')+'</button> ':'')+(lastDone&&st.id===lastDone.id?'<button class="chip" data-bu="'+st.id+'" style="margin-top:6px">Undo</button>':'');
     return '<div class="bstep'+(isNext?' next':'')+(d?' done':'')+'"><div class="when">'+when+'</div><div class="what"><b>'+st.t+'</b><br>'+what+(btn?'<div>'+btn+'</div>':'')+'</div></div>';
   }).join('');
 }
