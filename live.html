@@ -159,11 +159,12 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
   <span id="planhome" hidden></span><div class="card wide" id="plancard" hidden><div class="label">Feed planner</div>
     <div class="row" id="planmodes" style="gap:6px;margin:4px 0 4px"><button class="chip" data-pm="keep">Keep him alive</button><button class="chip" data-pm="ex">Exercise him</button><button class="chip" data-pm="bake">Bake</button></div>
     <div class="note" id="planmodenote" style="margin-bottom:8px"></div>
-    <div id="exbox" hidden style="margin-bottom:8px"><div class="row" style="gap:8px;align-items:baseline"><span class="small">Peaks at</span> <b id="exatlbl" style="font-size:1.3rem"></b> <span class="note" id="exath"></span> <button class="chip" id="exauto" style="margin-left:auto">Auto</button></div>
-      <input type="range" id="exat" min="0" max="100" step="1" style="display:block;width:100%;margin:6px 0 0"><div class="row note" style="justify-content:space-between"><span id="exmin"></span><span id="exmax"></span></div>
-      <div class="small" style="margin-top:10px">Use at most (grams)</div><div class="small" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:2px"><label>Gus<input id="exlims" type="text" inputmode="decimal" autocomplete="off" class="g" placeholder="any" style="width:100%;box-sizing:border-box"></label><label>Flour<input id="exlimf" type="text" inputmode="decimal" autocomplete="off" class="g" placeholder="any" style="width:100%;box-sizing:border-box"></label><label>Water<input id="exlimw" type="text" inputmode="decimal" autocomplete="off" class="g" placeholder="any" style="width:100%;box-sizing:border-box"></label></div>
-      <div class="note" id="exlimnote" style="color:#d9665b"></div>
-      <div class="note" id="exlimhelp">Leave a box empty for no limit. The slider only goes where your limits allow.</div></div>
+    <div id="exbox" hidden style="margin-bottom:8px">
+      <div class="row" style="gap:8px;align-items:baseline"><span class="small">Peaks at</span> <b id="exatlbl" style="font-size:1.3rem"></b> <span class="note" id="exath"></span> <button class="chip" id="exauto" style="margin-left:auto">Auto</button></div>
+      <input type="range" id="exat" min="0" max="10" step="1" style="display:block;width:100%;margin:6px 0 0"><div class="row note" style="justify-content:space-between"><span id="exmin"></span><span id="exmax"></span></div>
+      <div class="row" style="gap:8px;align-items:baseline;margin-top:10px"><span class="small">In the jar</span> <b id="exnlbl" style="font-size:1.3rem"></b> <span class="note" id="exnh"></span></div>
+      <input type="range" id="exn" min="1" max="10" step="1" style="display:block;width:100%;margin:6px 0 0"><div class="row note" style="justify-content:space-between"><span id="exnmin"></span><span id="exnmax"></span></div>
+      <div class="note" id="exwhy" style="margin-top:4px"></div></div>
     <label for="planat" class="small" style="display:block"><span id="planpeaklbl">Peak wanted at</span> <span class="note" id="planh"></span></label>
     <input type="datetime-local" id="planat" style="display:block;width:100%;box-sizing:border-box;font-size:1rem;min-height:40px;margin:2px 0 6px">
     <span id="plantime" hidden></span><input type="range" id="planpeak" hidden min="0" max="1000" step="any">
@@ -1151,9 +1152,10 @@ let bake={...BAKE_DEF},planBake=null;  // loaded from storage at startup, below
 const KEEP_ST=2,KEEP_R={fridge:5,counter:10};
 // Exercise: cm of starter the box needs to see a rise clearly, the shortest
 // gap between feeds, and the ratios it picks from.
-const EX_DEPTH=2,EX_GAP=6,EX_RATIOS=[2,3,4,5,6,8,10,12,15,20],EX_SLIDE=[0.5,20],
-  EX_MIN={exlims:1,exlimf:10,exlimw:10},EX_MIN_FEED=20;
-let exAt=null;  // the peak time picked on the Exercise slider (null: auto)
+const EX_DEPTH=2,EX_GAP=6,EX_RS=[1,1.5,2,2.5,3,4,5,6,7,8,10,12,15,20],EX_MIN_FEED=20,EX_MAX_FEED=200;
+// Picked on the Exercise sliders (null: the planner picks): the ratio, and
+// the total grams in the jar.
+let exR=null,exN=null,exCur=null;
 let keep={on:false,where:'fridge'};
 function readKeep(e){
   keep={on:$('keepon').checked,where:$('keepwhere').value};
@@ -1223,81 +1225,74 @@ function renderPlan(){
   }
   $('exbox').hidden=mode!=='ex';
   if(mode==='ex'){
+    // Two choices, everything else follows:
+    //  * when it peaks, which is the same thing as the ratio (a thinner feed
+    //    takes longer), stepped through EX_RS only: thicker than 1:1 is mostly
+    //    old starter and barely a feed, thinner than 1:20 is a long, unknown lag;
+    //  * how much goes in the jar, in whole grams of Gus (a scale can't do
+    //    halves), from a EX_MIN_FEED g feed up to what you have and what the
+    //    jar holds with room to rise.
+    // Water is always his usual share of the flour (b.hyd): more makes him
+    // runny and hard to read, less makes him stiff and slow, so it isn't a
+    // choice. A ratio only shows up if some amount of it fits.
     $('planf').textContent=$('plantemp').value+'°F';$('plannow').textContent=fNow.toFixed(0)+'°F';
-    const F=planF(fNow),who=(run.starter||'starter').replace(/^./,c=>c.toUpperCase()),lbl=r=>'1:'+r+':'+(+(r*b.hyd).toFixed(1));
+    const F=planF(fNow),who=(run.starter||'starter').replace(/^./,c=>c.toUpperCase()),lbl=r=>'1:'+r+':'+(+(r*b.hyd).toFixed(1)),m=r=>1+r+r*b.hyd;
     const awake=t=>{const d=new Date(t),h=d.getHours()+d.getMinutes()/60;return h>=AWAKE[0]&&h<=AWAKE[1]};
-    // Enough to read: about EX_DEPTH cm of starter in the jar, from the
-    // jar's cm per 10 g; an unknown jar is taken as Karter-wide.
-    const jar=(recipeFor!=null&&vesselIn())||run.next_vessel||run.vessel||'',kj=Object.keys(CM_PER_10G).find(k=>jar.toLowerCase().includes(k));
-    const Nmin=Math.ceil(EX_DEPTH/(kj?CM_PER_10G[kj]:CM_PER_10G.karter)*10/5)*5;
-    // Each feed: the thickest ratio that peaks at least EX_GAP h later and
-    // while you're awake; the overnight one stretches to the morning.
-    // None does (an evening feed): the one that peaks nearest to waking up.
     const wake=t=>{const d=new Date(t);if(d.getHours()>=AWAKE[0])d.setDate(d.getDate()+1);d.setHours(AWAKE[0],30,0,0);return d.getTime()};
-    // Your limits (grams, at most). Below the minimums they're raised to them
-    // and say so: a scale can't weigh under 1 g of starter, and a feed under
-    // EX_MIN_FEED g isn't a feed. Flour and water cap how thin a feed can be
-    // (the latest peak); the Gus cap, with the smallest feed, how thick (the
-    // earliest). The Gus cap is for this feed; the others hold for every feed.
-    const msgs=[],lim=(id,name)=>{const e=$(id),t=e.value.trim(),v=Number(t);e.style.borderColor='';if(!t)return Infinity;
-      if(!(v>0)){msgs.push(name+': type a number of grams.');e.style.borderColor='#d9665b';return Infinity}
-      if(v<EX_MIN[id]){msgs.push(name+' can’t go under '+EX_MIN[id]+' g'+(id==='exlims'?' (a kitchen scale can’t weigh less)':' (less isn’t a real feed)')+', so it’s using '+EX_MIN[id]+' g.');e.style.borderColor='#d9665b';return EX_MIN[id]}
-      return v};
-    const Ls=lim('exlims','Gus'),Lf=lim('exlimf','Flour'),Lw=lim('exlimw','Water'),m=r=>1+r+r*b.hyd;
-    const stepR=r=>r<3?0.5:r<10?1:r<20?2:5,dnR=r=>Math.floor(r/stepR(r)+1e-9)*stepR(r),upR=r=>Math.ceil(r/stepR(r)-1e-9)*stepR(r);
-    // Every ratio you can weigh, kept only if its feed fits your limits with
-    // at least 1 g of Gus and EX_MIN_FEED g in all (R1: this feed, with the
-    // Gus cap; Rn: later ones). The slider snaps to R1 only.
-    const capAt=(r,first)=>Math.floor(Math.min(first?Ls:Infinity,Lf/r,b.hyd>0?Lw/(r*b.hyd):Infinity)+1e-9);
-    const feas=first=>r=>{const c=capAt(r,first);return c>=1&&Math.min(c,Math.max(1,Math.ceil(Nmin/m(r))))*m(r)>=EX_MIN_FEED-1e-9};
-    const grid=[];for(let r=EX_SLIDE[0];r<=EX_SLIDE[1]+1e-9;r+=stepR(r))grid.push(+r.toFixed(2));
-    let R1=grid.filter(feas(true));const Rn=grid.filter(feas(false));
-    if(!R1.length){msgs.push('These limits can’t make a '+EX_MIN_FEED+' g feed at any time. Raise one of them.');R1=[grid.filter(r=>capAt(r,true)>=1).pop()??EX_SLIDE[0]]}
-    const rLo=R1[0],rHi=R1[R1.length-1];
-    const pick=(t,list)=>{const rs=EX_RATIOS.filter(r=>list.includes(r));if(!rs.length)return list[list.length-1]??rHi;
-      return rs.find(r=>{const h=hrsAt(r,F);return h>=EX_GAP&&awake(t+h*3600e3)})??
-        rs.reduce((x,r)=>Math.abs(t+hrsAt(r,F)*3600e3-wake(t))<Math.abs(t+hrsAt(x,F)*3600e3-wake(t))?r:x)};
+    // Enough to read: about EX_DEPTH cm of starter, from the jar's cm per
+    // 10 g (an unknown jar is taken as Karter-wide). The most: the jar's mL
+    // (from its name) with room for a 2.5x rise, else EX_MAX_FEED g.
+    const jar=(recipeFor!=null&&vesselIn())||run.next_vessel||run.vessel||'',kj=Object.keys(CM_PER_10G).find(k=>jar.toLowerCase().includes(k));
+    const Nread=Math.ceil(EX_DEPTH/(kj?CM_PER_10G[kj]:CM_PER_10G.karter)*10/5)*5;
+    const capMl=Number((jar.match(/(\d+)\s*ml/i)||[])[1]),Nmax=capMl?Math.floor(capMl/(ML_PER_G*PEAK_ROOM_X)):EX_MAX_FEED;
+    const have=Math.max(0,jarNow-JAR_LOSS);
+    // Gus grams allowed at ratio r (first: limited by what you have now).
+    const sLo=r=>Math.max(1,Math.ceil(EX_MIN_FEED/m(r))),sHi=(r,first)=>Math.min(first?Math.floor(have):Infinity,Math.floor(Nmax/m(r)));
+    const fits=first=>r=>sHi(r,first)>=sLo(r);
+    let RS=EX_RS.filter(fits(true));const RSn=EX_RS.filter(fits(false)),why=[];
+    if(!RS.length){RS=[EX_RS[EX_RS.length-1]];why.push('You have about '+Math.round(have)+' g of '+who+', too little for a '+EX_MIN_FEED+' g feed. Feed it all at '+lbl(RS[0])+'.')}
+    const pick=(t,list)=>list.find(r=>{const h=hrsAt(r,F);return h>=EX_GAP&&awake(t+h*3600e3)})??
+      list.reduce((x,r)=>Math.abs(t+hrsAt(r,F)*3600e3-wake(t))<Math.abs(t+hrsAt(x,F)*3600e3-wake(t))?r:x);
+    const now=Date.now();
+    if(exR!=null&&!RS.includes(exR))exR=RS.reduce((x,y)=>Math.abs(y-exR)<Math.abs(x-exR)?y:x);
+    // Auto skips the thick feeds (under 1:2) when anything else fits.
+    const auto=l=>{const t2=l.filter(r=>r>=2);return t2.length?t2:l};
+    const r0=exR??pick(now,auto(RS)),i0=RS.indexOf(r0),pk0=now+hrsAt(r0,F)*3600e3;
+    {const e=$('exat');e.min=0;e.max=RS.length-1;if(document.activeElement!==e)e.value=i0;
+      $('exatlbl').textContent=whenAt(pk0);$('exath').textContent='('+lbl(r0)+', in '+hrsAt(r0,F).toFixed(1)+' h'+(awake(pk0)?'':', while you’re asleep')+')';
+      const end=r=>whenAt(now+hrsAt(r,F)*3600e3)+' · '+lbl(r);$('exmin').textContent=end(RS[0]);$('exmax').textContent=end(RS[RS.length-1]);
+      $('exauto').classList.toggle('on',exR==null&&exN==null)}
+    // How much: kept as a total, so moving the time keeps the jar about as full.
+    const sz=(r,first)=>{const lo=sLo(r),hi=Math.max(lo,sHi(r,first));return Math.min(hi,Math.max(lo,Math.round((exN??Nread)/m(r))))};
+    const s0=sz(r0,true),hi0=Math.max(sLo(r0),sHi(r0,true));
+    {const e=$('exn');e.min=sLo(r0);e.max=hi0;if(document.activeElement!==e)e.value=s0;
+      $('exnlbl').textContent=Math.round(s0*m(r0))+' g';$('exnh').textContent='= '+s0+' g '+who+' + '+g1(r0*s0)+' g flour + '+g1(r0*b.hyd*s0)+' g water';
+      $('exnmin').textContent=Math.round(sLo(r0)*m(r0))+' g';
+      $('exnmax').textContent=Math.round(hi0*m(r0))+' g'+(hi0===Math.floor(have)&&have<Nmax/m(r0)?' (all your '+who+')':capMl?' (fills the jar)':'')}
+    const N0=s0*m(r0);
+    if(N0<Nread-2)why.push('Under about '+Nread+' g the box can’t read the rise well in '+(jar?'the '+esc(jar):'this jar')+(kj?'':' (I don’t know its width; I assume one like the Karter beaker)')+'.');
+    if(r0<=1.5)why.push('A thick feed: mostly old starter and little food, so he peaks fast and is hungry again soon.');
+    if(r0>8)why.push(who+' hasn’t been tracked on a feed thinner than about 1:8 yet, so this time is a rough guess.');
+    $('exwhy').innerHTML=why.map(x=>'<div>'+x+'</div>').join('');
     const step=(when,what)=>'<div style="display:flex;gap:8px;margin-top:6px"><span class="note" style="flex:0 0 5.2em">'+when+'</span><span>'+what+'</span></div>';
-    // The slider: when this feed should peak. Its ratio follows from that
-    // (snapped to a ratio you can weigh); Auto lets the planner pick.
-    const now=Date.now(),hLo=hrsAt(rLo,F),hHi=hrsAt(rHi,F);
-    const rAt=h=>(Math.pow(2,h/(b.D*Math.pow(2,(b.f-F)/PLAN_F_PER_2X))-PLAN_LAG)-1)/(1+b.hyd);
-    const snapR=r=>R1.reduce((x,y)=>Math.abs(y-r)<Math.abs(x-r)?y:x);
-    // A picked time outside what the limits allow moves to the nearest end.
-    let clampMsg='';
-    if(exAt!=null&&exAt<now+hLo*3600e3){exAt=now+hLo*3600e3;clampMsg='Your Gus limit makes '+whenAt(exAt)+' the earliest peak.'}
-    if(exAt!=null&&exAt>now+hHi*3600e3){exAt=now+hHi*3600e3;clampMsg='Your '+(Lf<=Lw?'flour':'water')+' limit makes '+whenAt(exAt)+' the latest peak.'}
-    const r0=exAt!=null?snapR(rAt((exAt-now)/3600e3)):pick(now,R1);
-    {const e=$('exat');e.min=Math.ceil(hLo*4);e.max=Math.floor(hHi*4);if(document.activeElement!==e)e.value=Math.round((exAt!=null?(exAt-now)/3600e3:hrsAt(r0,F))*4);
-      const pk0=now+hrsAt(r0,F)*3600e3;$('exatlbl').textContent=whenAt(pk0);$('exath').textContent='(in '+hrsAt(r0,F).toFixed(1)+' h'+(awake(pk0)?'':', while you\u2019re asleep')+')';
-      $('exmin').textContent=whenAt(now+hLo*3600e3)+(rLo>EX_SLIDE[0]?' (Gus limit)':'');$('exmax').textContent=whenAt(now+hHi*3600e3)+(rHi<EX_SLIDE[1]?' ('+(Lf<=Lw?'flour':'water')+' limit)':'');$('exauto').classList.toggle('on',exAt==null)}
-    if(clampMsg)msgs.push(clampMsg);$('exlimnote').innerHTML=msgs.map(esc).join('<br>');
-    let t=now,out='<b style="font-size:1.3rem;display:inline">Exercise '+who+'</b>',first=null,thin=false,small=null;
+    let t=now,out='<b style="font-size:1.3rem;display:inline">Exercise '+who+'</b>',first=null,thin=false;
     for(let i=0;i<3;i++){
-      const r=i?pick(t,Rn):r0,h=hrsAt(r,F),pk=t+h*3600e3;
-      // Whole grams of Gus: enough for the box, then down to your limits,
-      // never under 1 g or a EX_MIN_FEED g feed.
-      const cap=Math.floor(Math.min(i?Infinity:Ls,Lf/r,b.hyd>0?Lw/(r*b.hyd):Infinity)+1e-9);
-      // (the smallest feed is kept by the slider's range, so caps always win)
-      const st=Math.max(1,Math.min(Math.ceil(Nmin/m(r)),cap));
-      const fl=r*st,wa=r*b.hyd*st;
-      if(st+fl+wa<Nmin*0.9&&small==null)small=Math.round(st+fl+wa);
-      if(!i)first={st,fl,wa,h};if(r>8)thin=true;
+      const r=i?pick(t,auto(RSn)):r0,h=hrsAt(r,F),pk=t+h*3600e3,st=i?sz(r,false):s0,fl=r*st,wa=r*b.hyd*st;
+      if(!i)first={st,fl,wa,h};else if(r>8)thin=true;
       out+=step(i?whenAt(t):'Now','<b style="display:inline">Feed '+lbl(r)+'</b>: '+st+' g '+who+' + '+g1(fl)+' g flour + '+g1(wa)+' g water (about '+Math.round(st+fl+wa)+' g). Peaks around '+whenAt(pk)+(awake(pk)?'':' (while you’re asleep)')+'.'+(i?'':' Discard the rest.'));
       t=pk;
     }
     out+=step('Then','Same again at each peak. After 2 on-pace rises in a row, Starter in says he’s ready to bake; then tap Bake above.');
-    const have=Math.max(0,jarNow-JAR_LOSS);
-    if(small!=null)out+='<div class="note" style="color:var(--warn);margin-top:6px">Your limits make about '+small+' g, under the ~'+Nmin+' g the box needs, so its rise readings will be rough. Times are the same.</div>';
-    if(thin)out+='<div class="note" style="margin-top:6px">'+who+' hasn’t been tracked on a feed thinner than about 1:8 yet, so the overnight time is a rough guess.</div>';
-    if(first.st>have+0.5)out+='<div class="note" style="color:var(--warn);margin-top:6px">That needs '+first.st+' g of '+who+' and you have about '+Math.round(have)+' g. Feed what you have at the same ratio.</div>';
-    out+='<div class="note wordy" style="margin-top:6px">Each feed is about '+Nmin+' g so there’s about '+EX_DEPTH+' cm of starter in '+(jar?'the '+esc(jar):'the jar')+
-      (kj?'':' (I don’t know this jar’s width, so I assume it’s as wide as the Karter beaker; a wider jar needs more)')+'. Less than that and the box can’t tell a real rise from noise. '+
+    if(thin)out+='<div class="note" style="margin-top:6px">The overnight feed is thinner than '+who+' has been tracked on, so its time is a rough guess.</div>';
+    out+='<div class="note wordy" style="margin-top:6px">Water is always '+Math.round(b.hyd*100)+'% of the flour, his usual: more makes him runny and hard to read, less makes him stiff and slow. '+
       'Times assume the room stays '+F+'°F. If he peaks early or late, feed at the real peak; the plan redraws from then.</div>';
     $('planout').innerHTML=out;
     planPick=[first.st,+g1(first.fl),+g1(first.wa)];planModel={hrsAt,F,H:Math.round(first.h*2)/2};planBake=null;
     if(!recipeTouched)setGrams(planPick);refreshNext();
     $('planusenote').textContent=$('recipe').hidden?'Pause for a new jar and these grams are filled in for you.':recipeTouched?'Your typed grams are kept; tap to switch to these.':'Starter in is using these grams.';
+    // For the sliders' listeners: the ratios the time slider steps through,
+    // and the ratio the size slider's grams are at.
+    exCur={RS,r:r0,m:m(r0)};
     return;
   }
   // Scenario boxes: starter and flour (or water) typed fix the ratio, so the
@@ -2180,12 +2175,12 @@ if(keep.on&&bake.on)keep.on=false;
 $('keepon').checked=keep.on;$('keepwhere').value=keep.where==='counter'?'counter':'fridge';$('keepbox').hidden=!keep.on;
 ['keepon','keepwhere'].forEach(id=>$(id).onchange=readKeep);
 showBake();['bakeon','bakeagain','bakedays'].forEach(id=>$(id).onchange=readBake);
-$('exat').oninput=()=>{exAt=Date.now()+Number($('exat').value)/4*3600e3;if(run)renderPlan()};
-$('exat').onchange=()=>{$('exat').blur();if(run)renderPlan()};
-$('exauto').onclick=()=>{exAt=null;if(run)renderPlan()};
-// Limits are remembered on this device.
-try{const l=JSON.parse(store.get('exlim')||'{}');['exlims','exlimf','exlimw'].forEach(id=>{if(l[id])$(id).value=l[id]})}catch(e){}
-['exlims','exlimf','exlimw'].forEach(id=>$(id).addEventListener('input',()=>{const l={};['exlims','exlimf','exlimw'].forEach(i=>{if($(i).value.trim())l[i]=$(i).value.trim()});store.set('exlim',JSON.stringify(l));if(run)renderPlan()}));
+// The time slider steps through the ratios that fit; the size slider is in
+// whole grams of Gus, kept as a total so the jar stays about as full.
+$('exat').oninput=()=>{if(exCur)exR=exCur.RS[Number($('exat').value)]??exR;if(run)renderPlan()};
+$('exn').oninput=()=>{if(exCur)exN=Number($('exn').value)*exCur.m;if(run)renderPlan()};
+['exat','exn'].forEach(id=>$(id).onchange=()=>{$(id).blur();if(run)renderPlan()});
+$('exauto').onclick=()=>{exR=null;exN=null;if(run)renderPlan()};
 document.querySelectorAll('#planmodes .chip').forEach(x=>x.onclick=()=>{const m=x.dataset.pm;
   keep.on=m==='keep';$('keepon').checked=keep.on;$('keepbox').hidden=!keep.on;store.set('keep',JSON.stringify(keep));
   $('bakeon').checked=m==='bake';readBake()});['bakeloaves','bakeper','bakekeep'].forEach(id=>$(id).oninput=readBake);
