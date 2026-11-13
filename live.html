@@ -1177,7 +1177,7 @@ function renderPlan(){
   [$('planat'),$('plantable')].forEach(e=>e.style.display=keep.on?'none':'');
   {const l=$('planat').previousElementSibling;l.style.display=keep.on?'block':'';l.style.marginBottom=keep.on?'8px':''}
   if(keep.on){
-    $('planpeaklbl').textContent='No time to aim for while “Just keeping him happy” is ticked.';$('plantime').textContent='';$('planh').textContent='Untick it to pick a date again.';
+    $('planpeaklbl').textContent='“Just keeping him happy” is ticked: least flour, no time to aim for.';$('plantime').textContent='';$('planh').textContent='To exercise him for a day, untick it and pick the date.';
     $('planf').textContent=$('plantemp').value+'°F';$('plannow').textContent=fNow.toFixed(0)+'°F';
     const F=planF(fNow),fr=keep.where==='fridge',r=KEEP_R[keep.where],st=KEEP_ST,fl=st*r,wa=st*r*b.hyd;
     const who=(run.starter||'starter').replace(/^./,c=>c.toUpperCase()),lbl='1:'+r+':'+(+(r*b.hyd).toFixed(1));
@@ -1187,7 +1187,7 @@ function renderPlan(){
     out+=step('Now',st+' g '+who+' + '+g1(fl)+' g flour + '+g1(wa)+' g water. Discard the rest of the old jar.');
     out+=fr?step('~'+inFz,'Leave him out 1–2 h so the feed gets going, then <b style="display:inline">into the fridge</b> (tap Into the fridge).')+
         step('In a week','Same again: take him out, feed '+st+' + '+g1(fl)+' + '+g1(wa)+', back in after 1–2 h. Hooch on top is fine; pour it off.')
-      :step(clock(Date.now()+T*3600e3),'Peaks around now if the room stays '+F+'°F, then slowly gets hungry.')+
+      :step(whenAt(Date.now()+T*3600e3),'Peaks around then if the room stays '+F+'°F, then slowly gets hungry.')+
         step('In a day','Same again: '+st+' + '+g1(fl)+' + '+g1(wa)+'.');
     out+=step('Before a bake','Take him out 1–2 days ahead and give him 1–2 counter feeds; then untick this and plan the bake.');
     out+='<div class="note wordy" style="margin-top:6px">About '+Math.round(fl*(fr?1:7))+' g of flour a week '+(fr?'in the fridge':'on the counter')+
