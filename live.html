@@ -47,7 +47,8 @@ main:not(.tab-sl)>#sltab{display:none!important}
 #sltab{display:flex;flex-direction:column;gap:14px}
 .slrow{margin-top:14px}
 .slrow .row{justify-content:space-between;align-items:baseline}
-.slrow b{font-size:1.15rem;font-variant-numeric:tabular-nums}
+.slrow .slnum{width:4.6em;min-height:36px;padding:3px 8px;font-size:1.1rem;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.slrow input[type=time].slnum{width:8.6em;text-align:left}
 .slbar{height:6px;border-radius:3px;margin:0 2px 2px}
 #baketab{display:flex;flex-direction:column;gap:14px}
 .bstep{display:flex;gap:10px;padding:10px 6px;border-top:1px solid var(--line)}
@@ -2103,7 +2104,7 @@ async function sendBake(kind,id,at){
 // the others allow. State: Gus you have, Gus/flour/water for this feed, room.
 // Hard rules (SLH) can't be crossed; soft ones paint the bar amber and say why.
 const SLH={r:[1,20],h:[0.5,1.25],min:20},SLS={r:[1.5,8],h:[0.8,1.1]};
-let sl=null;try{sl=JSON.parse(store.get('sl')||'null')}catch(e){}
+let sl=null,slForce=false;try{sl=JSON.parse(store.get('sl')||'null')}catch(e){}
 function slCtx(){
   const b=planBasis();if(!b)return null;
   const pts=run.points.filter(p=>p.f!=null),fNow=pts.length?pts[pts.length-1].f:b.f;
@@ -2172,7 +2173,7 @@ const SL_ROWS=[['t','Peaks at'],['st','Gus'],['fl','Flour'],['wa','Water'],['hav
 function slTab(){
   const c=slCtx();if(!c){$('slout').textContent='Needs one finished feed of '+(run&&run.starter||'the starter')+' first.';return}
   const who=(run.starter||'starter').replace(/^./,ch=>ch.toUpperCase());
-  if(!$('sl_t'))$('slrows').innerHTML=SL_ROWS.map(([k,l])=>'<div class="slrow"><div class="row"><span class="small">'+(k==='st'||k==='have'?l.replace('Gus',who):l)+'</span><b id="slv_'+k+'"></b></div>'+
+  if(!$('sl_t'))$('slrows').innerHTML=SL_ROWS.map(([k,l])=>'<div class="slrow"><div class="row"><span class="small">'+(k==='st'||k==='have'?l.replace('Gus',who):l)+'</span><span style="white-space:nowrap"><input id="sli_'+k+'" class="slnum" '+(k==='t'?'type="time"':'type="text" inputmode="decimal" autocomplete="off"')+' aria-label="'+l+'"> <span class="small" id="slx_'+k+'"></span></span></div>'+
     '<input type="range" id="sl_'+k+'"><div class="slbar" id="slb_'+k+'"></div><div class="note" id="sln_'+k+'"></div></div>').join('');
   // Start from this feed: what you have, a 1:2 at the readable size.
   if(!sl||sl.fed!==run.fed_at){const hy=Math.min(1.25,Math.max(0.5,c.b.hyd||1)),st=Math.min(c.est,Math.max(1,Math.round(c.Nread/(1+2*(1+hy)))));
@@ -2195,9 +2196,12 @@ function slTab(){
     if(rg&&k!=='t')$('sln_'+k).textContent=$('sln_'+k).textContent.replace('earlier','less').replace('later','more');
   }
   const pk=now+H*3600e3,r=x.fl/x.st,hy=x.wa/x.fl,T=x.st+x.fl+x.wa;
-  $('slv_t').textContent=whenAt(pk)+' (in '+H.toFixed(1)+' h)';$('slv_st').textContent=g1(x.st)+' g';
-  $('slv_fl').textContent=g1(x.fl)+' g · 1:'+(+r.toFixed(1));$('slv_wa').textContent=g1(x.wa)+' g · '+Math.round(hy*100)+'%';
-  $('slv_have').textContent=g1(x.have)+' g';$('slv_F').textContent=x.F+'°F';
+  // The numbers: tap to type one. Not while you're typing in it.
+  {const pd=new Date(pk),num={t:String(pd.getHours()).padStart(2,'0')+':'+String(pd.getMinutes()).padStart(2,'0'),st:g1(x.st),fl:g1(x.fl),wa:g1(x.wa),have:g1(x.have),F:x.F};
+    for(const [k] of SL_ROWS){const e=$('sli_'+k);if(slForce||document.activeElement!==e)e.value=num[k]}slForce=false;
+    const day=pd.toDateString()===new Date().toDateString()?'':pd.toLocaleDateString([],{weekday:'short'})+', ';
+    $('slx_t').textContent='('+day+'in '+H.toFixed(1)+' h)';$('slx_st').textContent='g';$('slx_fl').textContent='g \u00b7 1:'+(+r.toFixed(1));
+    $('slx_wa').textContent='g \u00b7 '+Math.round(hy*100)+'%';$('slx_have').textContent='g';$('slx_F').textContent='\u00b0F'}
   const soft=slSoft(c,x);
   $('slout').innerHTML='<b style="font-size:1.5rem;display:block">Feed 1:'+(+r.toFixed(1))+':'+(+(r*hy).toFixed(1))+'</b>'+
     '<div style="font-size:1.1rem">'+g1(x.st)+' g '+who+' + '+g1(x.fl)+' g flour + '+g1(x.wa)+' g water = '+Math.round(T)+' g</div>'+
@@ -2206,11 +2210,11 @@ function slTab(){
   $('slbasis').textContent='Time from his '+new Date(c.b.fed).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+' feed ('+c.b.peakH.toFixed(1)+' h to peak at '+c.b.f.toFixed(0)+'°F). Jar: '+(c.jar||'unknown')+(c.capMl?', up to '+c.Nmax+' g with room to rise.':', up to '+c.Nmax+' g.');
 }
 // A slider moved: take its value, clamp it to where it can go, redraw.
-function slInput(k){
+function slInput(k,typed){
   const c=slCtx();if(!c||!sl)return;
-  const v=Number($('sl_'+k).value);let x={...sl};
-  if(k==='have'){x.have=Math.max(1,half(v));x=slFix(c,x)}
-  else if(k==='F')x.F=v;
+  const v=typed??Number($('sl_'+k).value);let x={...sl};
+  if(k==='have'){x.have=Math.min(1000,Math.max(1,half(v)));x=slFix(c,x)}
+  else if(k==='F')x.F=Math.min(90,Math.max(55,Math.round(v)));
   else{const rg=slRange(c,x,k);let y=slAt(c,x,k,v);
     if(k==='t'||k==='fl'){const hy=x.wa/x.fl;y.fl=Math.min(rg[2],Math.max(rg[0],half(y.fl)));y.wa=slWa(y.fl,hy);
       while(y.st+y.fl+y.wa>c.Nmax+E&&y.wa-0.5>=y.fl*SLH.h[0]-E)y.wa-=0.5;
@@ -2218,6 +2222,20 @@ function slInput(k){
     else y[k]=Math.min(rg[2],Math.max(rg[0],half(y[k])));
     x=y}
   sl=x;store.set('sl',JSON.stringify(sl));slTab();
+}
+// A typed number: same rules as the slider. If it can't go there, it goes
+// to the nearest place it can and says so.
+function slTyped(k){
+  const c=slCtx();if(!c||!sl)return;
+  const e=$('sli_'+k),t=e.value.trim().replace(',','.');let v,want;
+  if(k==='t'){const m=t.match(/^(\d{1,2}):(\d{2})/);if(!m){slForce=true;slTab();return}
+    const d=new Date();d.setHours(+m[1],+m[2],0,0);if(d.getTime()<=Date.now())d.setDate(d.getDate()+1);want=d.getTime();v=(want-Date.now())/3600e3}
+  else{v=Number(t);if(t===''||!(v>=0)){slForce=true;slTab();$('sln_'+k).textContent='Type a number. '+$('sln_'+k).textContent;return}want=v}
+  if(k==='F'&&(v<55||v>90)){slForce=true;slTab();$('sln_F').textContent='Room has to be 55–90°F. '+$('sln_F').textContent;return}
+  e.blur();slForce=true;slInput(k,v);
+  const pk=Date.now()+slHrs(c,sl)*3600e3,unit=k==='F'?'\u00b0F':' g';
+  const off=k==='t'?Math.abs(pk-want)>10*60e3:Math.abs(sl[k]-want)>0.01;
+  if(off)$('sln_'+k).textContent=(k==='t'?'Can\u2019t peak at '+whenAt(want)+' from here; the nearest is '+whenAt(pk)+'. ':'Can\u2019t be '+g1(want)+unit+' here; set to '+g1(sl[k])+unit+'. ')+$('sln_'+k).textContent;
 }
 function setTab(t){
   document.querySelector('main').classList.toggle('tab-sl',t==='sl');
@@ -2228,7 +2246,9 @@ function setTab(t){
   if(t==='bake')bakeTab();else if(t==='sl'){if(run)slTab()}else render();  // charts drawn while hidden have no width
 }
 $('slrows').addEventListener('input',e=>{const k=e.target.id&&e.target.id.startsWith('sl_')&&e.target.id.slice(3);if(k)slInput(k)});
-$('slrows').addEventListener('change',e=>{if(e.target.id&&e.target.id.startsWith('sl_')){e.target.blur();slTab()}});
+$('slrows').addEventListener('change',e=>{const id=e.target.id||'';if(id.startsWith('sl_')){e.target.blur();slTab()}else if(id.startsWith('sli_'))slTyped(id.slice(4))});
+$('slrows').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.target.id||'').startsWith('sli_')){e.preventDefault();e.target.blur()}});
+$('slrows').addEventListener('focusin',e=>{if((e.target.id||'').startsWith('sli_')&&e.target.type==='text')setTimeout(()=>e.target.select(),0)});
 $('sluse').onclick=()=>{if(!sl)return;['rg_s','rg_f','rg_w'].forEach(id=>typedIds.delete(id));setGrams([sl.st,sl.fl,sl.wa]);recipeTouched=true;
   $('slusenote').textContent='Filled in on the Starter tab ('+g1(sl.st)+' / '+g1(sl.fl)+' / '+g1(sl.wa)+' g).'};
 $('tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){setTab(b.dataset.tab);scrollTo(0,0)}};
