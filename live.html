@@ -162,11 +162,12 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div id="exbox" hidden style="margin-bottom:8px"><div class="row" style="gap:8px;align-items:baseline"><span class="small">Peaks at</span> <b id="exatlbl" style="font-size:1.3rem"></b> <span class="note" id="exath"></span> <button class="chip" id="exauto" style="margin-left:auto">Auto</button></div>
       <input type="range" id="exat" min="0" max="100" step="1" style="display:block;width:100%;margin:6px 0 0"><div class="row note" style="justify-content:space-between"><span id="exmin"></span><span id="exmax"></span></div>
       <div class="small" style="margin-top:10px">Use at most (grams)</div><div class="small" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:2px"><label>Gus<input id="exlims" type="text" inputmode="decimal" autocomplete="off" class="g" placeholder="any" style="width:100%;box-sizing:border-box"></label><label>Flour<input id="exlimf" type="text" inputmode="decimal" autocomplete="off" class="g" placeholder="any" style="width:100%;box-sizing:border-box"></label><label>Water<input id="exlimw" type="text" inputmode="decimal" autocomplete="off" class="g" placeholder="any" style="width:100%;box-sizing:border-box"></label></div>
-      <div class="note">Leave a box empty for no limit. The time stays; everything shrinks together to fit.</div></div>
+      <div class="note" id="exlimnote" style="color:#d9665b"></div>
+      <div class="note" id="exlimhelp">Leave a box empty for no limit. The slider only goes where your limits allow.</div></div>
     <label for="planat" class="small" style="display:block"><span id="planpeaklbl">Peak wanted at</span> <span class="note" id="planh"></span></label>
     <input type="datetime-local" id="planat" style="display:block;width:100%;box-sizing:border-box;font-size:1rem;min-height:40px;margin:2px 0 6px">
     <span id="plantime" hidden></span><input type="range" id="planpeak" hidden min="0" max="1000" step="any">
-    <label for="plantemp" class="small" style="display:block">Room <input type="number" id="plantemp" inputmode="numeric" min="50" max="95" step="1" class="g" style="width:3.6em">°F <span class="note">(now: <span id="plannow">–</span>)</span><span id="planf" hidden></span></label>
+    <label for="plantemp" class="small" style="display:block">Room <input type="number" id="plantemp" inputmode="numeric" min="50" max="95" step="1" class="g" style="width:3.6em">°F <span class="note">(now: <span id="plannow">–</span>)</span><span id="planf" hidden></span></label><div class="note" id="plantempnote" style="color:#d9665b"></div>
     <details id="planamts" class="small" style="margin-top:6px"><summary>Try my own amounts</summary><div class="row" style="gap:6px;margin-top:6px"><label class="small">Starter <input id="planst" type="text" inputmode="decimal" autocomplete="off" class="g"></label><label class="small">Flour <input id="planfl" type="text" inputmode="decimal" autocomplete="off" class="g"></label><label class="small">Water <input id="planwa" type="text" inputmode="decimal" autocomplete="off" class="g"></label><span class="small">g</span><button class="chip" id="planclear">Clear</button></div>
     <div class="note wordy">Try amounts: type one and the rest fill in (grey). Type starter and flour and it shows when that peaks. Nothing is sent.</div></details>
     <label class="small" style="display:block;margin-top:6px" hidden><input type="checkbox" id="keepon"> Just keeping him happy (least flour)</label>
@@ -1117,7 +1118,10 @@ let planSet=false,ratioPick=null,planAt=null;const planTyped=new Set();
 // one feed now; further out it works back: the last feed at a waking hour,
 // a feed before it that peaks then (exercise), and the fridge until that.
 const PLAN_REACH=20,AWAKE=[7,23];
-const planF=fNow=>{const v=Number($('plantemp').value);return v>=40&&v<=100?v:Math.round(fNow)};
+// Room temp: only a real room (ROOM_F); anything else plans with the
+// current reading and says so.
+const ROOM_F=[55,90],roomOk=()=>{const t=$('plantemp').value.trim(),v=Number(t);return t!==''&&v>=ROOM_F[0]&&v<=ROOM_F[1]};
+const planF=fNow=>roomOk()?Number($('plantemp').value):Math.round(fNow);
 const toLocalInput=t=>{const d=new Date(t-new Date(t).getTimezoneOffset()*60e3);return d.toISOString().slice(0,16)};
 const whenAt=t=>(new Date(t).toDateString()===new Date().toDateString()?'':new Date(t).toLocaleDateString([],{weekday:'short'})+' ')+clock(t);  // a ratio tapped in the planner table (the slider clears it)
 function planBasis(){
@@ -1147,7 +1151,8 @@ let bake={...BAKE_DEF},planBake=null;  // loaded from storage at startup, below
 const KEEP_ST=2,KEEP_R={fridge:5,counter:10};
 // Exercise: cm of starter the box needs to see a rise clearly, the shortest
 // gap between feeds, and the ratios it picks from.
-const EX_DEPTH=2,EX_GAP=6,EX_RATIOS=[2,3,4,5,6,8,10,12,15,20],EX_SLIDE=[0.5,20];
+const EX_DEPTH=2,EX_GAP=6,EX_RATIOS=[2,3,4,5,6,8,10,12,15,20],EX_SLIDE=[0.5,20],
+  EX_MIN={exlims:1,exlimf:10,exlimw:10},EX_MIN_FEED=20;
 let exAt=null;  // the peak time picked on the Exercise slider (null: auto)
 let keep={on:false,where:'fridge'};
 function readKeep(e){
@@ -1181,6 +1186,8 @@ function renderPlan(){
     :'Pick when you want to mix the dough. It works back from there.';
   {const bk_=mode==='bake';[$('planat'),$('planat').previousElementSibling].forEach(e=>e.style.display=bk_?'block':'none');[$('plantable'),$('planamts')].forEach(e=>e.style.display=bk_?'':'none')}
   const pts=run.points.filter(p=>p.f!=null),fNow=pts.length?pts[pts.length-1].f:b.f;
+  {const e=$('plantemp');if(planSet&&!roomOk()&&document.activeElement!==e)e.value=Math.round(fNow);
+    $('plantempnote').textContent=e.value.trim()!==''&&!roomOk()?'Room has to be '+ROOM_F[0]+'–'+ROOM_F[1]+'°F. Planning with '+Math.round(fNow)+'°F (now).':''}
   const [st0,fl0,wa0]=(run.feed_g||'').split(':').map(Number),jarNow=st0+fl0+(wa0||0)||b.st+b.fl+b.wa;
   const need=bake.on?bake.loaves*bake.per+bake.keep:0,total=bake.on?need+JAR_LOSS:jarNow;
   planBake=bake.on?{loaves:bake.loaves,per:bake.per,keep:bake.keep}:null;
@@ -1227,32 +1234,56 @@ function renderPlan(){
     // while you're awake; the overnight one stretches to the morning.
     // None does (an evening feed): the one that peaks nearest to waking up.
     const wake=t=>{const d=new Date(t);if(d.getHours()>=AWAKE[0])d.setDate(d.getDate()+1);d.setHours(AWAKE[0],30,0,0);return d.getTime()};
-    const pick=t=>EX_RATIOS.find(r=>{const h=hrsAt(r,F);return h>=EX_GAP&&awake(t+h*3600e3)})??
-      EX_RATIOS.reduce((x,r)=>Math.abs(t+hrsAt(r,F)*3600e3-wake(t))<Math.abs(t+hrsAt(x,F)*3600e3-wake(t))?r:x);
+    // Your limits (grams, at most). Below the minimums they're raised to them
+    // and say so: a scale can't weigh under 1 g of starter, and a feed under
+    // EX_MIN_FEED g isn't a feed. Flour and water cap how thin a feed can be
+    // (the latest peak); the Gus cap, with the smallest feed, how thick (the
+    // earliest). The Gus cap is for this feed; the others hold for every feed.
+    const msgs=[],lim=(id,name)=>{const e=$(id),t=e.value.trim(),v=Number(t);e.style.borderColor='';if(!t)return Infinity;
+      if(!(v>0)){msgs.push(name+': type a number of grams.');e.style.borderColor='#d9665b';return Infinity}
+      if(v<EX_MIN[id]){msgs.push(name+' can’t go under '+EX_MIN[id]+' g'+(id==='exlims'?' (a kitchen scale can’t weigh less)':' (less isn’t a real feed)')+', so it’s using '+EX_MIN[id]+' g.');e.style.borderColor='#d9665b';return EX_MIN[id]}
+      return v};
+    const Ls=lim('exlims','Gus'),Lf=lim('exlimf','Flour'),Lw=lim('exlimw','Water'),m=r=>1+r+r*b.hyd;
+    const stepR=r=>r<3?0.5:r<10?1:r<20?2:5,dnR=r=>Math.floor(r/stepR(r)+1e-9)*stepR(r),upR=r=>Math.ceil(r/stepR(r)-1e-9)*stepR(r);
+    // Every ratio you can weigh, kept only if its feed fits your limits with
+    // at least 1 g of Gus and EX_MIN_FEED g in all (R1: this feed, with the
+    // Gus cap; Rn: later ones). The slider snaps to R1 only.
+    const capAt=(r,first)=>Math.floor(Math.min(first?Ls:Infinity,Lf/r,b.hyd>0?Lw/(r*b.hyd):Infinity)+1e-9);
+    const feas=first=>r=>{const c=capAt(r,first);return c>=1&&Math.min(c,Math.max(1,Math.ceil(Nmin/m(r))))*m(r)>=EX_MIN_FEED-1e-9};
+    const grid=[];for(let r=EX_SLIDE[0];r<=EX_SLIDE[1]+1e-9;r+=stepR(r))grid.push(+r.toFixed(2));
+    let R1=grid.filter(feas(true));const Rn=grid.filter(feas(false));
+    if(!R1.length){msgs.push('These limits can’t make a '+EX_MIN_FEED+' g feed at any time. Raise one of them.');R1=[grid.filter(r=>capAt(r,true)>=1).pop()??EX_SLIDE[0]]}
+    const rLo=R1[0],rHi=R1[R1.length-1];
+    const pick=(t,list)=>{const rs=EX_RATIOS.filter(r=>list.includes(r));if(!rs.length)return list[list.length-1]??rHi;
+      return rs.find(r=>{const h=hrsAt(r,F);return h>=EX_GAP&&awake(t+h*3600e3)})??
+        rs.reduce((x,r)=>Math.abs(t+hrsAt(r,F)*3600e3-wake(t))<Math.abs(t+hrsAt(x,F)*3600e3-wake(t))?r:x)};
     const step=(when,what)=>'<div style="display:flex;gap:8px;margin-top:6px"><span class="note" style="flex:0 0 5.2em">'+when+'</span><span>'+what+'</span></div>';
     // The slider: when this feed should peak. Its ratio follows from that
     // (snapped to a ratio you can weigh); Auto lets the planner pick.
-    const now=Date.now(),hLo=hrsAt(EX_SLIDE[0],F),hHi=hrsAt(EX_SLIDE[1],F);
+    const now=Date.now(),hLo=hrsAt(rLo,F),hHi=hrsAt(rHi,F);
     const rAt=h=>(Math.pow(2,h/(b.D*Math.pow(2,(b.f-F)/PLAN_F_PER_2X))-PLAN_LAG)-1)/(1+b.hyd);
-    const snapR=r=>{const k=r<3?0.5:r<10?1:r<20?2:5;return Math.min(EX_SLIDE[1],Math.max(EX_SLIDE[0],Math.round(r/k)*k))};
-    if(exAt!=null&&(exAt<now+hLo*3600e3||exAt>now+hHi*3600e3))exAt=null;
-    const r0=exAt!=null?snapR(rAt((exAt-now)/3600e3)):pick(now);
+    const snapR=r=>R1.reduce((x,y)=>Math.abs(y-r)<Math.abs(x-r)?y:x);
+    // A picked time outside what the limits allow moves to the nearest end.
+    let clampMsg='';
+    if(exAt!=null&&exAt<now+hLo*3600e3){exAt=now+hLo*3600e3;clampMsg='Your Gus limit makes '+whenAt(exAt)+' the earliest peak.'}
+    if(exAt!=null&&exAt>now+hHi*3600e3){exAt=now+hHi*3600e3;clampMsg='Your '+(Lf<=Lw?'flour':'water')+' limit makes '+whenAt(exAt)+' the latest peak.'}
+    const r0=exAt!=null?snapR(rAt((exAt-now)/3600e3)):pick(now,R1);
     {const e=$('exat');e.min=Math.ceil(hLo*4);e.max=Math.floor(hHi*4);if(document.activeElement!==e)e.value=Math.round((exAt!=null?(exAt-now)/3600e3:hrsAt(r0,F))*4);
       const pk0=now+hrsAt(r0,F)*3600e3;$('exatlbl').textContent=whenAt(pk0);$('exath').textContent='(in '+hrsAt(r0,F).toFixed(1)+' h'+(awake(pk0)?'':', while you\u2019re asleep')+')';
-      $('exmin').textContent=whenAt(now+hLo*3600e3);$('exmax').textContent=whenAt(now+hHi*3600e3);$('exauto').classList.toggle('on',exAt==null)}
-    // Your limits: the ratio (so the time) stays and the feed shrinks to fit.
-    // The Gus limit is for this feed; flour and water hold for every feed.
-    const lim=id=>{const v=parseFloat($(id).value);return v>0?v:Infinity},Ls=lim('exlims'),Lf=lim('exlimf'),Lw=lim('exlimw');
+      $('exmin').textContent=whenAt(now+hLo*3600e3)+(rLo>EX_SLIDE[0]?' (Gus limit)':'');$('exmax').textContent=whenAt(now+hHi*3600e3)+(rHi<EX_SLIDE[1]?' ('+(Lf<=Lw?'flour':'water')+' limit)':'');$('exauto').classList.toggle('on',exAt==null)}
+    if(clampMsg)msgs.push(clampMsg);$('exlimnote').innerHTML=msgs.map(esc).join('<br>');
     let t=now,out='<b style="font-size:1.3rem;display:inline">Exercise '+who+'</b>',first=null,thin=false,small=null;
     for(let i=0;i<3;i++){
-      const r=i?pick(t):r0,h=hrsAt(r,F),pk=t+h*3600e3;
-      let st=Math.max(2,Math.ceil(2*Nmin/(1+r+r*b.hyd))/2);
-      const k=Math.min(1,(i?Infinity:Ls)/st,Lf/(r*st),b.hyd>0?Lw/(r*b.hyd*st):Infinity);
-      if(k<1)st=Math.max(0.5,Math.floor(2*st*k)/2);
+      const r=i?pick(t,Rn):r0,h=hrsAt(r,F),pk=t+h*3600e3;
+      // Whole grams of Gus: enough for the box, then down to your limits,
+      // never under 1 g or a EX_MIN_FEED g feed.
+      const cap=Math.floor(Math.min(i?Infinity:Ls,Lf/r,b.hyd>0?Lw/(r*b.hyd):Infinity)+1e-9);
+      // (the smallest feed is kept by the slider's range, so caps always win)
+      const st=Math.max(1,Math.min(Math.ceil(Nmin/m(r)),cap));
       const fl=r*st,wa=r*b.hyd*st;
       if(st+fl+wa<Nmin*0.9&&small==null)small=Math.round(st+fl+wa);
       if(!i)first={st,fl,wa,h};if(r>8)thin=true;
-      out+=step(i?whenAt(t):'Now','<b style="display:inline">Feed '+lbl(r)+'</b>: '+st+' g '+who+' + '+g1(fl)+' g flour + '+g1(wa)+' g water (about '+Math.round(st+fl+wa)+' g). Peaks around '+whenAt(pk)+'.'+(i?'':' Discard the rest.'));
+      out+=step(i?whenAt(t):'Now','<b style="display:inline">Feed '+lbl(r)+'</b>: '+st+' g '+who+' + '+g1(fl)+' g flour + '+g1(wa)+' g water (about '+Math.round(st+fl+wa)+' g). Peaks around '+whenAt(pk)+(awake(pk)?'':' (while you’re asleep)')+'.'+(i?'':' Discard the rest.'));
       t=pk;
     }
     out+=step('Then','Same again at each peak. After 2 on-pace rises in a row, Starter in says he’s ready to bake; then tap Bake above.');
@@ -2136,7 +2167,7 @@ $('mark').onclick=()=>{if(doc){store.set('start',String(doc.distance_cm));render
 $('clear').onclick=()=>{store.del('start');render()};
 $('depth').value=store.get('depth')||'';
 $('planat').onchange=$('planat').oninput=()=>{const t=new Date($('planat').value).getTime();if(!t)return;planAt=t;ratioPick=null;if(planTyped.has('planst')&&(planTyped.has('planfl')||planTyped.has('planwa')))['planfl','planwa'].forEach(id=>{planTyped.delete(id);$(id).value=''});if(run)renderPlan()};
-$('plantemp').oninput=()=>{if(run)renderPlan()};
+$('plantemp').oninput=()=>{if(run)renderPlan()};$('plantemp').onchange=()=>{if(run)renderPlan()};
 // Scenarios: any amount of Gus, any time, any temp; nothing is sent anywhere.
 ['planst','planfl','planwa'].forEach(id=>$(id).addEventListener('input',()=>{if($(id).value.trim())planTyped.add(id);else planTyped.delete(id);ratioPick=null;if(run)renderPlan()}));
 $('planclear').onclick=()=>{planTyped.clear();['planst','planfl','planwa'].forEach(id=>$(id).value='');ratioPick=null;if(run)renderPlan()};
