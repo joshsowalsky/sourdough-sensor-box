@@ -1009,14 +1009,20 @@ function fcCompute(){
   const trail=raw.map(p=>fcAdjust(p,raw[0],hist.lean));
   return fcCache={key,z,cur,pr,sh,live:trail[trail.length-1],trail,priorFit:trail[0],track:hist.rows,lean:hist.lean,nLean:hist.stats.filter(x=>x!=null).length,finished,hNow,done};
 }
-// One scale for every feed (hours after the feed, growth in x), so the
-// charts stay put while you flip through feeds and compare fairly.
-function fcScale(F){
-  if(F.scale)return F.scale;
-  const hs=F.track.map(r=>r.T+3),xs=F.track.map(r=>r.k.peak||2);
-  if(!F.pending){hs.push(F.finished?F.cur.peakH+3:Math.max(F.hNow,F.live.hi)+1);xs.push(F.cur.peak||1,1+F.live.A)}
-  return F.scale={h:Math.min(36,Math.ceil(Math.max(6,...hs)/2)*2),lo:0.9,hi:Math.max(2.1,...xs)+0.1};
+function fcScaleOf(V,sm){
+  const {live,priorFit,finished,hNow,cur}=V,cv=live.curve;
+  const hs=[hNow+0.5,priorFit.T+1];
+  if(finished&&cur.peakH!=null)hs.push(cur.peakH+3);else hs.push(live.hi+1,(cv?cv.T:live.T)+1.5);
+  const t=Math.max(4,...hs),h=t<=12?Math.ceil(t):Math.ceil(t/2)*2;
+  const xs=sm.filter(Number.isFinite);if(!finished&&cv)xs.push(1+cv.A);if(finished&&cur.peak)xs.push(cur.peak);
+  const lo=Math.min(0.95,Math.min(...xs)-0.05),hi=Math.max(1.5,Math.max(...xs)+0.1);
+  // the forecast-moved chart: forecast peak hours, fitted to its own range
+  const ts=V.trail.flatMap(q=>[q.lo,q.hi]).filter(Number.isFinite);if(finished&&cur.peakH!=null)ts.push(cur.peakH);
+  const ylo=Math.max(0,Math.floor(Math.min(...ts)-0.5)),yhi=Math.ceil(Math.max(...ts)+0.5);
+  return {h,lo,hi,ylo,yhi:Math.max(yhi,ylo+2)};
 }
+// Ticks between lo and hi, on a step that keeps labels at least 34 px apart.
+const fcTicksIn=(lo,hi,px)=>{const st=[1,2,3,4,6,8,12].find(v=>px/((hi-lo)/v)>=34)||12,o=[];for(let v=Math.ceil(lo/st)*st;v<=hi+1e-9;v+=st)o.push(v);return o};
 const fcHourTicks=(t1,px)=>{const st=[1,2,3,4,6,8].find(v=>px/(t1/v)>=34)||8,o=[];for(let v=0;v<=t1+1e-9;v+=st)o.push(v);return o};
 // Which feed the card shows: this one (null) or a past one picked from the
 // chips or the track record, replayed with only the feeds before it. A new
@@ -1071,14 +1077,14 @@ function forecast(){
   if(!wait){
     const c=$('fcchart'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
     const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
-    const sm=smooth(z.pts,'x'),cv=live.curve,S=fcScale(F),t1=S.h,lo=S.lo,hi=S.hi;
+    const sm=smooth(z.pts,'x'),cv=live.curve,S=fcScaleOf(V,sm),t1=S.h,lo=S.lo,hi=S.hi;
     const L=34,R=8,T=12,B=20,W=w-L-R,H=h-T-B,X=hh=>L+W*hh/t1,Y=v=>T+H*(1-(v-lo)/(hi-lo));
     g.font='11px system-ui';g.lineWidth=1;
     if(!finished){g.fillStyle=css('--accent');g.globalAlpha=0.13;g.fillRect(X(live.lo),T,X(live.hi)-X(live.lo),H);g.globalAlpha=1}
     g.strokeStyle=css('--line');g.fillStyle=css('--muted');g.textAlign='right';
-    for(let v=Math.ceil(lo*2)/2;v<=hi;v+=0.5){g.beginPath();g.moveTo(L,Y(v));g.lineTo(w-R,Y(v));g.stroke();g.fillText(v+'x',L-4,Y(v)+4)}
+    const xst=hi-lo>2.5?1:hi-lo>1.2?0.5:0.25;for(let v=Math.ceil(lo/xst)*xst;v<=hi+1e-9;v+=xst){g.beginPath();g.moveTo(L,Y(v));g.lineTo(w-R,Y(v));g.stroke();g.fillText(+v.toFixed(2)+'x',L-4,Y(v)+4)}
     g.textAlign='center';
-    for(const hh of fcHourTicks(t1,W))g.fillText(hh+' h',X(hh),h-5);
+    for(const hh of fcHourTicks(t1,W)){g.textAlign=X(hh)+14>w?'right':'center';g.fillText(hh+' h',Math.min(X(hh),w-1),h-5)}
     g.save();g.beginPath();g.rect(L,T-4,W,H+8);g.clip();
     // before-the-rise guess
     g.setLineDash([2,3]);g.strokeStyle=css('--muted');g.beginPath();g.moveTo(X(priorFit.T),T);g.lineTo(X(priorFit.T),T+H);g.stroke();g.setLineDash([]);
@@ -1094,17 +1100,17 @@ function forecast(){
     if(!past){g.strokeStyle=css('--fg');g.lineWidth=1;g.beginPath();g.moveTo(X(hNow),T);g.lineTo(X(hNow),T+H);g.stroke()}
     g.restore();g.textAlign='left';
   }
-  $('fckey').innerHTML='<span style="color:var(--chart-d)">━</span> readings <span style="color:var(--chart-d)">╍</span> projected <span style="color:var(--accent);opacity:.6">█</span> likely peak window <span style="color:var(--muted)">┆</span> before-the-rise guess'+(finished?' <span style="color:var(--ok)">●</span> peak':'')+(past?'':' │ now')+'. Hours after the feed, on the same scale for every feed.';
+  $('fckey').innerHTML='<span style="color:var(--chart-d)">━</span> readings <span style="color:var(--chart-d)">╍</span> projected <span style="color:var(--accent);opacity:.6">█</span> likely peak window <span style="color:var(--muted)">┆</span> before-the-rise guess'+(finished?' <span style="color:var(--ok)">●</span> peak':'')+(past?'':' │ now')+'. Hours after the feed; the axes fit the feed on show.';
   // How the forecast moved: forecast peak time against the time it was made.
   if(!wait){
     const c=$('fctrail'),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
     const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
-    const S=fcScale(F),t1=S.h,lo=0,hi=S.h;
+    const S=fcScaleOf(V,smooth(z.pts,'x')),t1=S.h,lo=S.ylo,hi=S.yhi;
     const L=46,R=8,T=10,B=20,W=w-L-R,H=h-T-B,X=hh=>L+W*hh/t1,Y=v=>T+H*(1-(v-lo)/(hi-lo));
     g.font='11px system-ui';g.lineWidth=1;g.strokeStyle=css('--line');g.fillStyle=css('--muted');g.textAlign='right';
-    for(const v of fcHourTicks(hi,H*1.4)){g.beginPath();g.moveTo(L,Y(v));g.lineTo(w-R,Y(v));g.stroke();g.fillText(v+' h',L-4,Y(v)+4)}
+    for(const v of fcTicksIn(lo,hi,H*1.4)){g.beginPath();g.moveTo(L,Y(v));g.lineTo(w-R,Y(v));g.stroke();g.fillText(v+' h',L-4,Y(v)+4)}
     g.textAlign='center';
-    for(const hh of fcHourTicks(t1,W))g.fillText(hh+' h',X(hh),h-5);
+    for(const hh of fcHourTicks(t1,W)){g.textAlign=X(hh)+14>w?'right':'center';g.fillText(hh+' h',Math.min(X(hh),w-1),h-5)}
     g.save();g.beginPath();g.rect(L,T,W,H);g.clip();
     g.fillStyle=css('--accent');g.globalAlpha=0.15;g.beginPath();
     trail.forEach((p,i)=>i?g.lineTo(X(p.h),Y(p.hi)):g.moveTo(X(p.h),Y(p.hi)));
