@@ -503,6 +503,8 @@ async function saveFeedEdit(){
   feedSaved={fed_at:run.fed_at,feed_g,at:Date.now()};feedEditOpen=false;freshUntil=Date.now()+3*60e3;
   document.activeElement.blur();renderRunEdit();[15e3,35e3,70e3].forEach(t=>setTimeout(loadRun,t));
 }
+$('fridgestate').addEventListener('click',e=>{const b=e.target.closest('[data-fzmix]'),Z=fzChart;if(!b||!Z)return;
+  const t=Math.min(Z.pMax,Math.max(Z.first,Z.P+Number(b.dataset.fzmix)*30*60e3));store.set('fridgemix',JSON.stringify({fz:Z.fz,t}));renderRun()});
 $('runedit').addEventListener('click',e=>{const b=e.target.closest('[data-fe]');if(!b)return;const a=b.dataset.fe;
   if(a==='open'){feedEditOpen=true;renderRunEdit();$('fe_s').focus()}
   else if(a==='cancel'){feedEditOpen=false;document.activeElement.blur();renderRunEdit()}
@@ -661,18 +663,66 @@ function fridgeForecast(s,fz,pb){
   const pre=Math.max(0,(fz-s.fed)/H);
   if(pre>=need)return null;
   const at=(T,slow,k)=>{const left=need*k-pre-Math.max(0,T-fz)/H/slow;return left<=0?null:T+(left+FRIDGE_WARM_H)*H};
-  const outs=[now],d=new Date(now);d.setHours(7,0,0,0);if(d.getTime()<=now+H)d.setDate(d.getDate()+1);
-  for(let i=0;i<3;i++){outs.push(d.getTime());d.setDate(d.getDate()+1)}
-  let rows='';
-  for(const T of outs){
-    const c=at(T,FRIDGE_SLOW,1),lo=at(T,5,0.85),hi=at(T,12,1.2),w=T===now?'Out now':'Out '+whenAt(T);
-    if(c==null){rows+='<tr><td style="padding:2px 10px 2px 0">'+w+'</td><td>he\u2019ll likely have peaked in the fridge: feed him when he\u2019s out</td></tr>';break}
-    rows+='<tr><td style="padding:2px 10px 2px 0">'+w+'</td><td>peaks about <span style="font-weight:700">'+whenAt(c)+'</span> <span class="note">('+(lo?clock(lo)+'\u2013'+clock(hi):'may already have peaked; by '+clock(hi))+')</span></td></tr>';
-  }
-  const pct=Math.min(99,Math.round(100*(pre+(now-fz)/H/FRIDGE_SLOW)/need));
-  return {need,html:'<div style="margin-top:8px;font-size:.95rem"><span style="font-weight:700">Rise forecast</span> for the '+esc(run.feed_g)+' feed: about '+pct+'% of the way to his peak now. Taken out, he warms up for about '+FRIDGE_WARM_H+' h, then finishes rising:</div>'+
-    '<table style="margin-top:4px;font-size:.95rem;border-collapse:collapse">'+rows+'</table>'+
-    '<div class="note" style="margin-top:4px">Each hour later out moves the peak about an hour later. Put the box on him when he\u2019s out and the live forecast takes over. Mix at the peak.</div>'};
+  const first=at(now,FRIDGE_SLOW,1);if(first==null)return null;
+  // The out time that peaks him at P (at() backwards), and the latest mix time
+  // that still leaves him 2 h of rising on the counter.
+  const outFor=P=>fz+((P-fz)-(need-pre+FRIDGE_WARM_H)*H)/(1-1/FRIDGE_SLOW);
+  const tMax=fz+(need-pre-2)*FRIDGE_SLOW*H,pMax=tMax>now?tMax+(2+FRIDGE_WARM_H)*H:first;
+  // The mix time: picked on this phone for this stint in the fridge, else the
+  // next 9 AM he can make.
+  let P=null,want=null;try{const m=JSON.parse(store.get('fridgemix')||'null');if(m&&m.fz===fz)P=want=m.t}catch(e){}
+  if(P==null){const d=new Date(first);d.setHours(9,0,0,0);if(d.getTime()<first)d.setDate(d.getDate()+1);P=d.getTime()}
+  P=Math.min(pMax,Math.max(first,P));
+  let T=Math.max(now,Math.round(outFor(P)/3e5)*3e5);
+  const c=at(T,FRIDGE_SLOW,1),lo=at(T,5,0.85),hi=at(T,12,1.2),late=want!=null&&want<first;
+  // His rise over time, by his clock: counter hours before the fridge, fridge
+  // hours at 1/FRIDGE_SLOW, nothing while he warms up, then counter hours. The
+  // shape and height are his past feeds' (the forecast card's prior).
+  let F=null;try{F=fcCompute()}catch(e){}
+  const A=F&&F.pr?F.pr.A0:FC_RISE,D=Math.min(need,F&&F.pr?F.pr.D0:FC_D),k=F&&F.sh?F.sh.k:F&&F.done?fcFitShape(F.done).k:FC_K;
+  const clk=t=>pre+(Math.min(t,T)-fz)/H/FRIDGE_SLOW+Math.max(0,(t-T)/H-FRIDGE_WARM_H)+Math.min(0,(t-fz)/H)*(1-1/FRIDGE_SLOW);
+  fzChart={fz,fed:s.fed,T,c,lo,hi,A,P,first,pMax,x:t=>1+A*fcR(clk(t),need,D,k)};
+  const pct=Math.min(99,Math.round(100*(pre+(now-fz)/H/FRIDGE_SLOW)/need)),bold=t=>'<span style="font-weight:700">'+t+'</span>';
+  const btn=(d,t)=>'<button type="button" class="chip" style="white-space:nowrap" data-fzmix="'+d+'"'+((d<0?P<=first:P>=pMax)?' disabled':'')+'>'+t+'</button>';
+  const out=T<=now+6e4?bold('Take him out now')+(late?': he can’t peak before '+whenAt(c)+' any more.':'.'):'Take him out at '+bold(whenAt(T))+'.';
+  return {need,html:'<div style="margin-top:8px;font-size:.95rem">'+bold('Rise forecast')+' for the '+esc(run.feed_g)+' feed: about '+pct+'% of the way to his peak now. In the cold he barely moves; the rise shows in the last few hours before the peak.</div>'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:.95rem;white-space:nowrap"><span>Mix at</span>'+btn(-1,'− 30 min')+bold(whenAt(P))+btn(1,'+ 30 min')+'</div>'+
+    '<div style="margin-top:6px;font-size:.95rem">'+out+' He peaks about '+bold(whenAt(c))+' <span class="note">('+(lo?clock(lo)+'–'+clock(hi):'by '+clock(hi))+')</span>.</div>'+
+    '<canvas id="fzchart" style="height:170px;margin-top:8px"></canvas>'+
+    '<div class="note" style="margin-top:4px"><span style="color:var(--chart-d)">╍</span> his rise (a guess) <span style="color:var(--muted);opacity:.6">█</span> fridge <span style="color:var(--accent);opacity:.6">█</span> likely peak window │ now. Nothing measures him until he’s out. Then put the box on him and tap Starter in with the same '+esc(run.feed_g)+', and the live forecast takes over.</div>'};
+}
+// The fridge forecast's chart: his rise from the feed to past the peak, by clock time.
+let fzChart=null;
+function drawFridgeChart(){
+  const c=$('fzchart'),Z=fzChart;if(!c||!Z)return;
+  const dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
+  const g=c.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
+  const H=3600e3,t0=Z.fed,t1=Math.max(Z.hi||Z.c,Z.c+H)+H,lo=0.9,hi=1+Z.A+0.2,now=Date.now();
+  const L=34,R=8,T=14,B=20,W=w-L-R,HH=h-T-B,X=t=>L+W*(t-t0)/(t1-t0),Y=v=>T+HH*(1-(v-lo)/(hi-lo));
+  g.font='11px system-ui';g.lineWidth=1;
+  g.fillStyle=css('--muted');g.globalAlpha=0.12;g.fillRect(X(Z.fz),T,X(Z.T)-X(Z.fz),HH);
+  g.fillStyle=css('--accent');g.globalAlpha=0.15;g.fillRect(X(Z.lo||Z.T),T,X(Z.hi)-X(Z.lo||Z.T),HH);g.globalAlpha=1;
+  g.strokeStyle=css('--line');g.fillStyle=css('--muted');g.textAlign='right';
+  const ys=hi-lo>2.5?1:0.5;for(let v=Math.ceil(lo/ys)*ys;v<=hi+1e-9;v+=ys){g.beginPath();g.moveTo(L,Y(v));g.lineTo(w-R,Y(v));g.stroke();g.fillText(+v.toFixed(1)+'x',L-4,Y(v)+4)}
+  // x labels on whole hours: the weekday at midnight, else 6a / 12p / 6p
+  const st=[3,6,12,24].find(v=>W*v*H/(t1-t0)>=36)||24,d=new Date(t0);d.setMinutes(0,0,0);
+  g.textAlign='center';
+  for(let t=d.getTime()+H;t<=t1;t+=H){const q=new Date(t),hr=q.getHours();if(hr%st)continue;
+    const lab=hr===0?q.toLocaleDateString([],{weekday:'short'}):(hr%12||12)+(hr<12?'a':'p');
+    g.fillText(lab,Math.min(Math.max(X(t),L+10),w-12),h-5)}
+  g.save();g.beginPath();g.rect(L,T-4,W,HH+8);g.clip();
+  g.strokeStyle=css('--muted');g.setLineDash([2,3]);g.beginPath();g.moveTo(X(Z.T),T);g.lineTo(X(Z.T),T+HH);g.stroke();
+  g.strokeStyle=css('--chart-d');g.lineWidth=2;g.setLineDash([6,4]);g.beginPath();
+  const te=Z.c+H;for(let i=0;i<=300;i++){const t=t0+(te-t0)*i/300;i?g.lineTo(X(t),Y(Z.x(t))):g.moveTo(X(t),Y(Z.x(t)))}
+  g.stroke();g.setLineDash([]);
+  g.fillStyle=css('--chart-d');g.beginPath();g.arc(X(Z.c),Y(Z.x(Z.c)),4,0,7);g.fill();
+  if(now>t0&&now<t1){g.strokeStyle=css('--fg');g.lineWidth=1;g.beginPath();g.moveTo(X(now),T);g.lineTo(X(now),T+HH);g.stroke()}
+  g.restore();
+  g.fillStyle=css('--muted');g.textAlign='center';
+  const fm=(X(Z.fz)+X(Z.T))/2;if(X(Z.T)-X(Z.fz)>50)g.fillText('fridge',fm,T+12);
+  {const lx=X(Z.T),left=lx-L>80;g.textAlign=left?'right':'left';g.fillText('out '+clock(Z.T),lx+(left?-4:4),T+HH/2)}
+  g.fillStyle=css('--fg');g.textAlign=X(Z.c)>w-50?'right':'center';g.fillText(clock(Z.c),Math.min(X(Z.c),w-R),Y(Z.x(Z.c))-8);
+  g.textAlign='left';
 }
 function fridgeState(s,fz){
   const H=3600e3,peakT=s.best&&s.start-s.best.d>=0.3?s.best.t:null;
@@ -792,7 +842,7 @@ function renderRun(){
   $('fridgebtn').onclick=e=>{e.preventDefault();sendCtl('fridge')};
   if(!store.get('pausekey')&&!$('pausenote').textContent)$('pausenote').textContent='home Wi-Fi only on this device (no pause key)';
   $('verdict').className='verdict '+cls;$('verdict').hidden=false;
-  $('fridgestate').hidden=!fz;$('fridgestate').innerHTML=fz?fridgeState(s,fz).html:'';
+  fzChart=null;$('fridgestate').hidden=!fz;$('fridgestate').innerHTML=fz?fridgeState(s,fz).html:'';drawFridgeChart();
   const fzFc=!!fz&&/Rise forecast/.test($('fridgestate').innerHTML);
   {let bc='';try{bc=started||fzFc?'':breadClock(s,fz,ps)}catch(e){console.error(e)}$('breadclock').hidden=!bc;$('breadclock').innerHTML=bc}
   nextOn=!started&&!fzFc&&(ps||cls==='feed'||cls==='near'||/At its peak/.test(head));nextWarm=/no rise|dead/i.test(head);
