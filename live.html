@@ -96,11 +96,16 @@ input.ingin{width:4.8em;margin:0 6px 0 0;min-height:34px;padding:4px 6px;text-al
 .verdict.near{border-color:var(--accent)}.verdict.near b{color:var(--accent)}
 .verdict.feed{border-color:var(--warn)}.verdict.feed b{color:var(--warn)}
 body.pro .wordy{display:none!important}
+body.simple .wordy,body.simple .xtra,body.simple #verdictnote,body.simple #ready,body.simple #outlook,
+body.simple #fcscrub,body.simple #fckey,body.simple #fcnote,body.simple #fctraillabel,body.simple #fctrail,body.simple #fctrailnote,
+body.simple #fctracklabel,body.simple #fctrack,body.simple #fclearn,body.simple #breadclock .note,
+body.simple #distcard,body.simple #change,body.simple #tempnote,body.simple #runnote,body.simple #lastkey,
+body.simple #plancard,body.simple #planslot,body.simple #startcard,body.simple main>.note{display:none!important}
 body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.note{display:none!important}
 </style></head><body><main>
 <h1 class="keep">Sourdough Live</h1>
 <div class="status keep"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
-<div class="row keep" id="tabs" style="gap:6px"><button class="chip" data-tab="starter">Starter</button><button class="chip" data-tab="bake">Bake</button><button class="chip" data-tab="hist">History</button><button class="chip" data-tab="sl">Sliders</button></div>
+<div class="row keep" id="tabs" style="gap:6px"><button class="chip" data-tab="starter">Starter</button><button class="chip" data-tab="bake">Bake</button><button class="chip" data-tab="hist">History</button><button class="chip" data-tab="sl">Sliders</button><button class="chip" id="viewbtn" style="margin-left:auto">Simple</button></div>
 <section id="baketab" class="keep">
   <div class="card"><div class="label">Is Gus ready?</div><div id="bakegus" class="small" style="color:var(--fg);font-size:.95rem">Loading…</div></div>
   <div class="card"><div class="label">Steps · mix today, bake tomorrow</div>
@@ -164,12 +169,12 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
   <div class="label" id="fctraillabel" style="margin-top:12px">How the forecast moved</div>
   <canvas id="fctrail" style="height:150px;margin-top:4px"></canvas>
   <div class="small" id="fctrailnote"></div>
-  <div class="label" style="margin-top:12px">Track record</div>
+  <div class="label" id="fctracklabel" style="margin-top:12px">Track record</div>
   <table id="fctrack" class="small" style="margin-top:4px;border-collapse:collapse;width:100%"></table>
   <div class="small" id="fclearn"></div>
 </div>
 <div class="grid">
-  <div class="card"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change"></div></div>
+  <div class="card" id="distcard"><div class="label">Distance to dough</div><div class="big"><span id="dist">–</span><span class="unit">cm</span></div><div class="small" id="change"></div></div>
   <div class="card"><div class="label">Dough temperature</div><div class="big"><span id="temp">–</span><span class="unit">°C</span></div><div class="small" id="tempnote"></div></div>
   <div class="card wide" id="runcard" hidden><div class="label" id="runlabel">This run</div><div class="big"><span id="runrise">–</span><span class="unit" id="rununit">cm risen</span></div><div class="small" id="runnote"></div><div class="small" id="runedit" style="margin:6px 0"></div><canvas id="runchart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> growth since the feed (1x = just fed) <span style="color:var(--chart-t)">&#9632;</span> room °F <span style="color:var(--muted)">┆</span> fed, 2x, 3x</div></div>
   <span id="planhome" hidden></span><div class="card wide" id="plancard" hidden><div class="label">Feed planner</div>
@@ -202,7 +207,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <table id="plantable" class="small" style="margin-top:6px;border-collapse:collapse"></table>
     <div class="row" style="margin-top:8px"><button id="planuse">Use in Starter in</button><span class="note" id="planusenote"></span></div>
     <div class="note wordy" id="planbasis" style="margin-top:6px"></div></div>
-  <div class="card wide" id="lastcard" hidden><div class="label">Last 6 hours</div><canvas id="chart" width="560" height="190"></canvas><div class="small"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> temperature</div></div>
+  <div class="card wide" id="lastcard" hidden><div class="label">Last 6 hours</div><canvas id="chart" width="560" height="190"></canvas><div class="small" id="lastkey"><span style="color:var(--chart-d)">&#9632;</span> distance (lower = risen) <span style="color:var(--chart-t)">&#9632;</span> temperature</div></div>
   <div class="card wide" id="startcard" hidden>
     <div class="label">Start level</div>
     <div class="row" style="margin-top:6px"><button id="mark">Mark start now</button><button id="clear">Clear</button></div>
@@ -685,11 +690,11 @@ function fridgeForecast(s,fz,pb){
   const pct=Math.min(99,Math.round(100*(pre+(now-fz)/H/FRIDGE_SLOW)/need)),bold=t=>'<span style="font-weight:700">'+t+'</span>';
   const btn=(d,t)=>'<button type="button" class="chip" style="white-space:nowrap" data-fzmix="'+d+'"'+((d<0?P<=first:P>=pMax)?' disabled':'')+'>'+t+'</button>';
   const out=T<=now+6e4?bold('Take him out now')+(late?': he can’t peak before '+whenAt(c)+' any more.':'.'):'Take him out at '+bold(whenAt(T))+'.';
-  return {need,html:'<div style="margin-top:8px;font-size:.95rem">'+bold('Rise forecast')+' for the '+esc(run.feed_g)+' feed: about '+pct+'% of the way to his peak now. In the cold he barely moves; the rise shows in the last few hours before the peak.</div>'+
+  return {need,html:'<div class="xtra" style="margin-top:8px;font-size:.95rem">'+bold('Rise forecast')+' for the '+esc(run.feed_g)+' feed: about '+pct+'% of the way to his peak now. In the cold he barely moves; the rise shows in the last few hours before the peak.</div>'+
     '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:.95rem;white-space:nowrap"><span>Mix at</span>'+btn(-1,'− 30 min')+bold(whenAt(P))+btn(1,'+ 30 min')+'</div>'+
     '<div style="margin-top:6px;font-size:.95rem">'+out+' He peaks about '+bold(whenAt(c))+' <span class="note">('+(lo?clock(lo)+'–'+clock(hi):'by '+clock(hi))+')</span>.</div>'+
     '<canvas id="fzchart" style="height:170px;margin-top:8px"></canvas>'+
-    '<div class="note" style="margin-top:4px"><span style="color:var(--chart-d)">╍</span> his rise (a guess) <span style="color:var(--muted);opacity:.6">█</span> fridge <span style="color:var(--accent);opacity:.6">█</span> likely peak window │ now. Nothing measures him until he’s out. Then put the box on him and tap Starter in with the same '+esc(run.feed_g)+', and the live forecast takes over.</div>'};
+    '<div class="note xtra" style="margin-top:4px"><span style="color:var(--chart-d)">╍</span> his rise (a guess) <span style="color:var(--muted);opacity:.6">█</span> fridge <span style="color:var(--accent);opacity:.6">█</span> likely peak window │ now. Nothing measures him until he’s out. Then put the box on him and tap Starter in with the same '+esc(run.feed_g)+', and the live forecast takes over.</div>'};
 }
 // The fridge forecast's chart: his rise from the feed to past the peak, by clock time.
 let fzChart=null;
@@ -744,7 +749,7 @@ function fridgeState(s,fz){
   const feed=i>=5?'Out of the fridge he needs 2–3 feeds before he\'s ready to bake.'
     :'The first feed out of the fridge usually peaks '+(i>=4?'2–4':'1–2')+' h later than the time below.';
   return {stage:i,head:'In the fridge: '+st[1].toLowerCase(),
-    html:'<div style="font-size:.95rem">'+st[3]+'</div><div style="margin-top:6px">'+rows+'</div>'+
+    html:'<div class="xtra" style="font-size:.95rem">'+st[3]+'</div><div class="xtra" style="margin-top:6px">'+rows+'</div>'+
       (fc&&p0<0?fc.html:'<div style="margin-top:6px;font-size:.92rem">'+feed+'</div>')+
       '<div class="note wordy" style="margin-top:6px">A guess: nothing measures him in the fridge. In for '+dur+'; went in '+(p0>=0?g1(p0)+' h after his peak':'before his peak')+'. Assumes a fridge around 38°F, where he runs about '+FRIDGE_SLOW+'× slower than on the counter.</div>'};
 }
@@ -2376,6 +2381,13 @@ $('slrows').addEventListener('focusin',e=>{if((e.target.id||'').startsWith('sli_
 $('sluse').onclick=()=>{if(!sl)return;['rg_s','rg_f','rg_w'].forEach(id=>typedIds.delete(id));setGrams([sl.st,sl.fl,sl.wa]);recipeTouched=true;
   $('slusenote').textContent='Filled in on the Starter tab ('+g1(sl.st)+' / '+g1(sl.fl)+' / '+g1(sl.wa)+' g).'};
 $('tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){setTab(b.dataset.tab);scrollTo(0,0)}};
+function setView(simple,save){
+  document.body.classList.toggle('simple',simple);$('viewbtn').classList.toggle('on',simple);
+  if(save)store.set('view',simple?'simple':'full');
+  if(run){try{chart()}catch(e){}renderRun()}
+}
+$('viewbtn').onclick=()=>setView(!document.body.classList.contains('simple'),true);
+{const q=new URLSearchParams(location.search).get('view');setView(q?q==='simple':store.get('view')==='simple',false)}
 $('baksteps').onclick=e=>{
   const d=e.target.closest('[data-bd]'),u=e.target.closest('[data-bu]');
   if(d){const id=d.dataset.bd;bk.done[id]=Date.now();bkSave();bakeTab(true);sendBake('done',id)}
