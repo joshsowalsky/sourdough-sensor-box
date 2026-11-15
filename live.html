@@ -638,7 +638,7 @@ function fridgeSince(){
 // there. Cold (~38°F) runs him about FRIDGE_SLOW times slower than the counter,
 // so his clock keeps going: hours past his peak = time on the counter after the
 // peak + fridge hours / FRIDGE_SLOW. The stages are by those hours.
-const FRIDGE_SLOW=12,FRIDGE_STAGES=[
+const FRIDGE_SLOW=8,FRIDGE_STAGES=[
   [-1e9,'Still rising, slowly','var(--accent)','He went in before his peak, so he keeps climbing a little in the cold.'],
   [0,'Full and resting','var(--ok)','Fed and happy. Nothing to do.'],
   [3,'Asleep, a bit hungry','var(--ok)','Fine. He has eaten most of his food and is slowly getting sour.'],
@@ -649,7 +649,7 @@ const FRIDGE_SLOW=12,FRIDGE_STAGES=[
 // Fed and then put in the fridge before his peak: how far along he is, and
 // when he peaks if taken out at a given time. The feed needs `need` hours on
 // the counter (the planner's speed, this feed's ratio, today's room); the
-// fridge counts 1/FRIDGE_SLOW of an hour per hour (8-16x for the range, with
+// fridge counts 1/FRIDGE_SLOW of an hour per hour (5-12x for the range, with
 // the counter hours 0.85-1.2x), and out of the fridge he first spends
 // FRIDGE_WARM_H warming up.
 const FRIDGE_WARM_H=1.5;
@@ -665,9 +665,9 @@ function fridgeForecast(s,fz,pb){
   for(let i=0;i<3;i++){outs.push(d.getTime());d.setDate(d.getDate()+1)}
   let rows='';
   for(const T of outs){
-    const c=at(T,FRIDGE_SLOW,1),lo=at(T,8,0.85),hi=at(T,16,1.2),w=T===now?'Out now':'Out '+whenAt(T);
+    const c=at(T,FRIDGE_SLOW,1),lo=at(T,5,0.85),hi=at(T,12,1.2),w=T===now?'Out now':'Out '+whenAt(T);
     if(c==null){rows+='<tr><td style="padding:2px 10px 2px 0">'+w+'</td><td>he\u2019ll likely have peaked in the fridge: feed him when he\u2019s out</td></tr>';break}
-    rows+='<tr><td style="padding:2px 10px 2px 0">'+w+'</td><td>peaks about <span style="font-weight:700">'+whenAt(c)+'</span> <span class="note">('+clock(lo||c)+'\u2013'+clock(hi)+')</span></td></tr>';
+    rows+='<tr><td style="padding:2px 10px 2px 0">'+w+'</td><td>peaks about <span style="font-weight:700">'+whenAt(c)+'</span> <span class="note">('+(lo?clock(lo)+'\u2013'+clock(hi):'may already have peaked; by '+clock(hi))+')</span></td></tr>';
   }
   const pct=Math.min(99,Math.round(100*(pre+(now-fz)/H/FRIDGE_SLOW)/need));
   return {need,html:'<div style="margin-top:8px;font-size:.95rem"><span style="font-weight:700">Rise forecast</span> for the '+esc(run.feed_g)+' feed: about '+pct+'% of the way to his peak now. Taken out, he warms up for about '+FRIDGE_WARM_H+' h, then finishes rising:</div>'+
@@ -793,9 +793,10 @@ function renderRun(){
   if(!store.get('pausekey')&&!$('pausenote').textContent)$('pausenote').textContent='home Wi-Fi only on this device (no pause key)';
   $('verdict').className='verdict '+cls;$('verdict').hidden=false;
   $('fridgestate').hidden=!fz;$('fridgestate').innerHTML=fz?fridgeState(s,fz).html:'';
-  {let bc='';try{bc=started?'':breadClock(s,fz,ps)}catch(e){console.error(e)}$('breadclock').hidden=!bc;$('breadclock').innerHTML=bc}
-  nextOn=!started&&(ps||cls==='feed'||cls==='near'||/At its peak/.test(head));nextWarm=/no rise|dead/i.test(head);
-  if(nextOn)refreshNext();else $('nextstep').textContent=started?'':cls==='good'?'Use it any time now; feed again once it peaks.':'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
+  const fzFc=!!fz&&/Rise forecast/.test($('fridgestate').innerHTML);
+  {let bc='';try{bc=started||fzFc?'':breadClock(s,fz,ps)}catch(e){console.error(e)}$('breadclock').hidden=!bc;$('breadclock').innerHTML=bc}
+  nextOn=!started&&!fzFc&&(ps||cls==='feed'||cls==='near'||/At its peak/.test(head));nextWarm=/no rise|dead/i.test(head);
+  if(nextOn)refreshNext();else $('nextstep').textContent=started?'':fzFc?'Nothing to do while he\u2019s in the fridge: the rise forecast above says when to take him out.':cls==='good'?'Use it any time now; feed again once it peaks.':'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
   const ol=!started&&!ps&&(cls==='ok'||cls==='good')?peakOutlook():null;$('outlook').hidden=!ol;$('outlook').innerHTML=ol||'';if(ol)$('outlook').style.marginTop='6px';
   runChart(s);
   seriesChart();
