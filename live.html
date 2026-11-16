@@ -2420,7 +2420,7 @@ function cupAdopt(){
   cupAdopted=true;
   const tare=c.tare_g!=null?c.tare_g:cup.tare;
   cup={...cup,name:p.cupcal,step:p.cupauto,tare,pts:c.points||[],wait:null,
-    since:cup.run?cup.since:String(Math.floor(Date.now()/1000)-30),phase:cup.run?cup.phase:'',run:true,
+    since:cup.run?cup.since:String(Math.floor(Date.now()/1000)-30),phase:cup.run?cup.phase:'',run:true,odd:null,
     poured:c.poured!=null?Math.round(((tare||0)+c.poured)*10)/10:null};
   cupSave();cupPoll();if(document.querySelector('main').classList.contains('tab-cup'))cupTab();
 }
