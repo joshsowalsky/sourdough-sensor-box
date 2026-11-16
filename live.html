@@ -1649,7 +1649,7 @@ const READY_SPEED=READY_H/(Math.log2(STD_DIL)+PLAN_LAG);
 function readiness(){
   const ks=feedSegs().map(feedKpis);if(!ks.length)return;
   const good=k=>k.dblH!=null&&k.dblH*stdFactor(k)<=READY_H;
-  let streak=0;for(let i=ks.length-1;i>=0;i--){const cur=i===ks.length-1;if(good(ks[i]))streak++;else if(!cur)break}
+  let streak=0;for(let i=ks.length-1;i>=0;i--){const cur=i===ks.length-1;if(good(ks[i]))streak++;else if(!cur&&ks[i].peak!=null)break}
   const cur=ks[ks.length-1],curH=(Date.now()-cur.fed)/3600e3;
   // Healthy pace for a feed: the hours a ready starter takes to double at
   // that ratio and temperature (READY_H for the standard feed, sooner for
@@ -1683,6 +1683,7 @@ function readiness(){
       const d=new Date(k.fed),last=i===ka.length-1,[r,tF]=fedAs(k).split(', ');
       const going=last&&!(k.peak!=null&&k.last!=null&&k.peak-k.last>=0.1),x2=v=>v>=2?v.toFixed(1):Math.min(v,1.99).toFixed(2);
       const pk=k.peak==null?'–':going?x2(k.last??k.peak)+'x'+sub('now, '+f((Date.now()-k.fed)/3600e3)+' h in'):x2(k.peak)+'x'+sub('at '+f(k.peakH)+' h');
+      if(k.peak==null&&!last)return '<tr><td>'+wkDay(k.fed)+sub(d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))+'</td><td>'+r+sub(tF||'')+'</td><td>–</td><td>–</td><td>not tracked'+sub('no readings')+'</td></tr>';
       const dbl=(k.dblH==null?(last&&Date.now()<k.fed+paceH(k)*3600e3?'not yet':'never'):(good(k)?'<span class="ok">'+f(k.dblH)+' h ✓</span>':f(k.dblH)+' h'))+sub('pace '+f(paceH(k))+' h');
       return '<tr><td>'+wkDay(k.fed)+sub(d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))+'</td><td>'+r+sub(tF||'')+'</td><td>'+pk+'</td><td>'+speedOf(k,i)+'</td><td>'+dbl+'</td></tr>';
     }).reverse().join('')+'</tbody>';
