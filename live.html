@@ -132,7 +132,8 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
   <div class="card"><div class="label">Cup shape</div>
     <div class="row" style="margin-top:6px"><label class="note">Cup <input id="cupname" list="cupnames" autocomplete="off" style="width:11em"></label><datalist id="cupnames"></datalist><label class="note">Empty cup <input id="cuptare" type="number" inputmode="decimal" min="0" step="0.1" class="g"> g</label><label class="note">Each pour <input id="cupstep" type="number" inputmode="decimal" min="1" step="5" class="g"> g</label></div>
     <div id="cupnext" style="margin-top:10px;font-size:1.02rem;color:var(--fg)"></div>
-    <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupredo">Start over</button><button class="chip" id="cupdone">Cup?s full</button></div>
+    <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupredo">Start over</button><button class="chip" id="cupdone">Cup’s full</button></div>
+    <div class="row" id="cuppourrow" style="margin-top:10px;gap:6px;align-items:center;display:none"><span class="note">Scale says</span><input id="cuppour" type="number" inputmode="decimal" step="0.1" class="g"><span class="note">g</span><button id="cuppourgo">Done</button></div>
     <div class="row" id="cupfixrow" style="margin-top:10px;gap:6px;align-items:center;display:none"><span class="note">Scale says something else? It reads</span><input id="cupfix" type="number" inputmode="decimal" step="0.1" class="g"><span class="note">g</span><button class="chip" id="cupfixgo">Fix</button></div>
     <div id="cuppts" class="small" style="margin-top:10px;font-variant-numeric:tabular-nums"></div>
     <div class="note" style="margin-top:8px"><a href="http://192.168.1.135" target="_blank" rel="noopener">The box’s live reading</a> (home Wi-Fi only)</div>
@@ -2408,7 +2409,7 @@ function slTyped(k){
 const CUP_SETTLE_MS=7000;  // tof_logger.CUP_STEADY_N readings a second apart, and the trip
 let cup={name:'',step:30,tare:null,pts:[],run:false,since:null,wait:null,phase:'',onAt:0};
 try{cup={...cup,...JSON.parse(store.get('cup')||'{}'),wait:null}}catch(e){}
-const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,tare:cup.tare,pts:cup.pts,run:cup.run,since:cup.since,phase:cup.phase,onAt:cup.onAt}));
+const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,tare:cup.tare,pts:cup.pts,run:cup.run,since:cup.since,phase:cup.phase,onAt:cup.onAt,poured:cup.poured}));
 const cupG=ml=>Math.round(((cup.tare||0)+ml)*10)/10;  // water in the cup -> what the scale reads
 // The last pour didn't bring the level up 1 mm: clear water, read through.
 // The PC saves the next settle at the same amount (tof_logger.cup_progress).
@@ -2432,12 +2433,16 @@ function cupTab(){
   else if(cup.phase==='on')h+='<b>Box on.</b> Hold still… '+cd(cup.onAt+CUP_SETTLE_MS);
   else if(!pts.length)h+=cup.wait==='start'?'Starting…':'Put the box on the <b>empty</b> cup.';
   else if(cupSee())h+='<span style="color:var(--warn)">That pour didn’t bring the level up: the sensor sees through clear water. Stir in more milk, then lift the box and put it back on.</span>';
-  else if(cup.phase==='off')h+='<b>Box is off.</b> Set it on the counter, '+pour+', then put the box back on the cup. It measures by itself, no button.';
-  else h+='<b>Saved ✓ '+(last[0]?cupG(last[0])+' g':'empty cup')+'.</b> Take the box off and set it on the counter, '+pour+', then put the box back on the cup. It measures by itself, no button.'+(pts.length>2?' Stop about 1 cm below the rim, then tap Cup?s full.':'');
+  else if(cup.poured!=null)h+='<b>Got it, '+cup.poured+' g.</b> Now put the box back on the cup. It measures by itself.';
+  else{const go='A'+pour.slice(1)+'. Don’t worry about being exact: do your best, put what the scale says below, then tap <b>Done</b>.'+(pts.length>2?' Near the top? Stop about 1 cm below the rim and tap Cup’s full instead.':'');
+    h+=cup.phase==='off'?'<b>Box is off.</b> '+go:'<b>Saved ✓ '+(last[0]?cupG(last[0])+' g':'empty cup')+'.</b> Take the box off and set it on the counter. '+go}
   $('cupnext').innerHTML=h;
   $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name||noTare;$('cupgo').textContent=pts.length?'Continue':'Start';
   $('cupredo').hidden=!cup.run&&!pts.length;
   $('cupundo').hidden=$('cupdone').hidden=!cup.run;$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start over for a new one
+  const pouring=cup.run&&pts.length&&cup.poured==null&&cup.phase!=='on'&&!cupSee();
+  $('cuppourrow').style.display=pouring?'flex':'none';
+  if(pouring&&$('cuppour').dataset.for!==String(ml)){$('cuppour').dataset.for=String(ml);$('cuppour').value=cupG(ml)}
   $('cupfixrow').style.display=!cup.run||!last||!last[0]?'none':'flex';
   if(last&&document.activeElement!==$('cupfix'))$('cupfix').value=cupG(last[0]);
   $('cuppts').innerHTML=pts.map((q,i)=>{
@@ -2469,7 +2474,11 @@ function cupPoll(){
     else if(w[1]==='done'){cup.run=false;cupStop()}
     else if(w[1]==='off'){if(live)cup.phase='off'}
     else if(w[1]==='on'){if(live){cup.phase='on';cup.onAt=Date.now()}}
-    else if(w.length===4&&!isNaN(Number(w[1]))){const ml=Number(w[1]);cup.pts=[...cup.pts.filter(q=>q[0]!==ml),[ml,Number(w[2]),Number(w[3])]].sort((a,b)=>a[0]-b[0]);cup.phase='saved'}
+    else if(w.length===4&&!isNaN(Number(w[1]))){const ml=Number(w[1]);cup.pts=[...cup.pts.filter(q=>q[0]!==ml),[ml,Number(w[2]),Number(w[3])]].sort((a,b)=>a[0]-b[0]);cup.phase='saved';
+      // Saved at the target; the scale said something else (typed at Done): fix it to that.
+      if(live&&cup.poured!=null&&ml){const to=Math.round((cup.poured-(cup.tare||0))*10)/10;
+        if(to!==ml)cupSend({fix:{ml,to}}).then(ok=>{if(ok){const q=cup.pts.find(q=>q[0]===ml);if(q)q[0]=to;cupSave();cupTab()}})}
+      cup.poured=null}
     cupSave();if(document.querySelector('main').classList.contains('tab-cup'))cupTab();
   };
 }
@@ -2480,7 +2489,7 @@ function cupPoll(){
 let cupSentAt=null;
 async function cupStart(resume){
   if(cup.tare==null){alert('Type what the empty cup weighs on the scale first.');return}
-  cupStop();cup={...cup,pts:resume?cup.pts:[],run:true,since:null,wait:'start',phase:''};cupSave();cupTab();
+  cupStop();cup={...cup,pts:resume?cup.pts:[],run:true,since:null,wait:'start',phase:'',poured:null};cupSave();cupTab();
   if(!await cupSend({start:true,resume:!!resume,step:cup.step,tare:cup.tare})){cup.run=false;cupSave();cupTab();return}
   cup.since=String(cupSentAt||Math.floor(Date.now()/1000)-2);cupSave();
   cupPoll();
@@ -2496,6 +2505,12 @@ $('cupfixgo').onclick=async()=>{
 // Start over: the readings so far are dropped, and it starts from the empty cup.
 $('cupredo').onclick=()=>{if(confirm('Start over? The readings so far are cleared. Empty the cup, put it on the scale and the box on it first.'))cupStart(false)};
 $('cupundo').onclick=async()=>{if(await cupSend({undo:true})){cup.pts=cup.pts.slice(0,-1);cup.wait=null;cupSave();cupTab()}};
+// Done pouring: remember what the scale says; the reading saved when the box goes back on gets it.
+$('cuppourgo').onclick=()=>{
+  const v=Math.round(Number($('cuppour').value)*10)/10,l=cup.pts[cup.pts.length-1];
+  if(!(v>0))return;
+  if(l&&v<=cupG(l[0])){alert('That’s not more than the last reading ('+cupG(l[0])+' g).');return}
+  cup.poured=v;$('cuppour').blur();cupSave();cupTab()};
 // Only for the end: tapping it after a pour stops the run (the box measures by itself).
 $('cupdone').onclick=async()=>{if(!confirm('Finished? Only when the water is near the top.'))return;if(await cupSend({done:true})){cup.run=false;cup.wait=null;cupStop();cupSave();cupTab()}};
 $('cupname').onchange=e=>{
