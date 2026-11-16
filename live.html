@@ -130,10 +130,10 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
 </section>
 <section id="cuptab" class="keep">
   <div class="card"><div class="label">Cup shape</div>
-    <div class="row" style="margin-top:6px"><label class="note">Cup <input id="cupname" list="cupnames" autocomplete="off" style="width:11em"></label><datalist id="cupnames"></datalist><label class="note">Each pour <input id="cupstep" type="number" inputmode="decimal" min="1" step="5" class="g"> mL</label></div>
+    <div class="row" style="margin-top:6px"><label class="note">Cup <input id="cupname" list="cupnames" autocomplete="off" style="width:11em"></label><datalist id="cupnames"></datalist><label class="note">Empty cup <input id="cuptare" type="number" inputmode="decimal" min="0" step="0.1" class="g"> g</label><label class="note">Each pour <input id="cupstep" type="number" inputmode="decimal" min="1" step="5" class="g"> g</label></div>
     <div id="cupnext" style="margin-top:10px;font-size:1.02rem;color:var(--fg)"></div>
     <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupredo">Start over</button><button class="chip" id="cupdone">Done</button></div>
-    <div class="row" id="cupfixrow" style="margin-top:10px;gap:6px;align-items:center;display:none"><span class="note">Scale said something else? Last pour:</span><input id="cupfix" type="number" inputmode="decimal" step="0.5" class="g"><span class="note">g</span><button class="chip" id="cupfixgo">Fix</button></div>
+    <div class="row" id="cupfixrow" style="margin-top:10px;gap:6px;align-items:center;display:none"><span class="note">Scale says something else? It reads</span><input id="cupfix" type="number" inputmode="decimal" step="0.1" class="g"><span class="note">g</span><button class="chip" id="cupfixgo">Fix</button></div>
     <div id="cuppts" class="small" style="margin-top:10px;font-variant-numeric:tabular-nums"></div>
     <div class="note" style="margin-top:8px"><a href="http://192.168.1.135" target="_blank" rel="noopener">The box’s live reading</a> (home Wi-Fi only)</div>
   </div>
@@ -2397,15 +2397,19 @@ function slTyped(k){
   const off=k==='t'?Math.abs(pk-want)>10*60e3:Math.abs(sl[k]-want)>0.01;
   if(off)$('sln_'+k).textContent=(k==='t'?'Can\u2019t peak at '+whenAt(want)+' from here; the nearest is '+whenAt(pk)+'. ':'Can\u2019t be '+g1(want)+unit+' here; set to '+g1(sl[k])+unit+'. ')+$('sln_'+k).textContent;
 }
-// ---- Cup tab: a cup's shape, hands-free. Start sends "cup {start}"; the PC
+// ---- Cup tab: a cup's shape, hands-free. The scale isn't tared: the empty
+// cup's weight is typed once and every target is what the scale should read
+// (water is 1 g a mL), so a run picks up again from whatever the scale says.
+// Start sends "cup {start, tare, step}" (Continue adds resume); the PC
 // (tof_logger.watch_cup) then says "cup off" when the box comes off the cup,
 // "cup on <cm>" when it's back and settling, and saves the level once it sits
 // still ("cup <ml> <cm> <spread>"). This follows the control topic over one
 // open connection (not polling: ntfy limits requests per address).
 const CUP_SETTLE_MS=7000;  // tof_logger.CUP_STEADY_N readings a second apart, and the trip
-let cup={name:'',step:30,pts:[],run:false,since:null,wait:null,phase:'',onAt:0};
+let cup={name:'',step:30,tare:null,pts:[],run:false,since:null,wait:null,phase:'',onAt:0};
 try{cup={...cup,...JSON.parse(store.get('cup')||'{}'),wait:null}}catch(e){}
-const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,pts:cup.pts,run:cup.run,since:cup.since,phase:cup.phase,onAt:cup.onAt}));
+const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,tare:cup.tare,pts:cup.pts,run:cup.run,since:cup.since,phase:cup.phase,onAt:cup.onAt}));
+const cupG=ml=>Math.round(((cup.tare||0)+ml)*10)/10;  // water in the cup -> what the scale reads
 // The last pour didn't bring the level up 1 mm: clear water, read through.
 // The PC saves the next settle at the same amount (tof_logger.cup_progress).
 function cupSee(){const p=cup.pts,n=p.length;if(n<2)return false;let ref=p[0][1];for(let i=1;i<n-1;i++)if(ref-p[i][1]>=0.1)ref=p[i][1];return ref-p[n-1][1]<0.1}
@@ -2416,25 +2420,28 @@ function cupTab(){
   $('cupnames').innerHTML='';names.forEach(n=>$('cupnames').appendChild(opt(n)));
   if(document.activeElement!==$('cupname'))$('cupname').value=cup.name;
   if(document.activeElement!==$('cupstep'))$('cupstep').value=cup.step;
-  $('cupname').disabled=$('cupstep').disabled=cup.run;
-  const pts=cup.pts,ml=cupNext(),last=pts[pts.length-1];
-  const pour=(pts.length===1?'add water with a splash of milk':'add water')+' until the scale reads <b>'+ml+' g</b>';
+  if(document.activeElement!==$('cuptare'))$('cuptare').value=cup.tare??'';
+  $('cupname').disabled=$('cupstep').disabled=$('cuptare').disabled=cup.run;
+  const pts=cup.pts,ml=cupNext(),last=pts[pts.length-1],noTare=cup.tare==null;
+  const pour=(pts.length===1?'add water with a splash of milk':'add water')+' until the scale reads <b>'+cupG(ml)+' g</b>';
   let h='';
   if(cup.wait==='fail')h='<span style="color:var(--warn)">Couldn’t reach the PC. Try again.</span><br>';
   if(!cup.name)h+='Name the cup.';
-  else if(!cup.run)h+=(pts.length?pts.length+(pts.length===1?' point':' points')+' saved for '+cup.name+'. ':'')+'Box on the <b>empty</b> cup, then Start'+(pts.length?' to do it over':'')+'.';
+  else if(!cup.run&&pts.length)h+=pts.length+' readings saved, the last with the scale at '+cupG(last[0])+' g. To keep going, put the box back on the cup and tap <b>Continue</b>.';
+  else if(!cup.run)h+=noTare?'Put the empty cup on the scale (don’t zero it) and type what it weighs.':'Box on the <b>empty</b> cup, then Start.';
   else if(cup.phase==='on')h+='<b>Box on.</b> Hold still… '+cd(cup.onAt+CUP_SETTLE_MS);
   else if(!pts.length)h+=cup.wait==='start'?'Starting…':'Put the box on the <b>empty</b> cup.';
   else if(cupSee())h+='<span style="color:var(--warn)">That pour didn’t bring the level up: the sensor sees through clear water. Stir in more milk, then lift the box and put it back on.</span>';
   else if(cup.phase==='off')h+='<b>Box is off.</b> Set it on the counter, '+pour+', then put the box back on the cup.';
-  else h+='<b>Saved ✓ '+(last[0]?last[0]+' mL':'empty cup')+'.</b> Take the box off and set it on the counter, '+pour+', then put the box back on the cup.'+(pts.length>2?' Stop about 1 cm below the rim, then Done.':'');
+  else h+='<b>Saved ✓ '+(last[0]?cupG(last[0])+' g':'empty cup')+'.</b> Take the box off and set it on the counter, '+pour+', then put the box back on the cup.'+(pts.length>2?' Stop about 1 cm below the rim, then Done.':'');
   $('cupnext').innerHTML=h;
-  $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name;$('cupgo').textContent='Start';
-  $('cupundo').hidden=$('cupdone').hidden=$('cupredo').hidden=!cup.run;
+  $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name||noTare;$('cupgo').textContent=pts.length?'Continue':'Start';
+  $('cupredo').hidden=!cup.run&&!pts.length;
+  $('cupundo').hidden=$('cupdone').hidden=!cup.run;$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start over for a new one
   $('cupfixrow').style.display=!cup.run||!last||!last[0]?'none':'flex';
-  if(last&&document.activeElement!==$('cupfix'))$('cupfix').value=last[0];$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start again for a new one
+  if(last&&document.activeElement!==$('cupfix'))$('cupfix').value=cupG(last[0]);
   $('cuppts').innerHTML=pts.map((q,i)=>{
-    let t=q[0]+' mL · '+q[1].toFixed(2)+' cm';
+    let t=cupG(q[0])+' g'+(q[0]?'':' (empty)')+' · '+q[1].toFixed(2)+' cm';
     if(i){const d=pts[i-1][1]-q[1],v=q[0]-pts[i-1][0];
       t+=d>=0.1&&v>0?' · up '+(10*d).toFixed(1)+' mm · '+Math.round(v/d)+' mL/cm':' · <span style="color:var(--warn)">didn’t go up</span>'}
     return t;
@@ -2471,28 +2478,31 @@ function cupPoll(){
 // Not since=<its id>: a message only seconds old isn't findable by id yet,
 // and ntfy then replays everything.
 let cupSentAt=null;
-async function cupStart(){
-  cupStop();cup={...cup,pts:[],run:true,since:null,wait:'start',phase:''};cupSave();cupTab();
-  if(!await cupSend({start:true,step:cup.step})){cup.run=false;cupSave();cupTab();return}
+async function cupStart(resume){
+  if(cup.tare==null){alert('Type what the empty cup weighs on the scale first.');return}
+  cupStop();cup={...cup,pts:resume?cup.pts:[],run:true,since:null,wait:'start',phase:''};cupSave();cupTab();
+  if(!await cupSend({start:true,resume:!!resume,step:cup.step,tare:cup.tare})){cup.run=false;cupSave();cupTab();return}
   cup.since=String(cupSentAt||Math.floor(Date.now()/1000)-2);cupSave();
   cupPoll();
-};
-$('cupgo').onclick=cupStart;
-// What the scale really read for the last pour (aiming for 30, poured 31.5).
+}
+$('cupgo').onclick=()=>cupStart(cup.pts.length>0);
+// What the scale really reads after a pour (aiming for 280, poured to 281.5).
 $('cupfixgo').onclick=async()=>{
-  const l=cup.pts[cup.pts.length-1],prev=cup.pts[cup.pts.length-2],to=Math.round(Number($('cupfix').value)*10)/10;
+  const l=cup.pts[cup.pts.length-1],prev=cup.pts[cup.pts.length-2],to=Math.round((Number($('cupfix').value)-(cup.tare||0))*10)/10;
   if(!l||!(to>0)||to===l[0])return;
-  if(prev&&to<=prev[0]){alert('That\u2019s not more than the pour before ('+prev[0]+' g).');return}
+  if(prev&&to<=prev[0]){alert('That’s not more than the reading before ('+cupG(prev[0])+' g).');return}
   if(await cupSend({fix:{ml:l[0],to}})){l[0]=to;$('cupfix').blur();cupSave();cupTab()}
 };
 // Start over: the readings so far are dropped, and it starts from the empty cup.
-$('cupredo').onclick=()=>{if(confirm('Start over? The readings so far are cleared. Empty the cup and put the box back on it first.'))cupStart()};
+$('cupredo').onclick=()=>{if(confirm('Start over? The readings so far are cleared. Empty the cup, put it on the scale and the box on it first.'))cupStart(false)};
 $('cupundo').onclick=async()=>{if(await cupSend({undo:true})){cup.pts=cup.pts.slice(0,-1);cup.wait=null;cupSave();cupTab()}};
 $('cupdone').onclick=async()=>{if(await cupSend({done:true})){cup.run=false;cup.wait=null;cupStop();cupSave();cupTab()}};
 $('cupname').onchange=e=>{
   const n=e.target.value.split(/\s+/).join(' ').trim().slice(0,60);if(n===cup.name)return;
-  const r=run&&run.cups&&run.cups[n];cup={...cup,name:n,pts:r&&Array.isArray(r.points)?r.points:[],wait:null};cupSave();cupTab();
+  const r=run&&run.cups&&run.cups[n];
+  cup={...cup,name:n,pts:r&&Array.isArray(r.points)?r.points:[],tare:r&&r.tare_g!=null?r.tare_g:null,wait:null};cupSave();cupTab();
 };
+$('cuptare').onchange=e=>{const v=e.target.value===''?null:Number(e.target.value);if(v==null||(v>=0&&v<=5000)){cup.tare=v==null?null:Math.round(v*10)/10;cupSave()}cupTab()};
 $('cupstep').onchange=e=>{const v=Number(e.target.value);if(v>0&&v<=500){cup.step=v;cupSave()}cupTab()};
 if(cup.run)cupPoll();
 function setTab(t){
