@@ -132,7 +132,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
   <div class="card"><div class="label">Cup shape</div>
     <div class="row" style="margin-top:6px"><label class="note">Cup <input id="cupname" list="cupnames" autocomplete="off" style="width:11em"></label><datalist id="cupnames"></datalist><label class="note">Empty cup <input id="cuptare" type="number" inputmode="decimal" min="0" step="0.1" class="g"> g</label><label class="note">Each pour <input id="cupstep" type="number" inputmode="decimal" min="1" step="5" class="g"> g</label></div>
     <div id="cupnext" style="margin-top:10px;font-size:1.02rem;color:var(--fg)"></div>
-    <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupredo">Start over</button><button class="chip" id="cupdone">Done</button></div>
+    <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupredo">Start over</button><button class="chip" id="cupdone">Cup?s full</button></div>
     <div class="row" id="cupfixrow" style="margin-top:10px;gap:6px;align-items:center;display:none"><span class="note">Scale says something else? It reads</span><input id="cupfix" type="number" inputmode="decimal" step="0.1" class="g"><span class="note">g</span><button class="chip" id="cupfixgo">Fix</button></div>
     <div id="cuppts" class="small" style="margin-top:10px;font-variant-numeric:tabular-nums"></div>
     <div class="note" style="margin-top:8px"><a href="http://192.168.1.135" target="_blank" rel="noopener">The box’s live reading</a> (home Wi-Fi only)</div>
@@ -2432,8 +2432,8 @@ function cupTab(){
   else if(cup.phase==='on')h+='<b>Box on.</b> Hold still… '+cd(cup.onAt+CUP_SETTLE_MS);
   else if(!pts.length)h+=cup.wait==='start'?'Starting…':'Put the box on the <b>empty</b> cup.';
   else if(cupSee())h+='<span style="color:var(--warn)">That pour didn’t bring the level up: the sensor sees through clear water. Stir in more milk, then lift the box and put it back on.</span>';
-  else if(cup.phase==='off')h+='<b>Box is off.</b> Set it on the counter, '+pour+', then put the box back on the cup.';
-  else h+='<b>Saved ✓ '+(last[0]?cupG(last[0])+' g':'empty cup')+'.</b> Take the box off and set it on the counter, '+pour+', then put the box back on the cup.'+(pts.length>2?' Stop about 1 cm below the rim, then Done.':'');
+  else if(cup.phase==='off')h+='<b>Box is off.</b> Set it on the counter, '+pour+', then put the box back on the cup. It measures by itself, no button.';
+  else h+='<b>Saved ✓ '+(last[0]?cupG(last[0])+' g':'empty cup')+'.</b> Take the box off and set it on the counter, '+pour+', then put the box back on the cup. It measures by itself, no button.'+(pts.length>2?' Stop about 1 cm below the rim, then tap Cup?s full.':'');
   $('cupnext').innerHTML=h;
   $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name||noTare;$('cupgo').textContent=pts.length?'Continue':'Start';
   $('cupredo').hidden=!cup.run&&!pts.length;
@@ -2496,7 +2496,8 @@ $('cupfixgo').onclick=async()=>{
 // Start over: the readings so far are dropped, and it starts from the empty cup.
 $('cupredo').onclick=()=>{if(confirm('Start over? The readings so far are cleared. Empty the cup, put it on the scale and the box on it first.'))cupStart(false)};
 $('cupundo').onclick=async()=>{if(await cupSend({undo:true})){cup.pts=cup.pts.slice(0,-1);cup.wait=null;cupSave();cupTab()}};
-$('cupdone').onclick=async()=>{if(await cupSend({done:true})){cup.run=false;cup.wait=null;cupStop();cupSave();cupTab()}};
+// Only for the end: tapping it after a pour stops the run (the box measures by itself).
+$('cupdone').onclick=async()=>{if(!confirm('Finished? Only when the water is near the top.'))return;if(await cupSend({done:true})){cup.run=false;cup.wait=null;cupStop();cupSave();cupTab()}};
 $('cupname').onchange=e=>{
   const n=e.target.value.split(/\s+/).join(' ').trim().slice(0,60);if(n===cup.name)return;
   const r=run&&run.cups&&run.cups[n];
