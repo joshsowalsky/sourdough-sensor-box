@@ -2421,7 +2421,7 @@ function cupTab(){
   if(document.activeElement!==$('cupname'))$('cupname').value=cup.name;
   if(document.activeElement!==$('cupstep'))$('cupstep').value=cup.step;
   if(document.activeElement!==$('cuptare'))$('cuptare').value=cup.tare??'';
-  $('cupname').disabled=$('cupstep').disabled=$('cuptare').disabled=cup.run;
+  $('cupname').disabled=$('cupstep').disabled=cup.run;  // the empty weight can be typed mid-run: it only changes the scale numbers shown
   const pts=cup.pts,ml=cupNext(),last=pts[pts.length-1],noTare=cup.tare==null;
   const pour=(pts.length===1?'add water with a splash of milk':'add water')+' until the scale reads <b>'+cupG(ml)+' g</b>';
   let h='';
