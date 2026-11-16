@@ -562,12 +562,24 @@ function despike(pts){
     return nb.length<2||Math.abs(p.d-median(nb))<=SPIKE_CM;
   });
 }
+// The fed level: the lowest 15-reading median before the top (the largest
+// distance), from feed time. A cold or stiff starter goes in as a clump and
+// slumps flat before it rises; measured from the clump's top the rise reads
+// short. Capped at 1.5 cm below the first readings, so a box lifted for a
+// while can't pass for the starter. Under 15 readings: the first ones.
+function fedLevel(pts,fed,first){
+  const ds=pts.map(p=>p.d),W=15,f=median(pts.filter(p=>p.t-fed<=first).map(p=>p.d));
+  if(ds.length<W||isNaN(f))return f;
+  const m=[];for(let i=W;i<=ds.length;i++)m.push(median(ds.slice(i-W,i)));
+  const it=m.indexOf(Math.min(...m));
+  return Math.max(f,...m.slice(0,it+1).filter(v=>v<=f+1.5));
+}
 function runStats(){
   const fed=new Date(run.fed_at).getTime();
   const pts=despike(run.points.map(p=>({t:new Date(p.t).getTime(),d:p.d,f:p.f})).filter(p=>p.t>=fed));
   // Before the first logged reading, the live one stands in (box on the jar).
   const live=doc&&doc.distance_cm!=null&&!pausedSince()?doc.distance_cm:null;
-  const start=pts.length?median(pts.filter(p=>p.t-fed<=600e3).map(p=>p.d)):(live??NaN);
+  const start=pts.length?fedLevel(pts,fed,600e3):(live??NaN);
   let best=null;
   for(let i=2;i<pts.length-2;i++){const m=median(pts.slice(i-2,i+3).map(p=>p.d));if(!best||m<best.d)best={d:m,t:pts[i].t}}
   // While paused the box is off the jar: hold the last tracked reading.
@@ -1569,7 +1581,7 @@ function feedSegs(all){
   return [...(all?run.earlier||[]:[]),...(run.history||[]),run].map(r=>{
     const fed=new Date(r.fed_at).getTime();
     const pts=despike(r.points.map(p=>({t:new Date(p.t).getTime(),d:p.d})).filter(p=>p.t>=fed));
-    const start=median(pts.filter(p=>p.t-fed<=15*60e3).map(p=>p.d)),depth=startDepth(r,start);
+    const start=fedLevel(pts,fed,15*60e3),depth=startDepth(r,start);
     const fs=r.points.filter(p=>p.f!=null).map(p=>p.f),f=r.room_f_avg??(fs.length?fs.reduce((a,b)=>a+b)/fs.length:null);
     return {fed,vessel:r.vessel,feed_g:r.feed_g,f,depth,pts:depth&&!isNaN(start)?pts.map(p=>({t:p.t,x:1+(start-p.d)/depth})):[]};
   });
