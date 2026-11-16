@@ -44,6 +44,9 @@ main.tab-hist>:not(.keep){display:none!important}
 main:not(.tab-hist)>#histtab{display:none!important}
 main.tab-sl>:not(.keep){display:none!important}
 main:not(.tab-sl)>#sltab{display:none!important}
+main.tab-cup>:not(.keep){display:none!important}
+main:not(.tab-cup)>#cuptab{display:none!important}
+#cupgo:disabled{opacity:.5}
 #sltab{display:flex;flex-direction:column;gap:14px}
 .slrow{margin-top:14px}
 .slrow .row{justify-content:space-between;align-items:baseline}
@@ -105,7 +108,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
 </style></head><body><main>
 <h1 class="keep">Sourdough Live</h1>
 <div class="status keep"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
-<div class="row keep" id="tabs" style="gap:6px"><button class="chip" data-tab="starter">Starter</button><button class="chip" data-tab="bake">Bake</button><button class="chip" data-tab="hist">History</button><button class="chip" data-tab="sl">Sliders</button><button class="chip" id="viewbtn" style="margin-left:auto">Simple</button></div>
+<div class="row keep" id="tabs" style="gap:6px"><button class="chip" data-tab="starter">Starter</button><button class="chip" data-tab="bake">Bake</button><button class="chip" data-tab="hist">History</button><button class="chip" data-tab="sl">Sliders</button><button class="chip" data-tab="cup">Cup</button><button class="chip" id="viewbtn" style="margin-left:auto">Simple</button></div>
 <section id="baketab" class="keep">
   <div class="card"><div class="label">Is Gus ready?</div><div id="bakegus" class="small" style="color:var(--fg);font-size:.95rem">Loading…</div></div>
   <div class="card"><div class="label">Steps · mix today, bake tomorrow</div>
@@ -124,6 +127,14 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div class="note wordy" style="margin-top:10px"><span style="color:var(--ok)">&#9632;</span> fine <span style="color:#d9a91f">&#9632;</span> works, with a catch (it says which) <span style="color:var(--muted)">&#9632;</span> grey: can’t go there from where the others are. Water always equals the flour (his usual), so it isn’t a slider; if you pour a bit off, record what you really used in Starter in. The hard rules: 1:1 to 1:20, at least 1 g of Gus (if you only have a little, set Gus to that), 20 g to what fits the jar. Moving the time moves the flour (and water with it); moving flour moves the time.</div>
     <div class="row" style="margin-top:10px"><button id="sluse">Use in Starter in</button><span class="note" id="slusenote"></span></div>
     <div class="note" id="slbasis" style="margin-top:6px"></div></div>
+</section>
+<section id="cuptab" class="keep">
+  <div class="card"><div class="label">Cup shape</div>
+    <div class="row" style="margin-top:6px"><label class="note">Cup <input id="cupname" list="cupnames" autocomplete="off" style="width:11em"></label><datalist id="cupnames"></datalist><label class="note">Each pour <input id="cupstep" type="number" inputmode="decimal" min="1" step="5" class="g"> mL</label></div>
+    <div id="cupnext" style="margin-top:10px;font-size:1.02rem;color:var(--fg)"></div>
+    <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupdone">Done</button></div>
+    <div id="cuppts" class="small" style="margin-top:10px;font-variant-numeric:tabular-nums"></div>
+  </div>
 </section>
 <section id="histtab" class="keep">
 <div class="card" id="strengthcard" hidden><div class="label">Strength · every feed</div>
@@ -2379,13 +2390,77 @@ function slTyped(k){
   const off=k==='t'?Math.abs(pk-want)>10*60e3:Math.abs(sl[k]-want)>0.01;
   if(off)$('sln_'+k).textContent=(k==='t'?'Can\u2019t peak at '+whenAt(want)+' from here; the nearest is '+whenAt(pk)+'. ':'Can\u2019t be '+g1(want)+unit+' here; set to '+g1(sl[k])+unit+'. ')+$('sln_'+k).textContent;
 }
+// ---- Cup tab: a cup's shape. Water goes in a pour at a time and the box
+// measures after each ("cup" on the control topic, tof_logger.measure_cup);
+// the PC keeps the table (run.cups) and answers "cup <ml> <cm> <spread>".
+let cup={name:'',step:30,pts:[],wait:null};
+try{cup={...cup,...JSON.parse(store.get('cup')||'{}'),wait:null}}catch(e){}
+const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,pts:cup.pts}));
+const cupNext=()=>{const l=cup.pts[cup.pts.length-1];return l?Math.round((l[0]+cup.step)*10)/10:0};
+function cupTab(){
+  const names=new Set([...JARS,...Object.keys(appColl('jars')),...Object.keys((run&&run.cups)||{})]);
+  $('cupnames').innerHTML='';names.forEach(n=>$('cupnames').appendChild(opt(n)));
+  if(document.activeElement!==$('cupname'))$('cupname').value=cup.name;
+  if(document.activeElement!==$('cupstep'))$('cupstep').value=cup.step;
+  const pts=cup.pts,ml=cupNext(),busy=!!(cup.wait&&!cup.wait.res);
+  let h='';
+  if(cup.wait&&cup.wait.res==='fail')h='<span style="color:var(--warn)">Couldn’t measure ('+cup.wait.why+'). Check the box sits flat, then try again.</span><br>';
+  if(cup.wait&&cup.wait.res==='done')h=pts.length+' points saved for '+cup.name+'. Tracking is still paused: box back on Gus, then Starter in.';
+  else if(!cup.name)h='Name the cup.';
+  else if(busy)h='Measuring '+cup.wait.ml+' mL… keep the box still.';
+  else h+=pts.length?'Pour in '+cup.step+' mL (<b>'+ml+' mL</b> in all), box on, Measure. Stop about 1 cm below the rim.'
+    :'Box on the <b>empty</b> cup, then Measure. A splash of milk in the water helps: the sensor can see through clear water.';
+  $('cupnext').innerHTML=h;
+  $('cupgo').disabled=!cup.name||busy;$('cupundo').disabled=busy||!pts.length;$('cupdone').disabled=busy||!pts.length;
+  $('cupgo').textContent=busy?'Measuring…':pts.length?'Measure '+ml+' mL':'Measure empty';
+  $('cuppts').innerHTML=pts.map((q,i)=>{
+    let t=q[0]+' mL · '+q[1].toFixed(2)+' cm';
+    if(i){const d=pts[i-1][1]-q[1],v=q[0]-pts[i-1][0];
+      t+=d>0.05?' · up '+(10*d).toFixed(1)+' mm · '+Math.round(v/d)+' mL/cm':' · <span style="color:var(--warn)">didn’t go up: Undo and redo</span>'}
+    if(q[2]>0.3)t+=' · <span style="color:var(--warn)">unsteady</span>';
+    return t;
+  }).reverse().join('<br>');
+}
+async function cupSend(ev){
+  const key=store.get('pausekey');
+  if(!key){alert('This needs the pause key on this phone.');return false}
+  try{const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:'cup '+JSON.stringify({vessel:cup.name,...ev})});if(!r.ok)throw new Error('HTTP '+r.status);return key}
+  catch(e){alert('Couldn’t reach the PC ('+e.message+').');return false}
+}
+$('cupgo').onclick=async()=>{
+  const ml=cupNext(),at=Date.now();
+  cup.wait={at,ml};cupTab();
+  const key=await cupSend({ml});
+  if(!key){cup.wait=null;cupTab();return}
+  for(let i=0;i<20&&cup.wait&&cup.wait.at===at&&!cup.wait.res;i++){
+    await new Promise(r=>setTimeout(r,3000));
+    try{
+      const t=await fetch('https://ntfy.sh/'+key+'/json?poll=1&since='+Math.floor(at/1000)).then(r=>r.text());
+      t.split('\n').filter(Boolean).map(l=>JSON.parse(l)).forEach(m=>{
+        const w=(m.message||'').split(' ');if(w[0]!=='cup'||!cup.wait||cup.wait.at!==at||cup.wait.res)return;
+        if(w[1]==='failed'){cup.wait.res='fail';cup.wait.why=w[2]==='ml'?'bad amount':w[2]==='no-cup'?'no cup name':'only '+w[2]+' good readings'}
+        else if(Number(w[1])===ml){cup.wait.res='ok';cup.pts=[...cup.pts.filter(q=>q[0]!==ml),[ml,Number(w[2]),Number(w[3])]].sort((a,b)=>a[0]-b[0]);cupSave()}
+      });
+    }catch(e){}
+  }
+  if(cup.wait&&cup.wait.at===at&&!cup.wait.res){cup.wait.res='fail';cup.wait.why='no answer from the PC'}
+  cupTab();
+};
+$('cupundo').onclick=async()=>{if(await cupSend({undo:true})){cup.pts=cup.pts.slice(0,-1);cup.wait=null;cupSave();cupTab()}};
+$('cupdone').onclick=async()=>{if(await cupSend({done:true})){cup.wait={at:Date.now(),res:'done'};cupTab()}};
+$('cupname').onchange=e=>{
+  const n=e.target.value.split(/\s+/).join(' ').trim().slice(0,60);if(n===cup.name)return;
+  const r=run&&run.cups&&run.cups[n];cup={...cup,name:n,pts:r&&Array.isArray(r.points)?r.points:[],wait:null};cupSave();cupTab();
+};
+$('cupstep').onchange=e=>{const v=Number(e.target.value);if(v>0&&v<=1000){cup.step=v;cupSave()}cupTab()};
 function setTab(t){
+  document.querySelector('main').classList.toggle('tab-cup',t==='cup');
   document.querySelector('main').classList.toggle('tab-sl',t==='sl');
   document.querySelector('main').classList.toggle('tab-bake',t==='bake');
   document.querySelector('main').classList.toggle('tab-hist',t==='hist');
   document.querySelectorAll('#tabs [data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
   store.set('tab',t);
-  if(t==='bake')bakeTab();else if(t==='sl'){if(run)slTab()}else render();  // charts drawn while hidden have no width
+  if(t==='bake')bakeTab();else if(t==='sl'){if(run)slTab()}else if(t==='cup')cupTab();else render();  // charts drawn while hidden have no width
 }
 $('slrows').addEventListener('input',e=>{const k=e.target.id&&e.target.id.startsWith('sl_')&&e.target.id.slice(3);if(k)slInput(k)});
 $('slrows').addEventListener('change',e=>{const id=e.target.id||'';if(id.startsWith('sl_')){e.target.blur();slTab()}else if(id.startsWith('sli_'))slTyped(id.slice(4))});
@@ -2531,7 +2606,7 @@ $('planuse').onclick=()=>{if(!planPick)return;recipeTouched=false;gusTyped=false
 $('depth').oninput=e=>{const v=parseFloat(e.target.value);v>0?store.set('depth',String(v)):store.del('depth');render()};
 addEventListener('resize',()=>{chart();renderRun()});
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{chart();renderRun()});
-setTab(location.hash==='#bake'?'bake':['bake','hist','sl'].includes(store.get('tab'))?store.get('tab'):'starter');
+setTab(location.hash==='#bake'?'bake':['bake','hist','sl','cup'].includes(store.get('tab'))?store.get('tab'):'starter');
 load();setInterval(load,60000);setInterval(render,15000);
 loadRun();setInterval(loadRun,300000);
 </script></body></html>
