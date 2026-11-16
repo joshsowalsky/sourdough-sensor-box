@@ -134,6 +134,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div id="cupnext" style="margin-top:10px;font-size:1.02rem;color:var(--fg)"></div>
     <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupdone">Done</button></div>
     <div id="cuppts" class="small" style="margin-top:10px;font-variant-numeric:tabular-nums"></div>
+    <div class="note" style="margin-top:8px"><a href="http://192.168.1.135" target="_blank" rel="noopener">The box’s live reading</a> (home Wi-Fi only)</div>
   </div>
 </section>
 <section id="histtab" class="keep">
@@ -244,6 +245,11 @@ try{const k=JSON.parse(localStorage.getItem('ctlnow')||'null');if(k&&Date.now()-
 // The empty-jar measurement: {at:ms, cm:number|null, failed:bool}. The logger
 // answers "empty <cm>" (or "empty failed") on the same private topic, ~10 s in.
 let calib=null;
+// A countdown for any wait of a few seconds: cd(end ms) gives a span that the
+// ticker below keeps at "N s" (then "any moment").
+const cd=end=>'<span class="cd" data-end="'+end+'">'+Math.max(1,Math.ceil((end-Date.now())/1000))+' s</span>';
+setInterval(()=>document.querySelectorAll('.cd').forEach(e=>{const s=Math.ceil((Number(e.dataset.end)-Date.now())/1000);e.textContent=s>0?s+' s':'any moment'}),250);
+const CALIB_MS=11000;  // tof_logger: CALIBRATE_READINGS a second apart, and the trip
 async function awaitCalib(key,at){
   for(let i=0;i<20&&calib&&calib.at===at&&calib.cm==null&&!calib.failed;i++){
     await new Promise(r=>setTimeout(r,3000));
@@ -360,7 +366,7 @@ const showJar=()=>{
   $('rvessel').hidden=!isNew;$('rvesselgl').hidden=!isNew;$('rjarkeepl').hidden=!cal||measuring;
   const wt=isNew?null:(appColl('jars')[v]||{}).empty_g;
   let t=isNew?'New jar: type its name above.':(wt?'Empty weight: '+gfmt(wt)+'. ':'No empty weight saved yet.'+jarBtn('wt:'+encodeURIComponent(v),'Add it')+' ')+(known?'<span style="color:var(--ok)">✓ Box reading on the empty jar: '+j.empty.toFixed(1)+' cm.</span>':'No box reading on the empty jar yet.');
-  if(measuring)t+='<div style="margin-top:4px"><strong style="color:var(--fg)">Measuring…</strong> keep the box still on the empty jar, about 10 seconds.</div>';
+  if(measuring)t+='<div style="margin-top:4px"><strong style="color:var(--fg)">Measuring…</strong> keep the box still on the empty jar, '+cd(calib.at+CALIB_MS)+'</div>';
   else if(cal){
     const off=known?cal-j.empty:0;
     t+='<div style="margin-top:4px">Measured: <strong style="color:var(--fg)">'+cal.toFixed(1)+' cm</strong>'+
@@ -852,7 +858,7 @@ function renderRun(){
   // A fresh calibration: bring the Jar box into view.
   if(ps&&ecm&&calNow!==+ecm){calNow=+ecm;calDrop=false;setTimeout(()=>$('rjarnote').scrollIntoView({behavior:'smooth',block:'center'}),300)}else if(!ps){calNow=null;calDrop=false}
   if(ps&&recipeFor!=null)showJar();
-  const swap=calib&&calib.cm==null&&!calib.failed?'Measuring the empty jar: keep the box still, about 10 seconds.'
+  const swap=calib&&calib.cm==null&&!calib.failed?'Measuring the empty jar: keep the box still, '+cd(calib.at+CALIB_MS)
     :'Set the grams and the jar below, pour in the starter, put the box back on, and tap Starter in.';
   const fz=started?null:fridgeSince();
   const [cls,head,note]=started?['ok','New feed started','Fed '+clock(ctlNow.at)+'. The page switches to the new run within a few minutes.']
@@ -2081,7 +2087,7 @@ function boxUI(){
   const tb=b.tub;
   let h='<b style="color:var(--fg)">Sensor box on the dough</b> (optional)<span class="wordy">: measures the rise. Use a straight-sided tub with the box looking down through a hole in the lid. Gus’s tracking pauses while the box is off his jar.</span><br>';
   h+=tb&&tb.cm!=null?'1. Empty tub: '+tb.cm.toFixed(1)+' cm to the bottom ✓'+btn('tub','Measure again')
-    :tb&&!tb.failed&&Date.now()-tb.at<90e3?'1. Measuring the empty tub…'
+    :tb&&!tb.failed&&Date.now()-tb.at<90e3?'1. Measuring the empty tub… '+cd(tb.at+CALIB_MS)
     :(tb&&tb.failed?'Couldn’t measure: check the box sits flat on the empty, clean tub. ':'')+'1. Box on the empty tub, then'+btn('tub','Measure it');
   h+='<br>'+(b.on?'2. Box on the dough since '+clock(b.on)+' ✓'+btn('off','Undo')
     :'2. Right after mixing, put the box on the dough and tap'+btn('on','Box is on'));
@@ -2391,13 +2397,14 @@ function slTyped(k){
   if(off)$('sln_'+k).textContent=(k==='t'?'Can\u2019t peak at '+whenAt(want)+' from here; the nearest is '+whenAt(pk)+'. ':'Can\u2019t be '+g1(want)+unit+' here; set to '+g1(sl[k])+unit+'. ')+$('sln_'+k).textContent;
 }
 // ---- Cup tab: a cup's shape, hands-free. Start sends "cup {start}"; the PC
-// (tof_logger.watch_cup) then saves a level each time the box comes off the
-// cup and settles back on, answering "cup <ml> <cm> <spread>" on the control
-// topic, which this follows (one open connection, not polling: ntfy limits
-// requests per address) while the calibration runs. Undo and Done as before.
-let cup={name:'',step:30,pts:[],run:false,since:null,wait:null};
+// (tof_logger.watch_cup) then says "cup off" when the box comes off the cup,
+// "cup on <cm>" when it's back and settling, and saves the level once it sits
+// still ("cup <ml> <cm> <spread>"). This follows the control topic over one
+// open connection (not polling: ntfy limits requests per address).
+const CUP_SETTLE_MS=7000;  // tof_logger.CUP_STEADY_N readings a second apart, and the trip
+let cup={name:'',step:30,pts:[],run:false,since:null,wait:null,phase:'',onAt:0};
 try{cup={...cup,...JSON.parse(store.get('cup')||'{}'),wait:null}}catch(e){}
-const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,pts:cup.pts,run:cup.run,since:cup.since}));
+const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,pts:cup.pts,run:cup.run,since:cup.since,phase:cup.phase,onAt:cup.onAt}));
 // The last pour didn't bring the level up 1 mm: clear water, read through.
 // The PC saves the next settle at the same amount (tof_logger.cup_progress).
 function cupSee(){const p=cup.pts,n=p.length;if(n<2)return false;let ref=p[0][1];for(let i=1;i<n-1;i++)if(ref-p[i][1]>=0.1)ref=p[i][1];return ref-p[n-1][1]<0.1}
@@ -2408,14 +2415,17 @@ function cupTab(){
   if(document.activeElement!==$('cupname'))$('cupname').value=cup.name;
   if(document.activeElement!==$('cupstep'))$('cupstep').value=cup.step;
   $('cupname').disabled=$('cupstep').disabled=cup.run;
-  const pts=cup.pts,ml=cupNext();
+  const pts=cup.pts,ml=cupNext(),last=pts[pts.length-1];
+  const pour=(pts.length===1?'pour '+cup.step+' mL of water with a splash of milk':'pour '+cup.step+' mL')+' (scale at <b>'+ml+' g</b>)';
   let h='';
   if(cup.wait==='fail')h='<span style="color:var(--warn)">Couldn’t reach the PC. Try again.</span><br>';
   if(!cup.name)h+='Name the cup.';
   else if(!cup.run)h+=(pts.length?pts.length+(pts.length===1?' point':' points')+' saved for '+cup.name+'. ':'')+'Box on the <b>empty</b> cup, then Start'+(pts.length?' to do it over':'')+'.';
-  else if(!pts.length)h+=cup.wait==='start'?'Starting…':'Reading the empty cup… leave the box still.';
+  else if(cup.phase==='on')h+='<b>Box on.</b> Hold still… '+cd(cup.onAt+CUP_SETTLE_MS);
+  else if(!pts.length)h+=cup.wait==='start'?'Starting…':'Put the box on the empty cup.';
   else if(cupSee())h+='<span style="color:var(--warn)">That pour didn’t bring the level up: the sensor sees through clear water. Stir in more milk, then lift the box and put it back on.</span>';
-  else h+=(pts.length===1?'Pour '+cup.step+' mL of water with a splash of milk in it':'Pour '+cup.step+' mL more')+' (scale at <b>'+ml+' g</b>), then put the box back on. It saves by itself once the box sits still.'+(pts.length>2?' Stop about 1 cm below the rim, then Done.':'');
+  else if(cup.phase==='off')h+='<b>Box off.</b> Now '+pour+', then put the box back on.';
+  else h+='<b>Saved ✓ '+(last[0]?last[0]+' mL':'empty cup')+'.</b> Lift the box, '+pour+', put it back on.'+(pts.length>2?' Stop about 1 cm below the rim, then Done.':'');
   $('cupnext').innerHTML=h;
   $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name;$('cupgo').textContent='Start';
   $('cupundo').hidden=$('cupdone').hidden=!cup.run;$('cupundo').disabled=!pts.length;
@@ -2442,15 +2452,19 @@ function cupPoll(){
     let m;try{m=JSON.parse(e.data)}catch(x){return}
     if(m.event!=='message')return;cup.since=m.id;
     const w=(m.message||'').split(' ');if(w[0]!=='cup'){cupSave();return}
+    // Replayed history after a reconnect is old news for the live phase.
+    const live=Date.now()/1000-(m.time||0)<20;
     if(w[1]==='started')cup.wait=null;
     else if(w[1]==='done'){cup.run=false;cupStop()}
-    else if(w.length===4&&!isNaN(Number(w[1]))){const ml=Number(w[1]);cup.pts=[...cup.pts.filter(q=>q[0]!==ml),[ml,Number(w[2]),Number(w[3])]].sort((a,b)=>a[0]-b[0])}
+    else if(w[1]==='off'){if(live)cup.phase='off'}
+    else if(w[1]==='on'){if(live){cup.phase='on';cup.onAt=Date.now()}}
+    else if(w.length===4&&!isNaN(Number(w[1]))){const ml=Number(w[1]);cup.pts=[...cup.pts.filter(q=>q[0]!==ml),[ml,Number(w[2]),Number(w[3])]].sort((a,b)=>a[0]-b[0]);cup.phase='saved'}
     cupSave();if(document.querySelector('main').classList.contains('tab-cup'))cupTab();
   };
 }
 $('cupgo').onclick=async()=>{
   const since=Math.floor(Date.now()/1000)-2;
-  cupStop();cup={...cup,pts:[],run:true,since:String(since),wait:'start'};cupSave();cupTab();
+  cupStop();cup={...cup,pts:[],run:true,since:String(since),wait:'start',phase:''};cupSave();cupTab();
   if(!await cupSend({start:true,step:cup.step})){cup.run=false;cupSave();cupTab();return}
   cupPoll();
 };
