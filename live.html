@@ -2393,7 +2393,8 @@ function slTyped(k){
 // ---- Cup tab: a cup's shape, hands-free. Start sends "cup {start}"; the PC
 // (tof_logger.watch_cup) then saves a level each time the box comes off the
 // cup and settles back on, answering "cup <ml> <cm> <spread>" on the control
-// topic, which this polls while the calibration runs. Undo and Done as before.
+// topic, which this follows (one open connection, not polling: ntfy limits
+// requests per address) while the calibration runs. Undo and Done as before.
 let cup={name:'',step:30,pts:[],run:false,since:null,wait:null};
 try{cup={...cup,...JSON.parse(store.get('cup')||'{}'),wait:null}}catch(e){}
 const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,pts:cup.pts,run:cup.run,since:cup.since}));
@@ -2431,36 +2432,30 @@ async function cupSend(ev){
   try{const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:'cup '+JSON.stringify({vessel:cup.name,...ev})});if(!r.ok)throw new Error('HTTP '+r.status);return key}
   catch(e){cup.wait='fail';cupTab();return false}
 }
-// While running: read the PC's answers every 3 s.
-let cupPolling=false;
-async function cupPoll(){
-  if(cupPolling)return;cupPolling=true;
-  while(cup.run){
-    const key=store.get('pausekey');if(!key)break;
-    try{
-      const t=await fetch('https://ntfy.sh/'+key+'/json?poll=1&since='+(cup.since||'10m')).then(r=>r.text());
-      let changed=false;
-      t.split('\n').filter(Boolean).map(l=>JSON.parse(l)).forEach(m=>{
-        if(m.event!=='message')return;cup.since=m.id;
-        const w=(m.message||'').split(' ');if(w[0]!=='cup')return;
-        if(w[1]==='started'){cup.wait=null;changed=true}
-        else if(w[1]==='done'){cup.run=false;changed=true}
-        else if(w.length===4&&!isNaN(Number(w[1]))){const ml=Number(w[1]);cup.pts=[...cup.pts.filter(q=>q[0]!==ml),[ml,Number(w[2]),Number(w[3])]].sort((a,b)=>a[0]-b[0]);changed=true}
-      });
-      cupSave();if(changed&&document.querySelector('main').classList.contains('tab-cup'))cupTab();
-    }catch(e){}
-    await new Promise(r=>setTimeout(r,3000));
-  }
-  cupPolling=false;
+let cupES=null;
+function cupStop(){if(cupES){cupES.close();cupES=null}}
+function cupPoll(){
+  const key=store.get('pausekey');
+  if(cupES||!cup.run||!key)return;
+  cupES=new EventSource('https://ntfy.sh/'+key+'/sse?since='+(cup.since||'10m'));
+  cupES.onmessage=e=>{
+    let m;try{m=JSON.parse(e.data)}catch(x){return}
+    if(m.event!=='message')return;cup.since=m.id;
+    const w=(m.message||'').split(' ');if(w[0]!=='cup'){cupSave();return}
+    if(w[1]==='started')cup.wait=null;
+    else if(w[1]==='done'){cup.run=false;cupStop()}
+    else if(w.length===4&&!isNaN(Number(w[1]))){const ml=Number(w[1]);cup.pts=[...cup.pts.filter(q=>q[0]!==ml),[ml,Number(w[2]),Number(w[3])]].sort((a,b)=>a[0]-b[0])}
+    cupSave();if(document.querySelector('main').classList.contains('tab-cup'))cupTab();
+  };
 }
 $('cupgo').onclick=async()=>{
   const since=Math.floor(Date.now()/1000)-2;
-  cup={...cup,pts:[],run:true,since:String(since),wait:'start'};cupSave();cupTab();
+  cupStop();cup={...cup,pts:[],run:true,since:String(since),wait:'start'};cupSave();cupTab();
   if(!await cupSend({start:true,step:cup.step})){cup.run=false;cupSave();cupTab();return}
   cupPoll();
 };
 $('cupundo').onclick=async()=>{if(await cupSend({undo:true})){cup.pts=cup.pts.slice(0,-1);cup.wait=null;cupSave();cupTab()}};
-$('cupdone').onclick=async()=>{if(await cupSend({done:true})){cup.run=false;cup.wait=null;cupSave();cupTab()}};
+$('cupdone').onclick=async()=>{if(await cupSend({done:true})){cup.run=false;cup.wait=null;cupStop();cupSave();cupTab()}};
 $('cupname').onchange=e=>{
   const n=e.target.value.split(/\s+/).join(' ').trim().slice(0,60);if(n===cup.name)return;
   const r=run&&run.cups&&run.cups[n];cup={...cup,name:n,pts:r&&Array.isArray(r.points)?r.points:[],wait:null};cupSave();cupTab();
