@@ -133,6 +133,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div class="row" style="margin-top:6px"><label class="note">Cup <input id="cupname" list="cupnames" autocomplete="off" style="width:11em"></label><datalist id="cupnames"></datalist><label class="note">Each pour <input id="cupstep" type="number" inputmode="decimal" min="1" step="5" class="g"> mL</label></div>
     <div id="cupnext" style="margin-top:10px;font-size:1.02rem;color:var(--fg)"></div>
     <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupredo">Start over</button><button class="chip" id="cupdone">Done</button></div>
+    <div class="row" id="cupfixrow" style="margin-top:10px;gap:6px;align-items:center;display:none"><span class="note">Scale said something else? Last pour:</span><input id="cupfix" type="number" inputmode="decimal" step="0.5" class="g"><span class="note">g</span><button class="chip" id="cupfixgo">Fix</button></div>
     <div id="cuppts" class="small" style="margin-top:10px;font-variant-numeric:tabular-nums"></div>
     <div class="note" style="margin-top:8px"><a href="http://192.168.1.135" target="_blank" rel="noopener">The box’s live reading</a> (home Wi-Fi only)</div>
   </div>
@@ -2408,7 +2409,8 @@ const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,pt
 // The last pour didn't bring the level up 1 mm: clear water, read through.
 // The PC saves the next settle at the same amount (tof_logger.cup_progress).
 function cupSee(){const p=cup.pts,n=p.length;if(n<2)return false;let ref=p[0][1];for(let i=1;i<n-1;i++)if(ref-p[i][1]>=0.1)ref=p[i][1];return ref-p[n-1][1]<0.1}
-const cupNext=()=>{const l=cup.pts[cup.pts.length-1];return !l?0:cupSee()?l[0]:Math.round((l[0]+cup.step)*10)/10};
+// Back on the round numbers: 31.5 in (aiming for 30) still asks for 60 (tof_logger.cup_progress).
+const cupNext=()=>{const l=cup.pts[cup.pts.length-1];return !l?0:cupSee()?l[0]:Math.round((Math.round(l[0]/cup.step)+1)*cup.step*10)/10};
 function cupTab(){
   const names=new Set([...JARS,...Object.keys(appColl('jars')),...Object.keys((run&&run.cups)||{})]);
   $('cupnames').innerHTML='';names.forEach(n=>$('cupnames').appendChild(opt(n)));
@@ -2416,7 +2418,7 @@ function cupTab(){
   if(document.activeElement!==$('cupstep'))$('cupstep').value=cup.step;
   $('cupname').disabled=$('cupstep').disabled=cup.run;
   const pts=cup.pts,ml=cupNext(),last=pts[pts.length-1];
-  const pour=(pts.length===1?'pour '+cup.step+' mL of water with a splash of milk':'pour '+cup.step+' mL')+' (scale at <b>'+ml+' g</b>)';
+  const pour=(pts.length===1?'add water with a splash of milk':'add water')+' until the scale reads <b>'+ml+' g</b>';
   let h='';
   if(cup.wait==='fail')h='<span style="color:var(--warn)">Couldn’t reach the PC. Try again.</span><br>';
   if(!cup.name)h+='Name the cup.';
@@ -2428,7 +2430,9 @@ function cupTab(){
   else h+='<b>Saved ✓ '+(last[0]?last[0]+' mL':'empty cup')+'.</b> Take the box off and set it on the counter, '+pour+', then put the box back on the cup.'+(pts.length>2?' Stop about 1 cm below the rim, then Done.':'');
   $('cupnext').innerHTML=h;
   $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name;$('cupgo').textContent='Start';
-  $('cupundo').hidden=$('cupdone').hidden=$('cupredo').hidden=!cup.run;$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start again for a new one
+  $('cupundo').hidden=$('cupdone').hidden=$('cupredo').hidden=!cup.run;
+  $('cupfixrow').style.display=!cup.run||!last||!last[0]?'none':'flex';
+  if(last&&document.activeElement!==$('cupfix'))$('cupfix').value=last[0];$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start again for a new one
   $('cuppts').innerHTML=pts.map((q,i)=>{
     let t=q[0]+' mL · '+q[1].toFixed(2)+' cm';
     if(i){const d=pts[i-1][1]-q[1],v=q[0]-pts[i-1][0];
@@ -2474,6 +2478,13 @@ async function cupStart(){
   cupPoll();
 };
 $('cupgo').onclick=cupStart;
+// What the scale really read for the last pour (aiming for 30, poured 31.5).
+$('cupfixgo').onclick=async()=>{
+  const l=cup.pts[cup.pts.length-1],prev=cup.pts[cup.pts.length-2],to=Math.round(Number($('cupfix').value)*10)/10;
+  if(!l||!(to>0)||to===l[0])return;
+  if(prev&&to<=prev[0]){alert('That\u2019s not more than the pour before ('+prev[0]+' g).');return}
+  if(await cupSend({fix:{ml:l[0],to}})){l[0]=to;$('cupfix').blur();cupSave();cupTab()}
+};
 // Start over: the readings so far are dropped, and it starts from the empty cup.
 $('cupredo').onclick=()=>{if(confirm('Start over? The readings so far are cleared. Empty the cup and put the box back on it first.'))cupStart()};
 $('cupundo').onclick=async()=>{if(await cupSend({undo:true})){cup.pts=cup.pts.slice(0,-1);cup.wait=null;cupSave();cupTab()}};
