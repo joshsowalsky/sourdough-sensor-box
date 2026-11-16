@@ -2428,7 +2428,7 @@ function cupTab(){
   else h+='<b>Saved ✓ '+(last[0]?last[0]+' mL':'empty cup')+'.</b> Lift the box, '+pour+', put it back on.'+(pts.length>2?' Stop about 1 cm below the rim, then Done.':'');
   $('cupnext').innerHTML=h;
   $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name;$('cupgo').textContent='Start';
-  $('cupundo').hidden=$('cupdone').hidden=!cup.run;$('cupundo').disabled=!pts.length;
+  $('cupundo').hidden=$('cupdone').hidden=!cup.run;$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start again for a new one
   $('cuppts').innerHTML=pts.map((q,i)=>{
     let t=q[0]+' mL · '+q[1].toFixed(2)+' cm';
     if(i){const d=pts[i-1][1]-q[1],v=q[0]-pts[i-1][0];
