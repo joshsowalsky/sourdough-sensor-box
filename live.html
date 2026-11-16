@@ -2408,7 +2408,7 @@ function slTyped(k){
 const CUP_SETTLE_MS=7000;  // tof_logger.CUP_STEADY_N readings a second apart, and the trip
 let cup={name:'',step:30,tare:null,pts:[],run:false,since:null,wait:null,phase:'',onAt:0};
 try{cup={...cup,...JSON.parse(store.get('cup')||'{}'),wait:null}}catch(e){}
-const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,tare:cup.tare,pts:cup.pts,run:cup.run,since:cup.since,phase:cup.phase,onAt:cup.onAt,poured:cup.poured,endedAt:cup.endedAt}));
+const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,tare:cup.tare,pts:cup.pts,run:cup.run,since:cup.since,phase:cup.phase,onAt:cup.onAt,poured:cup.poured,endedAt:cup.endedAt,odd:cup.odd}));
 // The PC is mid-calibration (run.json pause.cupcal): pick it up as it is, with
 // the readings and what the scale said at Done, on this phone or any other.
 // On opening the page the PC's readings win over this phone's copy; after
@@ -2429,7 +2429,7 @@ const cupG=ml=>Math.round(((cup.tare||0)+ml)*10)/10;  // water in the cup -> wha
 // The PC saves the next settle at the same amount (tof_logger.cup_progress).
 function cupSee(){const p=cup.pts,n=p.length;if(n<2)return false;let ref=p[0][1];for(let i=1;i<n-1;i++)if(ref-p[i][1]>=0.1)ref=p[i][1];return ref-p[n-1][1]<0.1}
 // Back on the round numbers: 31.5 in (aiming for 30) still asks for 60 (tof_logger.cup_progress).
-const cupNext=()=>{const l=cup.pts[cup.pts.length-1];return !l?0:cupSee()?l[0]:Math.round((Math.round(l[0]/cup.step)+1)*cup.step*10)/10};
+const cupNext=()=>{const l=cup.pts[cup.pts.length-1];return !l?0:cupSee()?l[0]:Math.round((l[0]+cup.step)*10)/10};  // on from what was poured
 function cupTab(){
   const names=new Set([...JARS,...Object.keys(appColl('jars')),...Object.keys((run&&run.cups)||{})]);
   $('cupnames').innerHTML='';names.forEach(n=>$('cupnames').appendChild(opt(n)));
@@ -2447,6 +2447,7 @@ function cupTab(){
   else if(cup.phase==='on')h+='<b>Box on.</b> Hold still… '+cd(cup.onAt+CUP_SETTLE_MS);
   else if(!pts.length)h+=cup.wait==='start'?'Starting…':'Put the box on the <b>empty</b> cup.';
   else if(cupSee())h+='<span style="color:var(--warn)">That pour didn’t bring the level up: the sensor sees through clear water. Stir in more milk, then lift the box and put it back on.</span>';
+  else if(cup.odd)h+='<span style="color:var(--warn)"><b>Not saved:</b> the box read '+cup.odd[0]+' cm, about '+cup.odd[1]+' cm was expected.</span> Is it sitting flat on the cup? Lift it and set it back on. If it reads the same again, it\u2019s kept.';
   else if(cup.poured!=null)h+='<b>Got it, '+cup.poured+' g.</b> Now put the box back on the cup. It measures by itself.';
   else{const go='A'+pour.slice(1)+'. Don’t worry about being exact. If the scale says something else, change the number below and tap <b>Fix</b> ↓'+(pts.length>2?' Near the top? Stop about 1 cm below the rim and tap Cup’s full instead.':'');
     h+=cup.phase==='off'?'<b>Box is off.</b> '+go:'<b>Saved ✓ '+(last[0]?cupG(last[0])+' g':'empty cup')+'.</b> Take the box off and set it on the counter. '+go}
@@ -2454,7 +2455,7 @@ function cupTab(){
   $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name||noTare;$('cupgo').textContent=pts.length?'Continue':'Start';
   $('cupredo').hidden=!cup.run&&!pts.length;
   $('cupundo').hidden=$('cupdone').hidden=!cup.run;$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start over for a new one
-  const pouring=cup.run&&pts.length&&cup.poured==null&&cup.phase!=='on'&&!cupSee();
+  const pouring=cup.run&&pts.length&&cup.poured==null&&!cup.odd&&cup.phase!=='on'&&!cupSee();
   $('cuppourrow').style.display=pouring?'flex':'none';
   if(pouring&&$('cuppour').dataset.for!==String(ml)){$('cuppour').dataset.for=String(ml);$('cuppour').value=cupG(ml)}
   cupPourLabel();
@@ -2486,10 +2487,11 @@ function cupPoll(){
     if(w[1]==='started')cup.wait=null;
     else if(w[1]==='done'){cup.run=false;cupStop()}
     else if(w[1]==='off'){if(live)cup.phase='off'}
+    else if(w[1]==='odd'&&w.length===4){if(live)cup.odd=[Number(w[2]),Number(w[3])];cup.phase=''}
     else if(w[1]==='fixed'&&w.length===4){const q=cup.pts.find(q=>q[0]===Number(w[2]));if(q)q[0]=Number(w[3])}
     else if(w[1]==='on'){if(live){cup.phase='on';cup.onAt=Date.now()}}
     else if(w.length===4&&!isNaN(Number(w[1]))){const ml=Number(w[1]);cup.pts=[...cup.pts.filter(q=>q[0]!==ml),[ml,Number(w[2]),Number(w[3])]].sort((a,b)=>a[0]-b[0]);cup.phase='saved';
-      cup.poured=null}
+      cup.poured=null;cup.odd=null}
     cupSave();if(document.querySelector('main').classList.contains('tab-cup'))cupTab();
   };
 }
@@ -2500,7 +2502,7 @@ function cupPoll(){
 let cupSentAt=null;
 async function cupStart(resume){
   if(cup.tare==null){alert('Type what the empty cup weighs on the scale first.');return}
-  cupStop();cup={...cup,pts:resume?cup.pts:[],run:true,since:null,wait:'start',phase:'',poured:null};cupSave();cupTab();
+  cupStop();cup={...cup,pts:resume?cup.pts:[],run:true,since:null,wait:'start',phase:'',poured:null,odd:null};cupSave();cupTab();
   if(!await cupSend({start:true,resume:!!resume,step:cup.step,tare:cup.tare})){cup.run=false;cupSave();cupTab();return}
   cup.since=String(cupSentAt||Math.floor(Date.now()/1000)-2);cupSave();
   cupPoll();
