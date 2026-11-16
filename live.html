@@ -547,7 +547,7 @@ async function loadRun(){
     if(!got.length)return;
     const j=got.reduce((a,b)=>new Date(b.updated)>new Date(a.updated)?b:a);
     if(run&&new Date(j.updated)<new Date(run.updated))return;
-    run=j;migrateJars();renderRun();
+    run=j;migrateJars();renderRun();cupAdopt();
     // Until run.json shows the button just pressed, look again every 20 s.
     if(ctlNow&&Date.now()-ctlNow.at<10*60e3&&!(new Date(j.updated).getTime()>=ctlNow.at-60e3))setTimeout(loadRun,20e3);
   }catch(e){}
@@ -2409,7 +2409,17 @@ function slTyped(k){
 const CUP_SETTLE_MS=7000;  // tof_logger.CUP_STEADY_N readings a second apart, and the trip
 let cup={name:'',step:30,tare:null,pts:[],run:false,since:null,wait:null,phase:'',onAt:0};
 try{cup={...cup,...JSON.parse(store.get('cup')||'{}'),wait:null}}catch(e){}
-const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,tare:cup.tare,pts:cup.pts,run:cup.run,since:cup.since,phase:cup.phase,onAt:cup.onAt,poured:cup.poured}));
+const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,tare:cup.tare,pts:cup.pts,run:cup.run,since:cup.since,phase:cup.phase,onAt:cup.onAt,poured:cup.poured,endedAt:cup.endedAt}));
+// The PC is mid-calibration (run.json pause.cupcal): pick it up as it is, with
+// the readings and what the scale said at Done, on this phone or any other.
+function cupAdopt(){
+  const p=run&&run.pause,c=p&&p.cupcal&&run.cups&&run.cups[p.cupcal];
+  if(!c||!p.cupauto||cup.run||new Date(run.updated).getTime()<(cup.endedAt||0))return;
+  const tare=c.tare_g!=null?c.tare_g:cup.tare;
+  cup={...cup,name:p.cupcal,step:p.cupauto,tare,pts:c.points||[],run:true,wait:null,phase:'',
+    since:String(Math.floor(Date.now()/1000)-30),poured:c.poured!=null?Math.round(((tare||0)+c.poured)*10)/10:null};
+  cupSave();cupPoll();if(document.querySelector('main').classList.contains('tab-cup'))cupTab();
+}
 const cupG=ml=>Math.round(((cup.tare||0)+ml)*10)/10;  // water in the cup -> what the scale reads
 // The last pour didn't bring the level up 1 mm: clear water, read through.
 // The PC saves the next settle at the same amount (tof_logger.cup_progress).
@@ -2475,9 +2485,6 @@ function cupPoll(){
     else if(w[1]==='off'){if(live)cup.phase='off'}
     else if(w[1]==='on'){if(live){cup.phase='on';cup.onAt=Date.now()}}
     else if(w.length===4&&!isNaN(Number(w[1]))){const ml=Number(w[1]);cup.pts=[...cup.pts.filter(q=>q[0]!==ml),[ml,Number(w[2]),Number(w[3])]].sort((a,b)=>a[0]-b[0]);cup.phase='saved';
-      // Saved at the target; the scale said something else (typed at Done): fix it to that.
-      if(live&&cup.poured!=null&&ml){const to=Math.round((cup.poured-(cup.tare||0))*10)/10;
-        if(to!==ml)cupSend({fix:{ml,to}}).then(ok=>{if(ok){const q=cup.pts.find(q=>q[0]===ml);if(q)q[0]=to;cupSave();cupTab()}})}
       cup.poured=null}
     cupSave();if(document.querySelector('main').classList.contains('tab-cup'))cupTab();
   };
@@ -2506,13 +2513,13 @@ $('cupfixgo').onclick=async()=>{
 $('cupredo').onclick=()=>{if(confirm('Start over? The readings so far are cleared. Empty the cup, put it on the scale and the box on it first.'))cupStart(false)};
 $('cupundo').onclick=async()=>{if(await cupSend({undo:true})){cup.pts=cup.pts.slice(0,-1);cup.wait=null;cupSave();cupTab()}};
 // Done pouring: remember what the scale says; the reading saved when the box goes back on gets it.
-$('cuppourgo').onclick=()=>{
+$('cuppourgo').onclick=async()=>{
   const v=Math.round(Number($('cuppour').value)*10)/10,l=cup.pts[cup.pts.length-1];
   if(!(v>0))return;
   if(l&&v<=cupG(l[0])){alert('That’s not more than the last reading ('+cupG(l[0])+' g).');return}
-  cup.poured=v;$('cuppour').blur();cupSave();cupTab()};
+  if(await cupSend({poured:Math.round((v-(cup.tare||0))*10)/10})){cup.poured=v;$('cuppour').blur();cupSave();cupTab()}};
 // Only for the end: tapping it after a pour stops the run (the box measures by itself).
-$('cupdone').onclick=async()=>{if(!confirm('Finished? Only when the water is near the top.'))return;if(await cupSend({done:true})){cup.run=false;cup.wait=null;cupStop();cupSave();cupTab()}};
+$('cupdone').onclick=async()=>{if(!confirm('Finished? Only when the water is near the top.'))return;if(await cupSend({done:true})){cup.run=false;cup.endedAt=Date.now();cup.wait=null;cupStop();cupSave();cupTab()}};
 $('cupname').onchange=e=>{
   const n=e.target.value.split(/\s+/).join(' ').trim().slice(0,60);if(n===cup.name)return;
   const r=run&&run.cups&&run.cups[n];
