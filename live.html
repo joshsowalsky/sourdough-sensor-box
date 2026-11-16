@@ -132,7 +132,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
   <div class="card"><div class="label">Cup shape</div>
     <div class="row" style="margin-top:6px"><label class="note">Cup <input id="cupname" list="cupnames" autocomplete="off" style="width:11em"></label><datalist id="cupnames"></datalist><label class="note">Each pour <input id="cupstep" type="number" inputmode="decimal" min="1" step="5" class="g"> mL</label></div>
     <div id="cupnext" style="margin-top:10px;font-size:1.02rem;color:var(--fg)"></div>
-    <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupdone">Done</button></div>
+    <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupredo">Start over</button><button class="chip" id="cupdone">Done</button></div>
     <div id="cuppts" class="small" style="margin-top:10px;font-variant-numeric:tabular-nums"></div>
     <div class="note" style="margin-top:8px"><a href="http://192.168.1.135" target="_blank" rel="noopener">The box’s live reading</a> (home Wi-Fi only)</div>
   </div>
@@ -2422,13 +2422,13 @@ function cupTab(){
   if(!cup.name)h+='Name the cup.';
   else if(!cup.run)h+=(pts.length?pts.length+(pts.length===1?' point':' points')+' saved for '+cup.name+'. ':'')+'Box on the <b>empty</b> cup, then Start'+(pts.length?' to do it over':'')+'.';
   else if(cup.phase==='on')h+='<b>Box on.</b> Hold still… '+cd(cup.onAt+CUP_SETTLE_MS);
-  else if(!pts.length)h+=cup.wait==='start'?'Starting…':'Put the box on the empty cup.';
+  else if(!pts.length)h+=cup.wait==='start'?'Starting…':'Put the box on the <b>empty</b> cup.';
   else if(cupSee())h+='<span style="color:var(--warn)">That pour didn’t bring the level up: the sensor sees through clear water. Stir in more milk, then lift the box and put it back on.</span>';
-  else if(cup.phase==='off')h+='<b>Box off.</b> Now '+pour+', then put the box back on.';
-  else h+='<b>Saved ✓ '+(last[0]?last[0]+' mL':'empty cup')+'.</b> Lift the box, '+pour+', put it back on.'+(pts.length>2?' Stop about 1 cm below the rim, then Done.':'');
+  else if(cup.phase==='off')h+='<b>Box is off.</b> Set it on the counter, '+pour+', then put the box back on the cup.';
+  else h+='<b>Saved ✓ '+(last[0]?last[0]+' mL':'empty cup')+'.</b> Take the box off and set it on the counter, '+pour+', then put the box back on the cup.'+(pts.length>2?' Stop about 1 cm below the rim, then Done.':'');
   $('cupnext').innerHTML=h;
   $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name;$('cupgo').textContent='Start';
-  $('cupundo').hidden=$('cupdone').hidden=!cup.run;$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start again for a new one
+  $('cupundo').hidden=$('cupdone').hidden=$('cupredo').hidden=!cup.run;$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start again for a new one
   $('cuppts').innerHTML=pts.map((q,i)=>{
     let t=q[0]+' mL · '+q[1].toFixed(2)+' cm';
     if(i){const d=pts[i-1][1]-q[1],v=q[0]-pts[i-1][0];
@@ -2439,7 +2439,7 @@ function cupTab(){
 async function cupSend(ev){
   const key=store.get('pausekey');
   if(!key){alert('This needs the pause key on this phone.');return false}
-  try{const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:'cup '+JSON.stringify({vessel:cup.name,...ev})});if(!r.ok)throw new Error('HTTP '+r.status);return key}
+  try{const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:'cup '+JSON.stringify({vessel:cup.name,...ev})});if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json().catch(()=>null);cupSentAt=j&&j.time;return key}
   catch(e){cup.wait='fail';cupTab();return false}
 }
 let cupES=null;
@@ -2462,12 +2462,20 @@ function cupPoll(){
     cupSave();if(document.querySelector('main').classList.contains('tab-cup'))cupTab();
   };
 }
-$('cupgo').onclick=async()=>{
-  const since=Math.floor(Date.now()/1000)-2;
-  cupStop();cup={...cup,pts:[],run:true,since:String(since),wait:'start',phase:''};cupSave();cupTab();
+// Follows the topic from the second ntfy stamped the Start message with (its
+// answer to the post), so nothing from before it is replayed into this run.
+// Not since=<its id>: a message only seconds old isn't findable by id yet,
+// and ntfy then replays everything.
+let cupSentAt=null;
+async function cupStart(){
+  cupStop();cup={...cup,pts:[],run:true,since:null,wait:'start',phase:''};cupSave();cupTab();
   if(!await cupSend({start:true,step:cup.step})){cup.run=false;cupSave();cupTab();return}
+  cup.since=String(cupSentAt||Math.floor(Date.now()/1000)-2);cupSave();
   cupPoll();
 };
+$('cupgo').onclick=cupStart;
+// Start over: the readings so far are dropped, and it starts from the empty cup.
+$('cupredo').onclick=()=>{if(confirm('Start over? The readings so far are cleared. Empty the cup and put the box back on it first.'))cupStart()};
 $('cupundo').onclick=async()=>{if(await cupSend({undo:true})){cup.pts=cup.pts.slice(0,-1);cup.wait=null;cupSave();cupTab()}};
 $('cupdone').onclick=async()=>{if(await cupSend({done:true})){cup.run=false;cup.wait=null;cupStop();cupSave();cupTab()}};
 $('cupname').onchange=e=>{
