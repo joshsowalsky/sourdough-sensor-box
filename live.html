@@ -2411,12 +2411,17 @@ try{cup={...cup,...JSON.parse(store.get('cup')||'{}'),wait:null}}catch(e){}
 const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,tare:cup.tare,pts:cup.pts,run:cup.run,since:cup.since,phase:cup.phase,onAt:cup.onAt,poured:cup.poured,endedAt:cup.endedAt}));
 // The PC is mid-calibration (run.json pause.cupcal): pick it up as it is, with
 // the readings and what the scale said at Done, on this phone or any other.
+// On opening the page the PC's readings win over this phone's copy; after
+// that the live replies keep them in step.
+let cupAdopted=false;
 function cupAdopt(){
   const p=run&&run.pause,c=p&&p.cupcal&&run.cups&&run.cups[p.cupcal];
-  if(!c||!p.cupauto||cup.run||new Date(run.updated).getTime()<(cup.endedAt||0))return;
+  if(!c||!p.cupauto||(cup.run&&(cupAdopted||cup.name!==p.cupcal))||(!cup.run&&new Date(run.updated).getTime()<(cup.endedAt||0)))return;
+  cupAdopted=true;
   const tare=c.tare_g!=null?c.tare_g:cup.tare;
-  cup={...cup,name:p.cupcal,step:p.cupauto,tare,pts:c.points||[],run:true,wait:null,phase:'',
-    since:String(Math.floor(Date.now()/1000)-30),poured:c.poured!=null?Math.round(((tare||0)+c.poured)*10)/10:null};
+  cup={...cup,name:p.cupcal,step:p.cupauto,tare,pts:c.points||[],wait:null,
+    since:cup.run?cup.since:String(Math.floor(Date.now()/1000)-30),phase:cup.run?cup.phase:'',run:true,
+    poured:c.poured!=null?Math.round(((tare||0)+c.poured)*10)/10:null};
   cupSave();cupPoll();if(document.querySelector('main').classList.contains('tab-cup'))cupTab();
 }
 const cupG=ml=>Math.round(((cup.tare||0)+ml)*10)/10;  // water in the cup -> what the scale reads
@@ -2481,6 +2486,7 @@ function cupPoll(){
     if(w[1]==='started')cup.wait=null;
     else if(w[1]==='done'){cup.run=false;cupStop()}
     else if(w[1]==='off'){if(live)cup.phase='off'}
+    else if(w[1]==='fixed'&&w.length===4){const q=cup.pts.find(q=>q[0]===Number(w[2]));if(q)q[0]=Number(w[3])}
     else if(w[1]==='on'){if(live){cup.phase='on';cup.onAt=Date.now()}}
     else if(w.length===4&&!isNaN(Number(w[1]))){const ml=Number(w[1]);cup.pts=[...cup.pts.filter(q=>q[0]!==ml),[ml,Number(w[2]),Number(w[3])]].sort((a,b)=>a[0]-b[0]);cup.phase='saved';
       cup.poured=null}
