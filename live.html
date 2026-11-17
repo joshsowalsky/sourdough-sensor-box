@@ -110,6 +110,13 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
 <div class="status keep"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
 <div class="row keep" id="tabs" style="gap:6px"><button class="chip" data-tab="starter">Starter</button><button class="chip" data-tab="bake">Bake</button><button class="chip" data-tab="hist">History</button><button class="chip" data-tab="sl">Sliders</button><button class="chip" data-tab="cup">Cup</button><button class="chip" id="viewbtn" style="margin-left:auto">Simple</button></div>
 <section id="baketab" class="keep">
+  <div class="card" id="bulkcard" hidden><div class="label" id="bulklabel">Bulk rise</div>
+    <div id="bulkhead" style="margin-top:4px"></div>
+    <div class="pbar" id="bulkpbar" style="height:16px;margin:8px 0 2px"><u id="bulkband"></u><i id="bulkfill"></i></div>
+    <div class="row note" style="justify-content:space-between;margin:0"><span>0%</span><span>50–75%: done</span><span id="bulkmax">100%</span></div>
+    <canvas id="bulkchart" width="560" height="150" style="margin-top:6px;width:100%"></canvas>
+    <div class="small" id="bulkinfo"></div>
+    <div id="bulkboxslot" class="note" style="margin-top:8px"></div></div>
   <div class="card"><div class="label">Is Gus ready?</div><div id="bakegus" class="small" style="color:var(--fg);font-size:.95rem">Loading…</div></div>
   <div class="card"><div class="label">Steps · mix today, bake tomorrow</div>
     <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><label class="note">Autolyse <select id="bakaut"><option value="0">none</option><option value="30">30 min</option><option value="60">1 h</option><option value="120">2 h</option></select></label><label class="note">Folds done by <input id="bakby" type="time" class="g" style="width:7em"></label><label class="note">Level <select id="bakexp"><option value="new">new</option><option value="pro">experienced</option></select></label><button class="chip" id="bakreset">Start over</button></div>
@@ -2167,6 +2174,56 @@ function bulkBar(T,bh,pro){
     '<div class="pbar"><u style="left:'+pc(win[0])+'%;width:'+(pc(win[1])-pc(win[0]))+'%"></u><i style="width:'+pc(p)+'%"></i></div>'+
     (pro?'':'<span class="note">'+said+'</span>')+'</div>';
 }
+// The Bulk card: while bulk runs (Gus in, bulk not ended), the dough's rise
+// under the box as a % of its starting depth, against the 50-75% target, with
+// the box's readings since it went on and the time estimate. The dough-box
+// controls move into it, so bulk has one place.
+function bulkCard(){
+  const c=$('bulkcard'),on=bk.done.mix&&!bk.done.bulk;
+  c.hidden=!on;$('bakegus').closest('.card').hidden=!!on;
+  const box=$('bakbox');
+  if(on&&box.parentElement!==$('bulkboxslot'))$('bulkboxslot').appendChild(box);
+  if(!on){if(box.parentElement!==$('baksteps').parentElement)$('baksteps').before(box);return}
+  const bp=bakePlan(),dg=bp&&bp.dough,now=Date.now(),H=3600e3,b=bk.box||{};
+  const hm=ms=>{const m=Math.max(0,Math.round(ms/60e3));return (m>=60?Math.floor(m/60)+' h ':'')+(m%60)+' min'};
+  $('bulklabel').textContent='Bulk rise · Gus in at '+clock(bk.done.mix)+', '+hm(now-bk.done.mix)+' ago';
+  const pct=dg&&dg.pct!=null?dg.pct:null;
+  let head;
+  if(!b.on)head='<b style="font-size:1.2rem">Box not on the dough yet</b><div class="note">Do the two steps below; then the rise shows here.</div>';
+  else if(!dg)head='<b style="font-size:1.2rem">Box on since '+clock(b.on)+'</b><div class="note">The first reading comes about 15 min after the box goes on (the dough settles first).</div>';
+  else if(pct==null)head='<b style="font-size:2rem">+'+dg.rise_cm.toFixed(1)+' cm</b><div class="note">Measure the empty cup (step 1 below) to see it as a %.</div>';
+  else{const st=pct>=75?['Past 75%: end bulk now','var(--warn)']:pct>=50?['In range: end bulk when it\u2019s domed, bubbly and jiggly','var(--ok)']:['Not yet: done at 50\u201375%','var(--muted)'];
+    head='<b style="font-size:2.4rem;line-height:1.1">+'+pct+'%</b> <span style="color:'+st[1]+';font-weight:600">'+st[0]+'</span>'+
+      (dg.settled_now?'':'<div class="note">Settling after a fold: the number updates in a few minutes.</div>')}
+  $('bulkhead').innerHTML=head;
+  const top=Math.max(100,(pct||0)+10);
+  $('bulkmax').textContent=top+'%';
+  $('bulkband').style.cssText='left:'+50/top*100+'%;width:'+25/top*100+'%';
+  $('bulkfill').style.width=Math.max(0,Math.min(100,(pct||0)/top*100))+'%';
+  $('bulkpbar').style.display=$('bulkchart').style.display=pct==null?'none':'';
+  $('bulkpbar').nextElementSibling.style.display=pct==null?'none':'';
+  let info=bp&&bp.bulk_due?'By the clock ('+Math.round(bp.temp_f_avg)+'°F so far): check from ~'+clock(new Date(bp.bulk_check).getTime())+', usually done ~'+clock(new Date(bp.bulk_due).getTime())+'. The dough decides, not the clock.':'';
+  $('bulkinfo').textContent=info;
+  if(pct!=null)bulkChart(dg,top);
+}
+function bulkChart(dg,top){
+  const cv=$('bulkchart'),dpr=window.devicePixelRatio||1,w=cv.clientWidth||320,h=150;
+  cv.width=w*dpr;cv.height=h*dpr;const g=cv.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
+  const on=new Date(dg.on).getTime(),now=Date.now(),base=dg.base_cm,depth=dg.depth_cm;
+  // Off the dough (the box lifted for a fold, or on the counter) reads near the
+  // top: skip those, and anything below the empty cup.
+  // The PC sends the settled readings with the plan (dg.series: time, cm up).
+  const pts=dg.series?dg.series.map(([t,r])=>({t:new Date(t).getTime(),v:100*r/depth})):(run.points||[]).map(p=>({t:new Date(p.t).getTime(),d:p.d})).filter(p=>p.t>=on&&p.d!=null&&p.d>CUP_FLAT_CM+0.4&&p.d<=dg.empty_cm+1&&Math.abs(base-p.d)<depth*1.5)
+    .map(p=>({t:p.t,v:100*(base-p.d)/depth}));
+  pts.sort((a,b)=>a.t-b.t);
+  const L=34,R=8,T=6,B=18,W=w-L-R,Hh=h-T-B,span=Math.max(3600e3,now-on),x=t=>L+W*(t-on)/span,y=v=>T+Hh*(1-Math.max(-10,Math.min(top,v))/top);
+  g.font='11px system-ui';g.fillStyle=css('--line');g.globalAlpha=0.5;g.fillRect(L,y(75),W,y(50)-y(75));g.globalAlpha=1;
+  g.strokeStyle=css('--line');g.lineWidth=1;g.fillStyle=css('--muted');g.textAlign='right';
+  [0,50,75,top].forEach(v=>{g.beginPath();g.moveTo(L,y(v));g.lineTo(w-R,y(v));g.stroke();g.fillText(v+'%',L-4,y(v)+4)});
+  g.textAlign='left';const hrs=span/3600e3;for(let i=0;i<=hrs;i+=hrs>4?2:1)g.fillText(i+'h',x(on+i*3600e3)-6,h-4);
+  if(pts.length<2)return;
+  g.strokeStyle=css('--chart-d');g.lineWidth=2;g.beginPath();pts.forEach((p,i)=>i?g.lineTo(x(p.t),y(p.v)):g.moveTo(x(p.t),y(p.v)));g.stroke();
+}
 // Once bulk is done: how long it took against the estimate. The PC's numbers
 // are kept on this device (bk.bsum), since its plan goes away at the fridge.
 function bulkReport(T){
@@ -2197,7 +2254,7 @@ function bakeTab(force){
    const ts=Object.values(bk.done).filter(Boolean),first=ts.length?Math.min(...ts):Date.now()-24*3600e3,b=bk.box||{};
    if((b.on&&b.on<first-3600e3)||(b.tub&&b.tub.at<first-3600e3)){bk.box={};drop=true}
    if(drop)bkSave()}
-  boxUI();
+  boxUI();bulkCard();
   const SS=bakeSteps(),n=bk.loaves,{T,W,bh,F}=bakeTimes(),next=SS.find(st=>!bk.done[st.id]),now=Date.now(),pro=bk.exp==='pro';
   if(document.activeElement!==$('bakn'))$('bakn').value=n;
   $('bakaut').value=String(bk.aut||0);
