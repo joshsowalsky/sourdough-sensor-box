@@ -2431,6 +2431,24 @@ const cupG=ml=>Math.round(((cup.tare||0)+ml)*10)/10;  // water in the cup -> wha
 function cupSee(){const p=cup.pts,n=p.length;if(n<2)return false;let ref=p[0][1];for(let i=1;i<n-1;i++)if(ref-p[i][1]>=0.1)ref=p[i][1];return ref-p[n-1][1]<0.1}
 // Back on the round numbers: 31.5 in (aiming for 30) still asks for 60 (tof_logger.cup_progress).
 const cupNext=()=>{const l=cup.pts[cup.pts.length-1];return !l?0:cupSee()?l[0]:Math.round((l[0]+cup.step)*10)/10};  // on from what was poured
+// The cup's inside, from the readings: volume = a*h + b*h^2 (h up from the
+// bottom) gives the width at the bottom and at the rim. A small outline, to scale.
+function cupShape(pts){
+  if(pts.length<5)return '';
+  const h0=pts[0][1],H=pts.map(q=>h0-q[1]),V=pts.map(q=>q[0]);
+  let h2=0,h3=0,h4=0,vh=0,vh2=0;
+  H.forEach((h,i)=>{h2+=h*h;h3+=h**3;h4+=h**4;vh+=V[i]*h;vh2+=V[i]*h*h});
+  const det=h2*h4-h3*h3;if(!det)return '';
+  const a=(vh*h4-vh2*h3)/det,b=(h2*vh2-h3*vh)/det;
+  const deep=Math.max(h0-CUP_FLAT_CM,...H),dia=h=>2*Math.sqrt(Math.max(a+2*b*h,1)/Math.PI);
+  const d0=dia(0),d1=dia(deep),k=26/deep,x=n=>(16+n*k/2).toFixed(1),y=n=>(28-n*k).toFixed(1);
+  const fill=Math.max(...H),dw=dia(fill);
+  const svg='<svg width="32" height="30" viewBox="0 0 32 30" aria-hidden="true" style="flex:none">'
+    +'<path d="M'+x(-d0)+' 28L'+x(-dw)+' '+y(fill)+'L'+x(dw)+' '+y(fill)+'L'+x(d0)+' 28Z" fill="var(--line)"/>'
+    +'<path d="M'+x(-d1)+' 2L'+x(-d0)+' 28L'+x(d0)+' 28L'+x(d1)+' 2" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+  const r=d1/d0,w=Math.abs(r-1)<0.05?d0.toFixed(1)+' cm wide':d0.toFixed(1)+' \u2192 '+d1.toFixed(1)+' cm wide';
+  return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+svg+'<span>'+w+', '+deep.toFixed(1)+' cm deep</span></div>';
+}
 function cupTab(){
   if(cup.odd&&cup.odd[0]==='flat')cup.odd=null;  // the box on the counter is just "off"
   const names=new Set([...JARS,...Object.keys(appColl('jars')),...Object.keys((run&&run.cups)||{})]);
@@ -2461,7 +2479,7 @@ function cupTab(){
   $('cuppourrow').style.display=pouring?'flex':'none';
   if(pouring&&$('cuppour').dataset.for!==String(ml)){$('cuppour').dataset.for=String(ml);$('cuppour').value=cupG(ml)}
   cupPourLabel();
-  $('cuppts').innerHTML=pts.map((q,i)=>{
+  $('cuppts').innerHTML=cupShape(pts)+pts.map((q,i)=>{
     let t=cupG(q[0])+' g'+(q[0]?'':' (empty)')+' · '+q[1].toFixed(2)+' cm';
     if(i){const d=pts[i-1][1]-q[1],v=q[0]-pts[i-1][0];
       t+=d>=0.1&&v>0?' · up '+(10*d).toFixed(1)+' mm · '+Math.round(v/d)+' mL/cm':' · <span style="color:var(--warn)">didn’t go up</span>'}
