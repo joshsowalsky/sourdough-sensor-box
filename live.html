@@ -2443,7 +2443,6 @@ function cupTab(){
   let h='';
   if(cup.wait==='fail')h='<span style="color:var(--warn)">Couldn’t reach the PC. Try again.</span><br>';
   if(!cup.name)h+='Name the cup.';
-  else if(!cup.run&&last&&last[0]&&last[1]<CUP_FLAT_CM+2)h+='<b>Done \u2713</b> '+cup.name+' is measured from empty to '+cupG(last[0])+' g. Nothing left to do: empty the cup.';
   else if(!cup.run&&pts.length)h+=pts.length+' readings saved, the last with the scale at '+cupG(last[0])+' g. To keep going, put the box back on the cup and tap <b>Continue</b>.';
   else if(!cup.run)h+=noTare?'Put the empty cup on the scale (don’t zero it) and type what it weighs.':'Box on the <b>empty</b> cup, then Start.';
   else if(cup.phase==='on')h+='<b>Box on.</b> Hold still… '+cd(cup.onAt+CUP_SETTLE_MS);
@@ -2452,14 +2451,13 @@ function cupTab(){
   else if(cup.odd&&cup.odd[0]==='flat')h+='<span style="color:var(--warn)"><b>Not saved:</b> '+cup.odd[1]+' cm, the same as on the counter.</span> If the box is on the cup, the water is at the top: tap <b>Cup\u2019s full</b>.';
   else if(cup.odd)h+='<span style="color:var(--warn)"><b>Not saved:</b> the box read '+cup.odd[0]+' cm, about '+cup.odd[1]+' cm was expected.</span> Is it sitting flat on the cup? Lift it and set it back on. If it reads the same again, it\u2019s kept.';
   else if(cup.poured!=null)h+='<b>Got it, '+cup.poured+' g.</b> Now put the box back on the cup. It measures by itself.';
-  else if(last&&last[0]&&last[1]<CUP_FLAT_CM+1.2)h+='<b>Saved \u2713 '+cupG(last[0])+' g.</b> The water is about '+(last[1]-CUP_FLAT_CM).toFixed(1)+' cm below the rim: that\u2019s full. Tap <b>Cup\u2019s full</b>.';
   else{const go='A'+pour.slice(1)+'. Don’t worry about being exact. If the scale says something else, change the number below and tap <b>Fix</b> ↓'+(pts.length>2?' Near the top? Stop about 1 cm below the rim and tap Cup’s full instead.':'');
     h+=cup.phase==='off'?'<b>Box is off.</b> '+go:'<b>Saved ✓ '+(last[0]?cupG(last[0])+' g':'empty cup')+'.</b> Take the box off and set it on the counter. '+go}
   $('cupnext').innerHTML=h;
   $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name||noTare;$('cupgo').textContent=pts.length?'Continue':'Start';
   $('cupredo').hidden=!cup.run&&!pts.length;
   $('cupundo').hidden=$('cupdone').hidden=!cup.run;$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start over for a new one
-  const pouring=cup.run&&pts.length&&cup.poured==null&&!cup.odd&&!(last&&last[0]&&last[1]<CUP_FLAT_CM+1.2)&&cup.phase!=='on'&&!cupSee();
+  const pouring=cup.run&&pts.length&&cup.poured==null&&!cup.odd&&cup.phase!=='on'&&!cupSee();
   $('cuppourrow').style.display=pouring?'flex':'none';
   if(pouring&&$('cuppour').dataset.for!==String(ml)){$('cuppour').dataset.for=String(ml);$('cuppour').value=cupG(ml)}
   cupPourLabel();
