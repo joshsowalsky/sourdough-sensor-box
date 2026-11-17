@@ -2254,6 +2254,9 @@ function bakeTab(force){
    const ts=Object.values(bk.done).filter(Boolean),first=ts.length?Math.min(...ts):Date.now()-24*3600e3,b=bk.box||{};
    if((b.on&&b.on<first-3600e3)||(b.tub&&b.tub.at<first-3600e3)){bk.box={};drop=true}
    if(drop)bkSave()}
+  // The box went on the dough per the PC (logged there, or from another
+  // device) though this one never tapped Box is on: take the PC's time.
+  {const bp=bakePlan(),dg=bp&&bp.dough;if(dg&&dg.on&&!(bk.box&&bk.box.on)){bk.box={...(bk.box||{}),on:new Date(dg.on).getTime()};bkSave()}}
   boxUI();bulkCard();
   const SS=bakeSteps(),n=bk.loaves,{T,W,bh,F}=bakeTimes(),next=SS.find(st=>!bk.done[st.id]),now=Date.now(),pro=bk.exp==='pro';
   if(document.activeElement!==$('bakn'))$('bakn').value=n;
