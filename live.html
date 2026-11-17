@@ -2203,6 +2203,9 @@ function bulkCard(){
   $('bulkpbar').style.display=$('bulkchart').style.display=pct==null?'none':'';
   $('bulkpbar').nextElementSibling.style.display=pct==null?'none':'';
   let info=bp&&bp.bulk_due?'By the clock ('+Math.round(bp.temp_f_avg)+'°F so far): check from ~'+clock(new Date(bp.bulk_check).getTime())+', usually done ~'+clock(new Date(bp.bulk_due).getTime())+'. The dough decides, not the clock.':'';
+  // With the box measuring, the clock only guesses: once it has run out and
+  // the box says not yet, say so, and the PC's pushes follow the box.
+  if(bp&&pct!=null&&pct<50&&bp.progress>=1)info='Slower than the clock today: it guessed done by ~'+clock(new Date(bp.bulk_due).getTime())+', the box says up '+pct+'%. Wait for 50% (your phone gets a push then).';
   $('bulkinfo').textContent=info;
   if(pct!=null)bulkChart(dg,top);
 }
