@@ -2189,11 +2189,15 @@ function bakeTab(force){
   // Don't redraw under a box being typed in (the minute refresh); a tap on
   // Done or Undo always redraws, even though the tapped button has focus.
   {const ae=document.activeElement;if(!force&&ae&&ae.tagName==='INPUT'&&$('baksteps').contains(ae))return}
-  boxUI();
   // A step's done time from before the step ahead of it is left over from an
-  // earlier bake (no Start over): drop it, so this bake's times flow on.
+  // earlier bake (no Start over): drop it, so this bake's times flow on. The
+  // dough box's tub and "on" times from before this bake go too.
   {let prev=0,drop=false;bakeSteps().forEach(st=>{const d=bk.done[st.id];if(!d)return;
-    if(d<prev){delete bk.done[st.id];drop=true}else prev=d});if(drop)bkSave()}
+    if(d<prev){delete bk.done[st.id];drop=true}else prev=d});
+   const ts=Object.values(bk.done).filter(Boolean),first=ts.length?Math.min(...ts):Date.now()-24*3600e3,b=bk.box||{};
+   if((b.on&&b.on<first-3600e3)||(b.tub&&b.tub.at<first-3600e3)){bk.box={};drop=true}
+   if(drop)bkSave()}
+  boxUI();
   const SS=bakeSteps(),n=bk.loaves,{T,W,bh,F}=bakeTimes(),next=SS.find(st=>!bk.done[st.id]),now=Date.now(),pro=bk.exp==='pro';
   if(document.activeElement!==$('bakn'))$('bakn').value=n;
   $('bakaut').value=String(bk.aut||0);
