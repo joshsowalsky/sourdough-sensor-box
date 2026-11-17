@@ -334,6 +334,9 @@ const gfmt=g=>(+g).toFixed(1).replace(/\.0$/,'')+' g';
 function jarTable(){
   const m=new Map();
   [...(run.history||[]),run].forEach(r=>{if(!r.vessel)return;const e=m.get(r.vessel)||{name:r.vessel,feeds:0,empty:null,at:null};e.feeds++;if(r.empty_cm&&!r.empty_once){e.empty=+r.empty_cm;e.at=r.fed_at}m.set(r.vessel,e)});
+  // Cups measured on the Cup tab come with their empty reading (tof_logger known_empty).
+  Object.entries(run.cups||{}).forEach(([n,c])=>{const p=(c.points||[])[0];if(!p||p[0]!==0)return;
+    const e=m.get(n)||{name:n,feeds:0,empty:null,at:null};if(e.empty==null)e.empty=+p[1];m.set(n,e)});
   return [...m.values()];
 }
 let calNow=null,calDrop=false;  // empty reading taken in this pause, and whether it was discarded
@@ -342,7 +345,7 @@ function fillJars(cur){
   // To recalibrate a jar, pick it above. Removed jars are only hidden from this list (on this device); past feeds
   // keep their own jar and reading in the feed log.
   const aj=appColl('jars'),hid=[...saved('hiddenjars'),...Object.keys(aj).filter(n=>aj[n].hidden)],s=$('rvesselsel');
-  const l=[...new Set([...JARS,...(run.history||[]).map(r=>r.vessel),run.vessel,...Object.keys(aj),...saved('jars'),cur].filter(Boolean))].filter(v=>v===cur||!hid.includes(v));
+  const l=[...new Set([...JARS,...(run.history||[]).map(r=>r.vessel),run.vessel,...Object.keys(aj),...Object.keys(run.cups||{}),...saved('jars'),cur].filter(Boolean))].filter(v=>v===cur||!hid.includes(v));
   const jt=new Map(jarTable().filter(j=>l.includes(j.name)).map(j=>[j.name,j]));
   s.replaceChildren(...l.map(v=>opt(v,jt.get(v)?.empty?v+' ✓':v)),opt('new','+ Add a jar…'));s.value=cur||l[0];showJar();
   const day=t=>new Date(t).toLocaleDateString([],{month:'short',day:'numeric'});
@@ -351,7 +354,7 @@ function fillJars(cur){
   $('rjars').innerHTML='<tr><th>Jar</th><th>Empty weight</th><th>Box reading</th></tr>'+rows.map(j=>'<tr><td>'+esc(j.name)+'<div class="sub">'+j.feeds+' feed'+(j.feeds===1?'':'s')+'</div>'+jarBtn('hide:'+encodeURIComponent(j.name),'Remove')+'</td><td>'+
     (jarEdit===j.name?'<input id="jarwt" type="number" inputmode="decimal" min="0" max="5000" step="0.1" class="g" style="margin-left:0;width:4em" value="'+(aj[j.name]&&aj[j.name].empty_g||'')+'"> g<br>'+jarBtn('wtsave:'+encodeURIComponent(j.name),'Save')+'<br>'+jarBtn('wtcancel','Cancel')
       :aj[j.name]&&aj[j.name].empty_g?gfmt(aj[j.name].empty_g)+'<br>'+jarBtn('wt:'+encodeURIComponent(j.name),'Edit'):jarBtn('wt:'+encodeURIComponent(j.name),'Add'))+'</td><td>'+
-    (j.empty?j.empty.toFixed(1)+' cm<div class="sub">'+day(j.at)+'</div>':'<span class="sub">not yet</span>')+'</td></tr>').join('');
+    (j.empty?j.empty.toFixed(1)+' cm<div class="sub">'+(j.at?day(j.at):'Cup tab')+'</div>':'<span class="sub">not yet</span>')+'</td></tr>').join('');
 }
 // The Jar box: the one place to calibrate. One empty-jar reading per pause,
 // taken before or after picking the jar, in any order. Starter in stores it
