@@ -2186,10 +2186,10 @@ function bulkCard(){
   if(!on){if(box.parentElement!==$('baksteps').parentElement)$('baksteps').before(box);return}
   const bp=bakePlan(),dg=bp&&bp.dough,now=Date.now(),H=3600e3,b=bk.box||{};
   const hm=ms=>{const m=Math.max(0,Math.round(ms/60e3));return (m>=60?Math.floor(m/60)+' h ':'')+(m%60)+' min'};
-  $('bulklabel').textContent='Bulk rise · Gus in at '+clock(bk.done.mix)+', '+hm(now-bk.done.mix)+' ago';
+  $('bulklabel').textContent='Bulk rise · started '+clock(bk.done.mix)+' (when Gus went in), '+hm(now-bk.done.mix)+' ago';
   const pct=dg&&dg.pct!=null?dg.pct:null;
   let head;
-  if(!b.on)head='<b style="font-size:1.2rem">Box not on the dough yet</b><div class="note">Do the two steps below; then the rise shows here.</div>';
+  if(!b.on)head='<b style="font-size:1.2rem">Box not on the dough yet</b><div class="note">'+(bk.done.salt?'Salt\u2019s in: put the dough in the cup now (step 2 below).':'The dough goes in the cup after the salt (step 2 below). Bulk is already counting.')+'</div>';
   else if(!dg)head='<b style="font-size:1.2rem">Box on since '+clock(b.on)+'</b><div class="note">The first reading comes about 15 min after the box goes on (the dough settles first).</div>';
   else if(pct==null)head='<b style="font-size:2rem">+'+dg.rise_cm.toFixed(1)+' cm</b><div class="note">Measure the empty cup (step 1 below) to see it as a %.</div>';
   else{const st=pct>=75?['Past 75%: end bulk now','var(--warn)']:pct>=50?['In range: end bulk when it\u2019s domed, bubbly and jiggly','var(--ok)']:['Not yet: done at 50\u201375%','var(--muted)'];
