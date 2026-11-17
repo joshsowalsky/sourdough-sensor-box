@@ -2432,6 +2432,7 @@ function cupSee(){const p=cup.pts,n=p.length;if(n<2)return false;let ref=p[0][1]
 // Back on the round numbers: 31.5 in (aiming for 30) still asks for 60 (tof_logger.cup_progress).
 const cupNext=()=>{const l=cup.pts[cup.pts.length-1];return !l?0:cupSee()?l[0]:Math.round((l[0]+cup.step)*10)/10};  // on from what was poured
 function cupTab(){
+  if(cup.odd&&cup.odd[0]==='flat')cup.odd=null;  // the box on the counter is just "off"
   const names=new Set([...JARS,...Object.keys(appColl('jars')),...Object.keys((run&&run.cups)||{})]);
   $('cupnames').innerHTML='';names.forEach(n=>$('cupnames').appendChild(opt(n)));
   if(document.activeElement!==$('cupname'))$('cupname').value=cup.name;
@@ -2448,7 +2449,6 @@ function cupTab(){
   else if(cup.phase==='on')h+='<b>Box on.</b> Hold still… '+cd(cup.onAt+CUP_SETTLE_MS);
   else if(!pts.length)h+=cup.wait==='start'?'Starting…':'Put the box on the <b>empty</b> cup.';
   else if(cupSee())h+='<span style="color:var(--warn)">That pour didn’t bring the level up: the sensor sees through clear water. Stir in more milk, then lift the box and put it back on.</span>';
-  else if(cup.odd&&cup.odd[0]==='flat')h+='<span style="color:var(--warn)"><b>Not saved:</b> '+cup.odd[1]+' cm, the same as on the counter.</span> If the box is on the cup, the water is at the top: tap <b>Cup\u2019s full</b>.';
   else if(cup.odd)h+='<span style="color:var(--warn)"><b>Not saved:</b> the box read '+cup.odd[0]+' cm, about '+cup.odd[1]+' cm was expected.</span> Is it sitting flat on the cup? Lift it and set it back on. If it reads the same again, it\u2019s kept.';
   else if(cup.poured!=null)h+='<b>Got it, '+cup.poured+' g.</b> Now put the box back on the cup. It measures by itself.';
   else{const go='A'+pour.slice(1)+'. Don’t worry about being exact. If the scale says something else, change the number below and tap <b>Fix</b> ↓'+(pts.length>2?' Near the top? Stop about 1 cm below the rim and tap Cup’s full instead.':'');
@@ -2489,7 +2489,7 @@ function cupPoll(){
     if(w[1]==='started')cup.wait=null;
     else if(w[1]==='done'){cup.run=false;cupStop()}
     else if(w[1]==='off'){if(live)cup.phase='off'}
-    else if(w[1]==='flat'&&w.length===3){if(live)cup.odd=['flat',Number(w[2])];cup.phase=''}
+    else if(w[1]==='flat'&&w.length===3){if(live)cup.phase=''}
     else if(w[1]==='odd'&&w.length===4){if(live)cup.odd=[Number(w[2]),Number(w[3])];cup.phase=''}
     else if(w[1]==='fixed'&&w.length===4){const q=cup.pts.find(q=>q[0]===Number(w[2]));if(q)q[0]=Number(w[3])}
     else if(w[1]==='on'){if(live){cup.phase='on';cup.onAt=Date.now()}}
