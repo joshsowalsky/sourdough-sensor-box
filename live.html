@@ -566,6 +566,14 @@ function emptyOf(r){
   const t=Date.parse(r.fed_at),same=[...(run.history||[]),run].filter(q=>q.empty_cm&&!q.empty_once&&q.vessel===r.vessel);
   return same.length?+same.reduce((b,q)=>Math.abs(Date.parse(q.fed_at)-t)<Math.abs(Date.parse(b.fed_at)-t)?q:b).empty_cm:null;
 }
+// A cup measured on the Cup tab isn't a cylinder, so growth there is volume
+// now over volume at the feed, from the cup's fit; elsewhere it's height.
+function growFn(r,start){
+  const c=run.cups&&run.cups[r.vessel],F=c&&cupFit(c.points);
+  if(F&&start!=null&&!isNaN(start)){const v0=F.vol(start);if(v0>5)return d=>F.vol(d)/v0}
+  const depth=startDepth(r,start);
+  return d=>depth?1+(start-d)/depth:NaN;
+}
 function startDepth(r=run,start){
   const e=emptyOf(r);
   if(e&&start!=null&&e-start>0.2)return e-start;
@@ -850,7 +858,7 @@ function renderRun(){
   const rise=isFinite(s.start-s.now)?s.start-s.now:0;
   const depth=startDepth(run,s.start),cm=(rise>=0?'':'−')+Math.abs(rise).toFixed(1);
   // Headline in times-risen, which reads the same in any vessel; cm if unknown.
-  $('runrise').textContent=depth?(1+rise/depth).toFixed(1)+'x':cm;
+  $('runrise').textContent=depth?growFn(run,s.start)(s.now).toFixed(1)+'x':cm;
   $('rununit').textContent=depth?'its starting size · '+cm+' cm up':'cm risen';
   let t='Fed '+clock(s.fed)+', '+((Date.now()-s.fed)/3600e3).toFixed(1)+' h ago. '+(s.pts.length&&isFinite(s.now)?'Start '+s.start.toFixed(1)+' cm from the sensor, now '+s.now.toFixed(1)+'.':'Collecting the first readings.');
   if(s.best&&s.start-s.best.d>=0.3)t+=' Most risen so far: '+(s.start-s.best.d).toFixed(1)+' cm at '+clock(s.best.t)+' ('+((s.best.t-s.fed)/3600e3).toFixed(1)+' h after feeding).';
@@ -1604,7 +1612,7 @@ function feedSegs(all){
     const pts=despike(r.points.map(p=>({t:new Date(p.t).getTime(),d:p.d})).filter(p=>p.t>=fed));
     const start=fedLevel(pts,fed,15*60e3),depth=startDepth(r,start);
     const fs=r.points.filter(p=>p.f!=null).map(p=>p.f),f=r.room_f_avg??(fs.length?fs.reduce((a,b)=>a+b)/fs.length:null);
-    return {fed,vessel:r.vessel,feed_g:r.feed_g,f,depth,pts:depth&&!isNaN(start)?pts.map(p=>({t:p.t,x:1+(start-p.d)/depth})):[]};
+    return {fed,vessel:r.vessel,feed_g:r.feed_g,f,depth,pts:depth&&!isNaN(start)?(G=>pts.map(p=>({t:p.t,x:G(p.d)})))(growFn(r,start)):[]};
   });
 }
 // When a feed started rising: the smoothed line first 2 mm (two sensor steps)
@@ -1906,7 +1914,7 @@ function runChart(s){
   // Plotted as growth: times its starting size (1x = just fed), from the rise
   // (start minus distance) over the starter's depth. That reads the same in
   // every vessel. Without a known vessel, plain cm of rise.
-  const depth=startDepth(run,s.start),grow=r=>depth?1+r/depth:r;
+  const depth=startDepth(run,s.start),G=growFn(run,s.start),grow=r=>depth?G(s.start-r):r;
   // Healthy-pace marker: where a ready starter would hit 2x at this ratio and
   // temperature. The chart stretches to show it when it's still ahead.
   const segz=feedSegs(),tgt=depth?s.fed+paceH(feedKpis(segz[segz.length-1]))*3600e3:null;
@@ -2436,13 +2444,19 @@ function cupSee(){const p=cup.pts,n=p.length;if(n<2)return false;let ref=p[0][1]
 const cupNext=()=>{const l=cup.pts[cup.pts.length-1];return !l?0:cupSee()?l[0]:Math.round((l[0]+cup.step)*10)/10};  // on from what was poured
 // The cup's inside, from the readings: volume = a*h + b*h^2 (h up from the
 // bottom) gives the width at the bottom and at the rim. A small outline, to scale.
-function cupShape(pts){
-  if(pts.length<5)return '';
+function cupFit(pts){
+  if(!pts||pts.length<5||pts[0][0]!==0)return null;
   const h0=pts[0][1],H=pts.map(q=>h0-q[1]),V=pts.map(q=>q[0]);
   let h2=0,h3=0,h4=0,vh=0,vh2=0;
   H.forEach((h,i)=>{h2+=h*h;h3+=h**3;h4+=h**4;vh+=V[i]*h;vh2+=V[i]*h*h});
-  const det=h2*h4-h3*h3;if(!det)return '';
+  const det=h2*h4-h3*h3;if(!det)return null;
   const a=(vh*h4-vh2*h3)/det,b=(h2*vh2-h3*vh)/det;
+  if(!(a>0)||a+2*b*Math.max(...H)<=0)return null;
+  return {a,b,h0,H,vol:cm=>{const h=Math.max(0,h0-cm);return a*h+b*h*h}};
+}
+function cupShape(pts){
+  const F=cupFit(pts);if(!F)return '';
+  const {a,b,h0,H}=F;
   const deep=Math.max(h0-CUP_FLAT_CM,...H),dia=h=>2*Math.sqrt(Math.max(a+2*b*h,1)/Math.PI);
   const d0=dia(0),d1=dia(deep),k=26/deep,x=n=>(16+n*k/2).toFixed(1),y=n=>(28-n*k).toFixed(1);
   const fill=Math.max(...H),dw=dia(fill);
