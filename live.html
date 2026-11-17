@@ -2443,6 +2443,7 @@ function cupTab(){
   let h='';
   if(cup.wait==='fail')h='<span style="color:var(--warn)">Couldn’t reach the PC. Try again.</span><br>';
   if(!cup.name)h+='Name the cup.';
+  else if(!cup.run&&last&&last[0]&&last[1]<CUP_FLAT_CM+2)h+='<b>Done \u2713</b> '+cup.name+' is measured from empty to '+cupG(last[0])+' g. Nothing left to do: empty the cup.';
   else if(!cup.run&&pts.length)h+=pts.length+' readings saved, the last with the scale at '+cupG(last[0])+' g. To keep going, put the box back on the cup and tap <b>Continue</b>.';
   else if(!cup.run)h+=noTare?'Put the empty cup on the scale (don’t zero it) and type what it weighs.':'Box on the <b>empty</b> cup, then Start.';
   else if(cup.phase==='on')h+='<b>Box on.</b> Hold still… '+cd(cup.onAt+CUP_SETTLE_MS);
