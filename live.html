@@ -2278,6 +2278,7 @@ async function sendBake(kind,id,at){
   if(!key){$('baksync').textContent='Saved on this device only: it has no pause key, so the bake log on the PC doesn’t get these.';return}
   const ev={step:id,kind,at:at||bk.done[id]||Date.now(),fed:run?new Date(run.fed_at).getTime():null,temp:+bakeF().toFixed(1)};
   if(BAKE_ING[id])ev.amt=Object.fromEntries(BAKE_ING[id].map(k=>[k,+(+amt(k)).toFixed(1)]));
+  if(id==='aut'&&bk.aut>0)ev.mins=bk.aut;  // the PC pushes "Add Gus now" when it's up
   if(id==='mix'&&bkGus){if(bkGus.x!=null)ev.x=+bkGus.x.toFixed(2);if(bkGus.past!=null)ev.past=+bkGus.past.toFixed(2)}
   try{
     const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:'bake '+JSON.stringify(ev)});
