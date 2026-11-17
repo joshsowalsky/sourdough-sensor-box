@@ -2113,7 +2113,7 @@ function boxUI(){
     :tb&&!tb.failed&&Date.now()-tb.at<90e3?'1. Measuring the empty tub… '+cd(tb.at+CALIB_MS)
     :(tb&&tb.failed?'Couldn’t measure: check the box sits flat on the empty, clean tub. ':'')+'1. Box on the empty tub, then'+btn('tub','Measure it');
   h+='<br>'+(b.on?'2. Box on the dough since '+clock(b.on)+' ✓'+btn('off','Undo')
-    :'2. Right after mixing, put the box on the dough and tap'+btn('on','Box is on'));
+    :'2. Once the salt is in: about 50 g of the dough into the tub, pressed flat, box on, then tap'+btn('on','Box is on'));
   el.innerHTML=h;
 }
 async function awaitTub(at){
