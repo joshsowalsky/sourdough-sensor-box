@@ -2226,7 +2226,8 @@ function bulkCard(){
   let info=bp&&bp.bulk_due?'By the clock ('+Math.round(bp.temp_f_avg)+'°F so far): check from ~'+clock(new Date(bp.bulk_check).getTime())+', usually done ~'+clock(new Date(bp.bulk_due).getTime())+'. The dough decides, not the clock.':'';
   // With the box measuring, the clock only guesses: once it has run out and
   // the box says not yet, say so, and the PC's pushes follow the box.
-  const pace=dg&&dg.pace;
+  const pace=dg&&dg.pace,doubt=dg&&dg.pace_doubt;
+  if(doubt&&bp&&bp.bulk_due){$('bulkinfo').innerHTML='<span style="color:var(--warn)"><b>The aliquot and the clock disagree.</b></span> The aliquot says '+doubt.aim_pct+'% ~'+clock(new Date(doubt.aim).getTime())+'; at '+Math.round(bp.temp_f_avg)+'°F bulk should be done ~'+clock(new Date(bp.bulk_due).getTime())+'. Trust the bowl: check it from ~'+clock(new Date(bp.bulk_check).getTime())+'.';if(pct!=null)bulkChart(dg,top);return}
   const frEnd=bk.fr&&bk.fr>now?bk.fr-35*60e3:null;
   if(pace&&frEnd&&new Date(pace.aim).getTime()>frEnd){const atEnd=Math.round(pct+pace.pct_h*(frEnd-now)/H);
     info='<span style="color:var(--warn)"><b>Won\u2019t reach '+pace.aim_pct+'% before your fridge time.</b></span> At the box\u2019s pace it gets there ~'+clock(new Date(pace.aim).getTime())+'. To be in the fridge by '+clock(bk.fr)+', end bulk by <b>'+clock(frEnd)+'</b> (about '+atEnd+'%'+(atEnd<40?': under 40%, expect a tighter, milder loaf':'')+').'}
