@@ -2152,6 +2152,9 @@ $('bakbox').addEventListener('click',e=>{
 // updates, carry it on at the pace its due time implies.
 function bulkNow(T,bh){
   const now=Date.now(),bp=bakePlan();
+  // The box sets the pace: how far along is the rise against the aim.
+  if(bp&&bp.bulk_by==='box'&&bp.dough&&bp.dough.pct!=null&&bp.dough.pace){
+    const a=bp.dough.pace.aim_pct;return {p:bp.dough.pct/a,due:new Date(bp.bulk_due).getTime(),win:[50/a,75/a]}}
   if(bp&&bp.bulk_due&&run.updated){
     const u=new Date(run.updated).getTime(),due=new Date(bp.bulk_due).getTime(),p0=bp.progress||0;
     const p=due>u?p0+(now-u)*(1-p0)/(due-u):1;
@@ -2205,8 +2208,10 @@ function bulkCard(){
   let info=bp&&bp.bulk_due?'By the clock ('+Math.round(bp.temp_f_avg)+'°F so far): check from ~'+clock(new Date(bp.bulk_check).getTime())+', usually done ~'+clock(new Date(bp.bulk_due).getTime())+'. The dough decides, not the clock.':'';
   // With the box measuring, the clock only guesses: once it has run out and
   // the box says not yet, say so, and the PC's pushes follow the box.
-  if(bp&&pct!=null&&pct<50&&bp.progress>=1)info='Slower than the clock today: it guessed done by ~'+clock(new Date(bp.bulk_due).getTime())+', the box says up '+pct+'%. Wait for 50% (your phone gets a push then).';
-  $('bulkinfo').textContent=info;
+  const pace=dg&&dg.pace;
+  if(pace)info='At the box\u2019s pace ('+pace.pct_h+'% an hour over the last hour): 50% ~'+clock(new Date(pace['50']).getTime())+', <b>'+pace.aim_pct+'% ~'+clock(new Date(pace.aim).getTime())+' (aim)</b>, 75% ~'+clock(new Date(pace['75']).getTime())+'. Updates as it goes; pre-shape and the rest follow it.';
+  else if(bp&&pct!=null&&pct<50&&bp.progress>=1)info='Slower than the clock today: it guessed done by ~'+clock(new Date(bp.bulk_due).getTime())+', the box says up '+pct+'%. Wait for 50% (your phone gets a push then).';
+  $('bulkinfo').innerHTML=info;
   if(pct!=null)bulkChart(dg,top);
 }
 function bulkChart(dg,top){
