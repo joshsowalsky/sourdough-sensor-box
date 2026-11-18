@@ -2296,6 +2296,18 @@ function bakeTab(force){
   {const s=$('bakaliqcup'),l=aliqCups(),c=aliqCup();s.replaceChildren(...l.map(([n])=>opt(n)));if(c)s.value=c[0];s.disabled=!l.length}
   if(document.activeElement!==$('bakfr'))$('bakfr').value=bk.fr&&bk.fr>Date.now()-12*3600e3?new Date(bk.fr).toTimeString().slice(0,5):'';$('bakexp').value=pro?'pro':'new';
   bakeSummary();
+  // In the fridge by: say plainly whether this plan makes it, and what has
+  // to happen by when for it to.
+  {const fr=bk.fr&&bk.fr>now-3600e3?bk.fr:null;
+   if(fr&&!bk.done.fridge){
+    const dOf=t=>new Date(t).toDateString()===new Date().toDateString()?'':new Date(t).toLocaleDateString([],{weekday:'short'})+' ';
+    const fz=T.fridge,mixBy=fr-35*60e3-bh*3600e3,ok=fz<=fr+5*60e3,dl=dOf(fr)+clock(fr);
+    let t=ok?'<b style="color:var(--ok)">\u2713 In the fridge by '+dl+':</b> on track (about '+dOf(fz)+clock(fz)+').'
+      :'<b style="color:var(--warn)">\u26a0 In the fridge by '+dl+': this plan misses it</b> (about '+dOf(fz)+clock(fz)+').';
+    if(!bk.done.mix){t+=' Gus goes in by <b>'+clock(mixBy)+'</b> at the latest.';
+      if(bk.aut>0&&!bk.done.aut&&now+bk.aut*60e3>mixBy)t+=' Not enough time for a '+bk.aut+'-min autolyse: '+(mixBy-now>10*60e3?'keep it to '+Math.round((mixBy-now)/60e3)+' min':'skip it and mix now')+'.'}
+    else if(!ok)t+=' End bulk by about '+clock(fr-35*60e3)+', even if it\u2019s short of 50%.';
+    $('bakrecipe').insertAdjacentHTML('afterbegin','<div style="margin-bottom:6px;font-size:.95rem">'+t+'</div>')}}
   const hm=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
   const dayOf=t=>new Date(t).toDateString()===new Date().toDateString()?'':new Date(t).toLocaleDateString([],{weekday:'short'})+' ';
   const lastDone=[...SS].reverse().find(st=>bk.done[st.id]);
