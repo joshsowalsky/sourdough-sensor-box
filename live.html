@@ -119,7 +119,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div id="bulkboxslot" class="note" style="margin-top:8px"></div></div>
   <div class="card"><div class="label">Is Gus ready?</div><div id="bakegus" class="small" style="color:var(--fg);font-size:.95rem">Loading…</div></div>
   <div class="card"><div class="label">Steps · mix today, bake tomorrow</div>
-    <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><label class="note">Autolyse <select id="bakaut"><option value="0">none</option><option value="30">30 min</option><option value="60">1 h</option><option value="120">2 h</option></select></label><label class="note">Folds done by <input id="bakby" type="time" class="g" style="width:7em"></label><label class="note">In the fridge by <input id="bakfr" type="time" class="g" style="width:7em"></label><label class="note">Aliquot <input id="bakaliq" type="number" inputmode="decimal" min="0" step="1" class="g" style="width:4.5em"> g in <select id="bakaliqcup"></select></label><label class="note">Level <select id="bakexp"><option value="new">new</option><option value="pro">experienced</option></select></label><button class="chip" id="bakreset">Start over</button></div>
+    <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><label class="note">Autolyse <select id="bakaut"><option value="0">none</option><option value="30">30 min</option><option value="60">1 h</option><option value="120">2 h</option></select></label><label class="note">Folds done by <input id="bakby" type="time" class="g" style="width:7em"></label><label class="note">In the fridge by <input id="bakfr" type="time" class="g" style="width:7em"></label><label class="note">Aliquot <input id="bakaliq" type="number" inputmode="decimal" min="0" step="1" class="g" style="width:4.5em"> g in <select id="bakaliqcup"></select></label><button class="chip" id="bakreset">Start over</button></div>
     <div class="note" id="bakrecipe" style="margin-top:6px"></div>
     <div class="note" id="bakbox" style="margin-top:8px"></div>
     <div id="baksteps" style="margin-top:8px"></div>
@@ -1991,6 +1991,7 @@ const bakeF=()=>{const b=bakePlan();return b&&b.temp_f_now!=null?b.temp_f_now:do
 const warmBy=F=>Math.pow(2,(BAKE_F-F)/PLAN_F_PER_2X);
 let bk={loaves:1,done:{},amt:{}},bkGus=null;
 try{bk={...bk,...JSON.parse(store.get('bakerun')||'{}')}}catch(e){}
+delete bk.exp;
 const bkSave=()=>store.set('bakerun',JSON.stringify(bk));
 const BAKE_STEPS=[
   {id:'mix',t:'Mix',s:'Squish until no dry flour; cover.',what:n=>'In a big bowl:'+ingEdit(BAKE_ING.mix)+'Squish until no dry flour is left, then cover. Leave about '+GUS_KEEP+' g of Gus in the jar for next time.'},
@@ -2294,7 +2295,7 @@ function bakeTab(force){
   if(document.activeElement!==$('bakby'))$('bakby').value=bk.by&&bk.by>Date.now()-12*3600e3?new Date(bk.by).toTimeString().slice(0,5):'';
   if(document.activeElement!==$('bakaliq'))$('bakaliq').value=bk.aliq>0?bk.aliq:'';
   {const s=$('bakaliqcup'),l=aliqCups(),c=aliqCup();s.replaceChildren(...l.map(([n])=>opt(n)));if(c)s.value=c[0];s.disabled=!l.length}
-  if(document.activeElement!==$('bakfr'))$('bakfr').value=bk.fr&&bk.fr>Date.now()-12*3600e3?new Date(bk.fr).toTimeString().slice(0,5):'';$('bakexp').value=pro?'pro':'new';
+  if(document.activeElement!==$('bakfr'))$('bakfr').value=bk.fr&&bk.fr>Date.now()-12*3600e3?new Date(bk.fr).toTimeString().slice(0,5):'';
   bakeSummary();
   // In the fridge by: say plainly whether this plan makes it, and what has
   // to happen by when for it to.
@@ -2762,7 +2763,6 @@ $('bakaliqcup').onchange=e=>{bk.aliqCup=e.target.value;bkSave();bakeTab(true)};
 // In the fridge by: bulk has to end, and the loaf be shaped, before then.
 $('bakfr').onchange=e=>{const v=e.target.value;if(!v)delete bk.fr;else bk.fr=timeAt(v);bkSave();bakeTab(true);if(run)renderRun()};
 $('bakaut').onchange=e=>{bk.aut=Number(e.target.value)||0;bkSave();bakeTab(true);if(run)renderRun()};
-$('bakexp').onchange=e=>{bk.exp=e.target.value;bkSave();document.body.classList.toggle('pro',bk.exp==='pro');bakeTab(true)};
 document.body.classList.toggle('pro',bk.exp==='pro');
 $('bakreset').onclick=()=>{if(confirm('Start over? This clears the step times.')){bk.done={};bk.amt={};bk.box={};delete bk.bsum;bkSave();bakeTab()}};
 function ago(s){if(s<90)return Math.round(s)+' s ago';if(s<5400)return Math.round(s/60)+' min ago';return (s/3600).toFixed(1)+' h ago'}
