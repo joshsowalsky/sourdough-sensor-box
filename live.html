@@ -111,6 +111,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
 <div class="row keep" id="tabs" style="gap:6px"><button class="chip" data-tab="starter">Starter</button><button class="chip" data-tab="bake">Bake</button><button class="chip" data-tab="hist">History</button><button class="chip" data-tab="sl">Sliders</button><button class="chip" data-tab="cup">Cup</button><button class="chip" id="viewbtn" style="margin-left:auto">Simple</button></div>
 <section id="baketab" class="keep">
   <div class="card" id="bulkcard" hidden><div class="label" id="bulklabel">Bulk rise</div>
+    <div id="bulknext" style="margin:6px 0 10px"></div>
     <div id="bulkhead" style="margin-top:4px"></div>
     <div class="pbar" id="bulkpbar" style="height:16px;margin:8px 0 2px"><u id="bulkband"></u><i id="bulkfill"></i></div>
     <div class="row note" style="justify-content:space-between;margin:0"><span>0%</span><span>50–75%: done</span><span id="bulkmax">100%</span></div>
@@ -2217,6 +2218,16 @@ function bulkCard(){
     head='<b style="font-size:2.4rem;line-height:1.1">+'+pct+'%</b> <span style="color:'+st[1]+';font-weight:600">'+st[0]+'</span>'+
       (dg.settled_now?'':'<div class="note">Settling after a fold: the number updates in a few minutes.</div>')}
   $('bulkhead').innerHTML=head;
+  {const SS=bakeSteps(),nx=SS.find(st=>!bk.done[st.id]),{T,W}=bakeTimes();
+   let h='';
+   if(nx){const t=T[nx.id],w=W[nx.id],left=t-now;
+     const what=nx.bulk?'Tip it onto the counter and pre-shape':nx.id==='boxon'?'Aliquot in the cup, box on':nx.t;
+     const inT=left<=60e3?'<span style="color:var(--accent)">Now</span>':'in '+hm(left);
+     h='<div class="note" style="text-transform:uppercase;letter-spacing:.04em">Next</div>'+
+       '<div style="font-size:1.25rem;font-weight:700;line-height:1.2">'+what+'</div>'+
+       '<div style="font-size:2.2rem;font-weight:800;line-height:1.1">'+inT+'</div>'+
+       '<div class="note">~'+clock(t)+(nx.bulk&&w?' · start checking the bowl from ~'+clock(w[0]):'')+(nx.bulk?' · when it\u2019s about 50% up, domed and jiggly':'')+'</div>'}
+   $('bulknext').innerHTML=h}
   const top=Math.max(100,(pct||0)+10);
   $('bulkmax').textContent=top+'%';
   $('bulkband').style.cssText='left:'+50/top*100+'%;width:'+25/top*100+'%';
