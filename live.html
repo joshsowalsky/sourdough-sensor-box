@@ -2213,6 +2213,7 @@ function bulkCard(){
   let head;
   if(!b.on)head='<b style="font-size:1.2rem">Box not on the dough yet</b><div class="note">'+(bk.aliq>0?(bk.done.salt?'Salt\u2019s in: do the Aliquot step below now.':'The aliquot goes in the cup right after the salt (its own step below). Bulk is already counting.'):bk.done.salt?'Salt\u2019s in: put the dough in the cup now (step 2 below).':'The dough goes in the cup after the salt (step 2 below). Bulk is already counting.')+'</div>';
   else if(!dg)head='<b style="font-size:1.2rem">Box on since '+clock(b.on)+'</b><div class="note">The first reading comes about 15 min after the box goes on (the dough settles first).</div>';
+  else if(dg.depth_cm&&dg.depth_cm<2)head='<b style="font-size:1.1rem">Aliquot too thin to read</b><div class="note">Only '+dg.depth_cm.toFixed(1)+' cm deep: the box\u2019s wobble is as big as the rise. Judge the bowl; next time use 80\u2013100 g in the cup.</div>';
   else if(pct==null)head='<b style="font-size:2rem">+'+dg.rise_cm.toFixed(1)+' cm</b><div class="note">Measure the empty cup (step 1 below) to see it as a %.</div>';
   else{const st=pct>=75?['Past 75%: end bulk now','var(--warn)']:pct>=50?['In range: end bulk when it\u2019s domed, bubbly and jiggly','var(--ok)']:['Not yet: done at 50\u201375%','var(--muted)'];
     head='<b style="font-size:2.4rem;line-height:1.1">+'+pct+'%</b> <span style="color:'+st[1]+';font-weight:600">'+st[0]+'</span>'+
@@ -2335,7 +2336,8 @@ function bakeTab(force){
     let what=pro?(stepIng(st)?ingEdit(stepIng(st)):'')+(st.s||''):st.what(n);
     const bp=st.bulk&&!d&&bakePlan();
     const dg=bp&&bp.dough;
-    if(dg)what+='<div class="note" style="margin-top:4px;color:var(--fg)">Box: up '+(dg.pct!=null?dg.pct+'% ('+dg.rise_cm.toFixed(1)+' cm)':dg.rise_cm.toFixed(1)+' cm (measure the empty tub to get %)')+' '+(dg.since_mix?'since mixing':'since the box went on')+(dg.settled_now?'':', settling after a fold')+'. Aim for 50–75%.</div>';
+    if(dg&&dg.depth_cm&&dg.depth_cm<2)what+='<div class="note" style="margin-top:4px">The aliquot is only '+dg.depth_cm.toFixed(1)+' cm deep, too thin for the box to read. Judge the bowl.</div>';
+    else if(dg)what+='<div class="note" style="margin-top:4px;color:var(--fg)">Box: up '+(dg.pct!=null?dg.pct+'% ('+dg.rise_cm.toFixed(1)+' cm)':dg.rise_cm.toFixed(1)+' cm (measure the empty tub to get %)')+' '+(dg.since_mix?'since mixing':'since the box went on')+(dg.settled_now?'':', settling after a fold')+'. Aim for 50–75%.</div>';
     if(bp&&!bp.bulk_done&&!pro)what+='<div class="note" style="margin-top:4px">Timed at '+Math.round(bp.temp_f_avg)+'°F on average since mixing ('+(bp.temp_source==='probe'?'dough probe':'room')+'). Warmer gets there sooner; folds don’t change it.</div>';
     if(isNext&&!d&&W[st.id]&&now>W[st.id][1])what+='<div style="color:var(--warn);margin-top:4px">Late is fine: do it now. The steps after it count from when you tap “'+(st.btn||'Done')+'”.</div>';
     if(st.id==='mix'&&!d&&g&&g.win)what+=' <b>Gus is at its best until about '+clock(g.win)+'.</b>';
@@ -2378,6 +2380,9 @@ setInterval(ovenTick,1000);
 // Now / until, or Late once its window has passed.
 function stepWhen(st,isNext,T,W,now,dayOf){
   const w=W[st.id],t=T[st.id];
+  if(st.bulk&&isNext){const m=Math.round((t-now)/60e3),inT=m>=60?Math.floor(m/60)+' h '+(m%60)+' min':m+' min';
+    return m>1?'~'+dayOf(t)+clock(t)+'<br><span class="rng">in '+inT+(w&&now<w[0]?' · check from '+clock(w[0]):' · check the bowl now')+'</span>'
+      :'<span style="color:var(--accent)">Now</span><br><span class="rng">tip it out when it\u2019s 50% up, domed, jiggly</span>'}
   const pm=x=>new Date(x).getHours()>=12,rng=w?'<br><span class="rng">'+(pm(w[0])===pm(w[1])&&!dayOf(w[0])===!dayOf(w[1])?dayOf(w[0])+clock(w[0]).replace(/\s?[AP]M$/i,''):dayOf(w[0])+clock(w[0]))+'–'+clock(w[1])+'</span>':'';
   if(!isNext)return '~'+dayOf(t)+clock(t)+rng;
   if(!w)return t<=now+60e3?'Now':'~'+dayOf(t)+clock(t);
