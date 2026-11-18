@@ -119,7 +119,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div id="bulkboxslot" class="note" style="margin-top:8px"></div></div>
   <div class="card"><div class="label">Is Gus ready?</div><div id="bakegus" class="small" style="color:var(--fg);font-size:.95rem">Loading…</div></div>
   <div class="card"><div class="label">Steps · mix today, bake tomorrow</div>
-    <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><label class="note">Autolyse <select id="bakaut"><option value="0">none</option><option value="30">30 min</option><option value="60">1 h</option><option value="120">2 h</option></select></label><label class="note">Folds done by <input id="bakby" type="time" class="g" style="width:7em"></label><label class="note">In the fridge by <input id="bakfr" type="time" class="g" style="width:7em"></label><label class="note">Level <select id="bakexp"><option value="new">new</option><option value="pro">experienced</option></select></label><button class="chip" id="bakreset">Start over</button></div>
+    <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><label class="note">Autolyse <select id="bakaut"><option value="0">none</option><option value="30">30 min</option><option value="60">1 h</option><option value="120">2 h</option></select></label><label class="note">Folds done by <input id="bakby" type="time" class="g" style="width:7em"></label><label class="note">In the fridge by <input id="bakfr" type="time" class="g" style="width:7em"></label><label class="note">Aliquot <input id="bakaliq" type="number" inputmode="decimal" min="0" step="1" class="g" style="width:4.5em"> g in <select id="bakaliqcup"></select></label><label class="note">Level <select id="bakexp"><option value="new">new</option><option value="pro">experienced</option></select></label><button class="chip" id="bakreset">Start over</button></div>
     <div class="note" id="bakrecipe" style="margin-top:6px"></div>
     <div class="note" id="bakbox" style="margin-top:8px"></div>
     <div id="baksteps" style="margin-top:8px"></div>
@@ -2008,12 +2008,22 @@ const BAKE_STEPS=[
 // Autolyse (Bake tab setting, minutes): flour and water first, Gus after.
 // Gus going in is still the "mix" step, so bulk and the PC's plan count
 // from it as before.
+// Cups measured on the Cup tab: their empty reading is the first point.
+const aliqCups=()=>Object.entries((run&&run.cups)||{}).filter(([,c])=>c.points&&c.points[0]&&c.points[0][0]===0).map(([n,c])=>[n,c.points[0][1]]);
+const aliqCup=()=>{const l=aliqCups();return l.find(([n])=>n===bk.aliqCup)||l[0]||null};
+function aliqStep(){
+  const c=aliqCup();
+  return {id:'boxon',t:'Aliquot: box on',btn:'Box is on',after:['salt',3,0,20],s:bk.aliq+' g into the cup, flat; box on.',
+    what:()=>'Take <b>'+bk.aliq+' g</b> of the salted dough and press it flat into the bottom of '+(c?'a clean, dry <b>'+esc(c[0])+'</b> (empty depth '+c[1].toFixed(1)+' cm, already known)':'the cup')+'. Put the box on it and tap Box is on. The rest of the dough carries on with the folds; the Bulk card above tracks the rise.'};
+}
 function bakeSteps(){
-  const a=bk.aut>0?bk.aut:0;if(!a)return BAKE_STEPS;
+  const a=bk.aut>0?bk.aut:0;
+  const base=bk.aliq>0?[...BAKE_STEPS.slice(0,2),aliqStep(),...BAKE_STEPS.slice(2)]:BAKE_STEPS;
+  if(!a)return base;
   return [{id:'aut',t:'Autolyse',ing:['flour','ww','water'],s:'Mix; cover.',what:()=>'Flour and water only:'+ingEdit(['flour','ww','water'])+'Mix until no dry flour is left, then cover.'},
     {...BAKE_STEPS[0],t:'Add Gus',after:['aut',a,Math.max(20,a/2),a+60],ing:['gus'],s:'Squish in until even; cover. Bulk starts.',
       what:()=>ingEdit(['gus'])+'Dimple it in, then squish and fold until even. Cover. Bulk starts now. Leave about '+GUS_KEEP+' g of Gus in the jar.'},
-    ...BAKE_STEPS.slice(1)];
+    ...base.slice(1)];
 }
 const stepIng=st=>st.ing||BAKE_ING[st.id]||null;
 function r0(v){return Math.round(v)}
@@ -2021,7 +2031,10 @@ function r0(v){return Math.round(v)}
 const ING={flour:{name:'bread flour',per:450},ww:{name:'whole wheat',per:50},water:{name:'water (room temp)',per:350},
   gus:{name:'Gus',per:null},salt:{name:'salt',per:10},saltw:{name:'water, poured over the salt',per:15}};
 const BAKE_ING={mix:['flour','ww','water','gus'],salt:['salt','saltw']};
-const amt=k=>bk.amt&&bk.amt[k]!=null?bk.amt[k]:(k==='gus'?gusPer():ING[k].per)*bk.loaves;
+// An aliquot comes out of the dough, so every default grows by its share.
+const loafG=()=>Object.keys(ING).reduce((t,k)=>t+(k==='gus'?gusPer():ING[k].per),0);
+const aliqF=()=>bk.aliq>0?1+bk.aliq/(loafG()*bk.loaves):1;
+const amt=k=>bk.amt&&bk.amt[k]!=null?bk.amt[k]:(k==='gus'?gusPer():ING[k].per)*bk.loaves*aliqF();
 const g1d=v=>String(+(+v).toFixed(1));
 const ingEdit=keys=>'<ul class="ing">'+keys.map(k=>'<li><input type="number" inputmode="decimal" step="any" min="0" class="ingin" data-amt="'+k+'" value="'+g1d(amt(k))+'">g '+ING[k].name+'</li>').join('')+'</ul>';
 const gusPct=()=>amt('gus')/Math.max(1,amt('flour')+amt('ww'));
@@ -2116,6 +2129,7 @@ function bakeGus(){
 // mixing. The PC pauses Gus's tracking, since the box is off his jar.
 function boxUI(){
   const b=bk.box||{},el=$('bakbox'),btn=(a,t)=>' <button class="chip" data-box="'+a+'">'+t+'</button>';
+  if(bk.aliq>0&&aliqCup()){el.innerHTML=b.on?'Box on the aliquot since '+clock(b.on)+' \u2713':'';return}
   if(bk.done.bulk&&!b.on){el.innerHTML='';return}
   const tb=b.tub;
   let h='<b style="color:var(--fg)">Sensor box on the dough</b> (optional)<span class="wordy">: measures the rise. Use a straight-sided tub with the box looking down through a hole in the lid. Gus’s tracking pauses while the box is off his jar.</span><br>';
@@ -2195,7 +2209,7 @@ function bulkCard(){
   $('bulklabel').textContent='Bulk rise · started '+clock(bk.done.mix)+' (when Gus went in), '+hm(now-bk.done.mix)+' ago';
   const pct=dg&&dg.pct!=null?dg.pct:null;
   let head;
-  if(!b.on)head='<b style="font-size:1.2rem">Box not on the dough yet</b><div class="note">'+(bk.done.salt?'Salt\u2019s in: put the dough in the cup now (step 2 below).':'The dough goes in the cup after the salt (step 2 below). Bulk is already counting.')+'</div>';
+  if(!b.on)head='<b style="font-size:1.2rem">Box not on the dough yet</b><div class="note">'+(bk.aliq>0?(bk.done.salt?'Salt\u2019s in: do the Aliquot step below now.':'The aliquot goes in the cup right after the salt (its own step below). Bulk is already counting.'):bk.done.salt?'Salt\u2019s in: put the dough in the cup now (step 2 below).':'The dough goes in the cup after the salt (step 2 below). Bulk is already counting.')+'</div>';
   else if(!dg)head='<b style="font-size:1.2rem">Box on since '+clock(b.on)+'</b><div class="note">The first reading comes about 15 min after the box goes on (the dough settles first).</div>';
   else if(pct==null)head='<b style="font-size:2rem">+'+dg.rise_cm.toFixed(1)+' cm</b><div class="note">Measure the empty cup (step 1 below) to see it as a %.</div>';
   else{const st=pct>=75?['Past 75%: end bulk now','var(--warn)']:pct>=50?['In range: end bulk when it\u2019s domed, bubbly and jiggly','var(--ok)']:['Not yet: done at 50\u201375%','var(--muted)'];
@@ -2270,12 +2284,16 @@ function bakeTab(force){
    if(drop)bkSave()}
   // The box went on the dough per the PC (logged there, or from another
   // device) though this one never tapped Box is on: take the PC's time.
+  if(bk.done.boxon&&!(bk.box&&bk.box.on)){bk.box={...(bk.box||{}),on:bk.done.boxon};bkSave()}
+  if(!bk.done.boxon&&bk.box&&bk.box.on&&bk.aliq>0&&bk.done.salt&&bk.box.on>=bk.done.salt){bk.done.boxon=bk.box.on;bkSave()}
   {const bp=bakePlan(),dg=bp&&bp.dough;if(dg&&dg.on&&!(bk.box&&bk.box.on)){bk.box={...(bk.box||{}),on:new Date(dg.on).getTime()};bkSave()}}
   boxUI();bulkCard();
   const SS=bakeSteps(),n=bk.loaves,{T,W,bh,F}=bakeTimes(),next=SS.find(st=>!bk.done[st.id]),now=Date.now(),pro=bk.exp==='pro';
   if(document.activeElement!==$('bakn'))$('bakn').value=n;
   $('bakaut').value=String(bk.aut||0);
   if(document.activeElement!==$('bakby'))$('bakby').value=bk.by&&bk.by>Date.now()-12*3600e3?new Date(bk.by).toTimeString().slice(0,5):'';
+  if(document.activeElement!==$('bakaliq'))$('bakaliq').value=bk.aliq>0?bk.aliq:'';
+  {const s=$('bakaliqcup'),l=aliqCups(),c=aliqCup();s.replaceChildren(...l.map(([n])=>opt(n)));if(c)s.value=c[0];s.disabled=!l.length}
   if(document.activeElement!==$('bakfr'))$('bakfr').value=bk.fr&&bk.fr>Date.now()-12*3600e3?new Date(bk.fr).toTimeString().slice(0,5):'';$('bakexp').value=pro?'pro':'new';
   bakeSummary();
   const hm=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
@@ -2357,7 +2375,8 @@ async function sendBake(kind,id,at){
   if(!key){$('baksync').textContent='Saved on this device only: it has no pause key, so the bake log on the PC doesn’t get these.';return}
   const ev={step:id,kind,at:at||bk.done[id]||Date.now(),fed:run?new Date(run.fed_at).getTime():null,temp:+bakeF().toFixed(1)};
   if(BAKE_ING[id])ev.amt=Object.fromEntries(BAKE_ING[id].map(k=>[k,+(+amt(k)).toFixed(1)]));
-  if(id==='aut'&&bk.aut>0)ev.mins=bk.aut;  // the PC pushes "Add Gus now" when it's up
+  if(id==='aut'&&bk.aut>0)ev.mins=bk.aut;
+  if(id==='boxon'&&kind==='done'){const c=aliqCup();if(c&&!(bk.box&&bk.box.tub&&bk.box.tub.cm!=null))ev.empty_cm=c[1]}  // the PC pushes "Add Gus now" when it's up
   if(id==='mix'&&bkGus){if(bkGus.x!=null)ev.x=+bkGus.x.toFixed(2);if(bkGus.past!=null)ev.past=+bkGus.past.toFixed(2)}
   try{
     const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:'bake '+JSON.stringify(ev)});
@@ -2692,7 +2711,8 @@ $('tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){setTab(b.data
     const a=Number(q.get('aut'));if([0,30,60,120].includes(a))bk.aut=a;
     const by=/^(\d\d):(\d\d)$/.exec(q.get('by')||'');
     if(by){const d=new Date();d.setHours(+by[1],+by[2],0,0);if(d.getTime()<Date.now()-3600e3)d.setDate(d.getDate()+1);bk.by=d.getTime()}
-    bkSave();q.delete('bake');q.delete('loaves');q.delete('aut');q.delete('by');q.delete('fr');
+    const al=parseFloat(q.get('aliq'));if(al>0&&al<1000)bk.aliq=al;else delete bk.aliq;
+    bkSave();q.delete('aliq');q.delete('bake');q.delete('loaves');q.delete('aut');q.delete('by');q.delete('fr');
     history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:''));setTab('bake')}}
 function setView(simple,save){
   document.body.classList.toggle('simple',simple);$('viewbtn').classList.toggle('on',simple);
@@ -2725,6 +2745,8 @@ $('bakn').oninput=e=>{const v=parseFloat(e.target.value);if(v>0){bk.loaves=v;bk.
 // Folds done by: today at that time (tomorrow if it's already well past).
 const timeAt=v=>{const [h,m]=v.split(':').map(Number),d=new Date();d.setHours(h,m,0,0);if(d.getTime()<Date.now()-3600e3)d.setDate(d.getDate()+1);return d.getTime()};
 $('bakby').onchange=e=>{const v=e.target.value;if(!v)delete bk.by;else bk.by=timeAt(v);bkSave();bakeTab(true);if(run)renderRun()};
+$('bakaliq').onchange=e=>{const v=parseFloat(e.target.value);if(v>0&&v<1000)bk.aliq=v;else delete bk.aliq;bkSave();bakeTab(true)};
+$('bakaliqcup').onchange=e=>{bk.aliqCup=e.target.value;bkSave();bakeTab(true)};
 // In the fridge by: bulk has to end, and the loaf be shaped, before then.
 $('bakfr').onchange=e=>{const v=e.target.value;if(!v)delete bk.fr;else bk.fr=timeAt(v);bkSave();bakeTab(true);if(run)renderRun()};
 $('bakaut').onchange=e=>{bk.aut=Number(e.target.value)||0;bkSave();bakeTab(true);if(run)renderRun()};
