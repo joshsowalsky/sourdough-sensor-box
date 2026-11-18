@@ -2672,6 +2672,18 @@ $('slrows').addEventListener('focusin',e=>{if((e.target.id||'').startsWith('sli_
 $('sluse').onclick=()=>{if(!sl)return;['rg_s','rg_f','rg_w'].forEach(id=>typedIds.delete(id));setGrams([sl.st,sl.fl,sl.wa]);recipeTouched=true;
   $('slusenote').textContent='Filled in on the Starter tab ('+g1(sl.st)+' / '+g1(sl.fl)+' / '+g1(sl.wa)+' g).'};
 $('tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){setTab(b.dataset.tab);scrollTo(0,0)}};
+// A setup link (?bake=new&loaves=2&aut=30&by=17:30): starts a fresh bake on
+// this device with those settings, opens the Bake tab, then drops the query
+// so a reload doesn't start over again.
+{const q=new URLSearchParams(location.search);
+  if(q.get('bake')==='new'){
+    bk={...bk,done:{},amt:{},box:{}};delete bk.bsum;delete bk.by;
+    const n=parseFloat(q.get('loaves'));if(n>0&&n<=10)bk.loaves=n;
+    const a=Number(q.get('aut'));if([0,30,60,120].includes(a))bk.aut=a;
+    const by=/^(\d\d):(\d\d)$/.exec(q.get('by')||'');
+    if(by){const d=new Date();d.setHours(+by[1],+by[2],0,0);if(d.getTime()<Date.now()-3600e3)d.setDate(d.getDate()+1);bk.by=d.getTime()}
+    bkSave();q.delete('bake');q.delete('loaves');q.delete('aut');q.delete('by');
+    history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:''));setTab('bake')}}
 function setView(simple,save){
   document.body.classList.toggle('simple',simple);$('viewbtn').classList.toggle('on',simple);
   if(save)store.set('view',simple?'simple':'full');
