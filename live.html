@@ -2223,11 +2223,12 @@ function bulkCard(){
    let h='';
    if(nx){const t=T[nx.id],w=W[nx.id],left=t-now;
      const what=nx.bulk?'Tip it onto the counter and pre-shape':nx.id==='boxon'?'Aliquot in the cup, box on':nx.t;
-     const inT=left<=60e3?'<span style="color:var(--accent)">Now</span>':'in '+hm(left);
+     const checking=nx.bulk&&w&&now>=w[0];
+     const inT=checking?'<span style="color:var(--accent)">Check the bowl now</span>':left<=60e3?'<span style="color:var(--accent)">Now</span>':'in '+hm(nx.bulk&&w?w[0]-now:left);
      h='<div class="note" style="text-transform:uppercase;letter-spacing:.04em">Next</div>'+
-       '<div style="font-size:1.25rem;font-weight:700;line-height:1.2">'+what+'</div>'+
-       '<div style="font-size:2.2rem;font-weight:800;line-height:1.1">'+inT+'</div>'+
-       '<div class="note">~'+clock(t)+(nx.bulk&&w?' · start checking the bowl from ~'+clock(w[0]):'')+(nx.bulk?' · when it\u2019s about 50% up, domed and jiggly':'')+'</div>'}
+       '<div style="font-size:1.25rem;font-weight:700;line-height:1.2">'+(nx.bulk&&!checking&&w?'Start checking the bowl':what)+'</div>'+
+       '<div style="font-size:'+(checking?'1.7':'2.2')+'rem;font-weight:800;line-height:1.15">'+inT+'</div>'+
+       '<div class="note">'+(nx.bulk?(checking?'Likely ready ~'+clock(t)+(left>60e3?' (in '+hm(left)+')':'')+'. ':'At ~'+clock(w?w[0]:t)+'; likely ready ~'+clock(t)+'. ')+'Tip it out when it\u2019s about 50% up, domed and jiggly.':'~'+clock(t))+'</div>'}
    $('bulknext').innerHTML=h}
   const top=Math.max(100,(pct||0)+10);
   $('bulkmax').textContent=top+'%';
@@ -2381,8 +2382,8 @@ setInterval(ovenTick,1000);
 function stepWhen(st,isNext,T,W,now,dayOf){
   const w=W[st.id],t=T[st.id];
   if(st.bulk&&isNext){const m=Math.round((t-now)/60e3),inT=m>=60?Math.floor(m/60)+' h '+(m%60)+' min':m+' min';
-    return m>1?'~'+dayOf(t)+clock(t)+'<br><span class="rng">in '+inT+(w&&now<w[0]?' · check from '+clock(w[0]):' · check the bowl now')+'</span>'
-      :'<span style="color:var(--accent)">Now</span><br><span class="rng">tip it out when it\u2019s 50% up, domed, jiggly</span>'}
+    if(w&&now<w[0]){const c=Math.round((w[0]-now)/60e3);return 'Check from '+clock(w[0])+'<br><span class="rng">in '+(c>=60?Math.floor(c/60)+' h '+(c%60)+' min':c+' min')+'; likely ready ~'+clock(t)+'</span>'}
+    return '<span style="color:var(--accent)">Check the bowl now</span><br><span class="rng">'+(m>1?'likely ready ~'+clock(t)+' (in '+inT+')':'it should be about ready')+'</span>'}
   const pm=x=>new Date(x).getHours()>=12,rng=w?'<br><span class="rng">'+(pm(w[0])===pm(w[1])&&!dayOf(w[0])===!dayOf(w[1])?dayOf(w[0])+clock(w[0]).replace(/\s?[AP]M$/i,''):dayOf(w[0])+clock(w[0]))+'–'+clock(w[1])+'</span>':'';
   if(!isNext)return '~'+dayOf(t)+clock(t)+rng;
   if(!w)return t<=now+60e3?'Now':'~'+dayOf(t)+clock(t);
