@@ -2436,7 +2436,6 @@ function ovenCard(){
 }
 // The oven events go to the PC's log only while this loaf's dough is the
 // current bake (no newer mix), so a new dough's log isn't mixed up with it.
-const ovenOwn=()=>bk.oven&&!Object.entries(bk.done).some(([k,v])=>v&&v>bk.oven.fridge&&!OVEN_IDS.includes(k));
 // The oven clocks, every second: minutes since Start preheat (hot at 45) or
 // since it went in (lid off at 20, crust at 40-45).
 function ovenTick(){
@@ -2851,14 +2850,14 @@ $('ovencard').onclick=e=>{
   const b=e.target.closest('[data-ov]');if(!b||!bk.oven)return;const id=b.dataset.ov;
   if(id==='gone'){if(confirm('Remove the loaf from the oven card?')){delete bk.oven;bkSave();bakeTab(true)}return}
   bk.oven.done[id]=Date.now();bkSave();bakeTab(true);
-  if(ovenOwn())sendBake('done',id,bk.oven.done[id]);
+  sendBake('done',id,bk.oven.done[id]);
 };
 $('ovencard').onchange=e=>{
   const id=e.target.dataset&&e.target.dataset.ot;if(!id||!e.target.value||!bk.oven)return;
   const o=bk.oven,[hh,mm]=e.target.value.split(':').map(Number),t=new Date(id==='fridge'?o.fridge:o.done[id]);t.setHours(hh,mm,0,0);
   if(t.getTime()>Date.now()+10*60e3)t.setDate(t.getDate()-1);
   if(id==='fridge')o.fridge=t.getTime();else o.done[id]=t.getTime();
-  bkSave();e.target.blur();bakeTab(true);
+  bkSave();e.target.blur();bakeTab(true);if(id!=='fridge')sendBake('time',id,o.done[id]);
 };
 $('baknow').onclick=e=>{
   const d=e.target.closest('[data-bd]');if(d){$('baksteps').onclick({target:d});scrollTo(0,0)}
