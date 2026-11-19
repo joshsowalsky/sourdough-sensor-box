@@ -110,6 +110,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
 <div class="status keep"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
 <div class="row keep" id="tabs" style="gap:6px"><button class="chip" data-tab="starter">Starter</button><button class="chip" data-tab="bake">Bake</button><button class="chip" data-tab="hist">History</button><button class="chip" data-tab="sl">Sliders</button><button class="chip" data-tab="cup">Cup</button><button class="chip" id="viewbtn" style="margin-left:auto">Simple</button></div>
 <section id="baketab" class="keep">
+  <div class="card" id="baknow" hidden></div>
   <div class="card" id="bulkcard" hidden><div class="label" id="bulklabel">Bulk rise</div>
     <div id="bulknext" style="margin:6px 0 10px"></div>
     <div id="bulkhead" style="margin-top:4px"></div>
@@ -2377,6 +2378,23 @@ function bakeTab(force){
     const btn=(isNext?'<button data-bd="'+st.id+'" style="margin-top:6px">'+(st.btn||'Done')+'</button> ':'')+(lastDone&&st.id===lastDone.id?'<button class="chip" data-bu="'+st.id+'" style="margin-top:6px">Undo</button>':'');
     return '<div class="bstep'+(isNext?' next':'')+(d?' done':'')+'"><div class="when">'+when+'</div><div class="what"><b>'+title+'</b><br>'+what+(btn?'<div>'+btn+'</div>':'')+'</div></div>';
   }).join('');
+  // Next: what to do now, how soon, the amounts, and its Done button. Bulk has
+  // its own card. A bake left on the counter (or finished) offers a new one.
+  {const el=$('baknow'),ts=Object.values(bk.done).filter(Boolean),last=ts.length?Math.max(...ts):0;
+   const stale=last&&((!bk.done.fridge&&now-last>10*3600e3)||(bk.done.cool&&now-bk.done.cool>3600e3));
+   const lbl='<div class="note" style="text-transform:uppercase;letter-spacing:.04em">Next</div>';
+   let h='';
+   if(stale)h=lbl+'<div style="font-size:1.25rem;font-weight:700;line-height:1.25;margin:2px 0 4px">Start today\u2019s bake</div><div class="note">The last bake stopped at \u201c'+(lastDone?lastDone.t:'')+'\u201d ('+dayOf(last)+clock(last)+').</div><button id="bknew" style="margin-top:8px">Start today\u2019s bake</button>';
+   else if(next&&!(bk.done.mix&&!bk.done.bulk)){
+     const t=T[next.id],m=Math.round((t-now)/60e3),keys=stepIng(next);
+     const when=m<=1?'<span style="color:var(--accent)">Now</span>':'in '+(m>=60?Math.floor(m/60)+' h '+(m%60)+' min':m+' min');
+     h=lbl+'<div style="font-size:1.25rem;font-weight:700;line-height:1.2">'+next.t+'</div>'+
+       '<div style="font-size:2rem;font-weight:800;line-height:1.15">'+when+'</div>'+(m>1?'<div class="note">~'+dayOf(t)+clock(t)+'</div>':'')+
+       (keys?ingList(keys.map(k=>[amt(k),ING[k].name])):'')+(next.s?'<div style="color:var(--fg)">'+next.s+'</div>':'')+
+       (fresh&&bcPlan?'<div class="note" style="margin-top:4px">'+bcPlan.next+'.</div>':'')+
+       '<button data-bd="'+next.id+'" style="margin-top:8px">'+(next.btn||'Done')+'</button>';
+   }
+   el.hidden=!h;el.innerHTML=h}
   ovenTick();
 }
 // The oven clocks, every second: minutes since Start preheat (hot at 45) or
@@ -2772,6 +2790,10 @@ function setView(simple,save){
 }
 $('viewbtn').onclick=()=>setView(!document.body.classList.contains('simple'),true);
 {const q=new URLSearchParams(location.search).get('view');setView(q?q==='simple':store.get('view')==='simple',false)}
+$('baknow').onclick=e=>{
+  const d=e.target.closest('[data-bd]');if(d){$('baksteps').onclick({target:d});scrollTo(0,0)}
+  if(e.target.closest('#bknew')){bk.done={};bk.amt={};bk.box={};delete bk.bsum;delete bk.mixAt;bkSave();if(run)renderRun();bakeTab(true);scrollTo(0,0)}
+};
 $('baksteps').onclick=e=>{
   const d=e.target.closest('[data-bd]'),u=e.target.closest('[data-bu]');
   if(d){const id=d.dataset.bd;bk.done[id]=Date.now();bkSave();bakeTab(true);sendBake('done',id)}
