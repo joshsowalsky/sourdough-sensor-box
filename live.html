@@ -111,6 +111,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
 <div class="row keep" id="tabs" style="gap:6px"><button class="chip" data-tab="starter">Starter</button><button class="chip" data-tab="bake">Bake</button><button class="chip" data-tab="hist">History</button><button class="chip" data-tab="sl">Sliders</button><button class="chip" data-tab="cup">Cup</button><button class="chip" id="viewbtn" style="margin-left:auto">Simple</button></div>
 <section id="baketab" class="keep">
   <div class="card" id="baknow" hidden></div>
+  <div class="card" id="ovencard" hidden></div>
   <div class="card" id="bulkcard" hidden><div class="label" id="bulklabel">Bulk rise</div>
     <div id="bulknext" style="margin:6px 0 10px"></div>
     <div id="bulkhead" style="margin-top:4px"></div>
@@ -120,7 +121,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div class="small" id="bulkinfo"></div>
     <div id="bulkboxslot" class="note" style="margin-top:8px"></div></div>
   <div class="card"><div class="label">Is Gus ready?</div><div id="bakegus" class="small" style="color:var(--fg);font-size:.95rem">Loading…</div></div>
-  <div class="card"><div class="label">Steps · mix today, bake tomorrow</div>
+  <div class="card"><div class="label">Steps · mix to fridge</div>
     <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><label class="note">Autolyse <select id="bakaut"><option value="auto">Auto</option><option value="0">none</option><option value="30">30 min</option><option value="60">1 h</option><option value="120">2 h</option></select></label><label class="note">Mix at <input id="bakmix" type="time" class="g" style="width:7em"></label><label class="note">Folds done by <input id="bakby" type="time" class="g" style="width:7em"></label><label class="note">In the fridge by <input id="bakfr" type="time" class="g" style="width:7em"></label><label class="note">Aliquot <input id="bakaliq" type="number" inputmode="decimal" min="0" step="1" class="g" style="width:4.5em"> g in <select id="bakaliqcup"></select></label><button class="chip" id="bakreset">Start over</button></div>
     <div class="note" id="bakrecipe" style="margin-top:6px"></div>
     <div class="note" id="bakbox" style="margin-top:8px"></div>
@@ -2037,9 +2038,10 @@ function aliqStep(){
   return {id:'boxon',t:'Aliquot: box on',btn:'Box is on',after:['salt',3,0,20],s:bk.aliq+' g into the cup, flat; box on.',
     what:()=>'Take <b>'+bk.aliq+' g</b> of the salted dough and press it flat into the bottom of '+(c?'a clean, dry <b>'+esc(c[0])+'</b> (empty depth '+c[1].toFixed(1)+' cm, already known)':'the cup')+'. Put the box on it and tap Box is on. The rest of the dough carries on with the folds; the Bulk card above tracks the rise.'};
 }
+const OVEN_IDS=['heat','bake','cool'],DOUGH_STEPS=BAKE_STEPS.filter(st=>!OVEN_IDS.includes(st.id));
 function bakeSteps(){
   const a=bk.aut>0?bk.aut:0;
-  const base=bk.aliq>0?[...BAKE_STEPS.slice(0,2),aliqStep(),...BAKE_STEPS.slice(2)]:BAKE_STEPS;
+  const base=bk.aliq>0?[...DOUGH_STEPS.slice(0,2),aliqStep(),...DOUGH_STEPS.slice(2)]:DOUGH_STEPS;
   if(!a)return base;
   return [{id:'aut',t:'Autolyse',ing:['flour','ww','water'],s:'Mix; cover.',what:()=>'Flour and water only:'+ingEdit(['flour','ww','water'])+'Mix until no dry flour is left, then cover.'},
     {...BAKE_STEPS[0],t:'Add Gus',after:['aut',a,Math.max(20,a/2),a+60],ing:['gus'],s:'Squish in until even; cover. Bulk starts.',
@@ -2382,7 +2384,7 @@ function bakeTab(force){
   // Next: what to do now, how soon, the amounts, and its Done button. Bulk has
   // its own card. A bake left on the counter (or finished) offers a new one.
   {const el=$('baknow'),ts=Object.values(bk.done).filter(Boolean),last=ts.length?Math.max(...ts):0;
-   const stale=last&&((!bk.done.fridge&&now-last>10*3600e3)||(bk.done.cool&&now-bk.done.cool>3600e3));
+   const stale=last&&((!bk.done.fridge&&now-last>10*3600e3)||(bk.done.fridge&&now-bk.done.fridge>3600e3));
    const lbl='<div class="note" style="text-transform:uppercase;letter-spacing:.04em">Next</div>';
    let h='';
    if(stale)h=lbl+'<div style="font-size:1.25rem;font-weight:700;line-height:1.25;margin:2px 0 4px">Start today\u2019s bake</div><div class="note">The last bake stopped at \u201c'+(lastDone?lastDone.t:'')+'\u201d ('+dayOf(last)+clock(last)+').</div><button id="bknew" style="margin-top:8px">Start today\u2019s bake</button>';
@@ -2396,8 +2398,42 @@ function bakeTab(force){
        '<button data-bd="'+next.id+'" style="margin-top:8px">'+(next.btn||'Done')+'</button>';
    }
    el.hidden=!h;el.innerHTML=h}
+  ovenCard();
   ovenTick();
 }
+// Oven: the loaf in the fridge, from the fridge to the cooling rack. Its own
+// card, so today's dough can start while yesterday's loaf waits to bake.
+// The PC's bake log only hears about it while it's still the current bake.
+const OVEN=[{id:'heat',t:'Preheat',btn:'Start preheat',s:'500°F, Dutch oven in (lid on), 45\u201360 min.'},
+  {id:'bake',t:'Bake',btn:'It\u2019s in the oven',s:'Straight from the fridge: turn out onto parchment, score, into the Dutch oven, lid on. 475°F: 20 min lid on, then 20\u201325 min lid off.'},
+  {id:'cool',t:'Cool, then cut',btn:'It\u2019s out of the oven',s:'At least 1 h on a rack. It\u2019s still cooking inside.'}];
+function ovenCard(){
+  const el=$('ovencard'),o=bk.oven,now=Date.now(),H=3600e3;
+  if(!o||(o.done.cool&&now-o.done.cool>2*H)){el.hidden=true;el.innerHTML='';return}
+  const dOf=t=>new Date(t).toDateString()===new Date().toDateString()?'':new Date(t).toLocaleDateString([],{weekday:'short'})+' ';
+  const at=h=>dOf(o.fridge+h*H)+clock(o.fridge+h*H);
+  // Preheat 7 h after the fridge, but not in the night; bake 55 min on; out 45 min after.
+  let heat=o.fridge+7*H;{const d=new Date(heat),hr=d.getHours();if(hr>=22||hr<7){if(hr>=22)d.setDate(d.getDate()+1);d.setHours(7,0,0,0);heat=Math.min(d.getTime(),o.fridge+15*H)}}
+  const T={heat:o.done.heat||Math.max(heat,now)};T.bake=o.done.bake||Math.max(T.heat+55*60e3,now);T.cool=o.done.cool||Math.max(T.bake+45*60e3,now);
+  const next=OVEN.find(st=>!o.done[st.id]),hm2=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+  let h='<div class="label">Loaf in the fridge · since '+dOf(o.fridge)+clock(o.fridge)+'</div>'+
+    '<div class="small" style="color:var(--fg);margin-top:4px">Bake any time from '+at(8)+' to '+at(36)+'; best '+at(12)+'\u2013'+at(24)+'.</div>';
+  h+=OVEN.map(st=>{
+    const d=o.done[st.id],isNext=next&&next.id===st.id,live=d&&(st.id==='heat'&&!o.done.bake?'Preheating':st.id==='bake'&&!o.done.cool?'In the oven':'');
+    const when=d?(live?'<span style="color:var(--accent);font-weight:600">'+live+'</span><br>since ':'done ')+'<input type="time" data-ot="'+st.id+'" value="'+hm2(d)+'" style="width:7.4em;min-height:32px;padding:2px 4px;font-size:.85rem">'
+      :T[st.id]<=now+60e3&&isNext?'<span style="color:var(--accent)">Now</span>':'~'+dOf(T[st.id])+clock(T[st.id]);
+    let what=st.s;
+    if(st.id==='bake'&&!d&&o.done.heat)what+='<div class="btimer" data-k="heat" data-from="'+o.done.heat+'"></div>';
+    if(st.id==='cool'&&!d&&o.done.bake)what+='<div class="btimer" data-k="oven" data-from="'+o.done.bake+'"></div>';
+    const btn=isNext?'<div><button data-ov="'+st.id+'" style="margin-top:6px">'+st.btn+'</button></div>':'';
+    return '<div class="bstep'+(isNext?' next':'')+(d?' done':'')+'"><div class="when">'+when+'</div><div class="what"><b>'+st.t+'</b><br>'+what+btn+'</div></div>';
+  }).join('');
+  h+='<div class="row" style="margin-top:8px"><span class="note">Went in the fridge</span><input type="time" data-ot="fridge" value="'+hm2(o.fridge)+'" style="width:7.4em;min-height:32px;padding:2px 4px;font-size:.85rem"><button class="chip" data-ov="gone">Remove</button></div>';
+  el.innerHTML=h;el.hidden=false;
+}
+// The oven events go to the PC's log only while this loaf's dough is the
+// current bake (no newer mix), so a new dough's log isn't mixed up with it.
+const ovenOwn=()=>bk.oven&&(!bk.done.mix||bk.done.mix<=bk.oven.fridge);
 // The oven clocks, every second: minutes since Start preheat (hot at 45) or
 // since it went in (lid off at 20, crust at 40-45).
 function ovenTick(){
@@ -2791,19 +2827,34 @@ function setView(simple,save){
 }
 $('viewbtn').onclick=()=>setView(!document.body.classList.contains('simple'),true);
 {const q=new URLSearchParams(location.search).get('view');setView(q?q==='simple':store.get('view')==='simple',false)}
+$('ovencard').onclick=e=>{
+  const b=e.target.closest('[data-ov]');if(!b||!bk.oven)return;const id=b.dataset.ov;
+  if(id==='gone'){if(confirm('Remove the loaf from the oven card?')){delete bk.oven;bkSave();bakeTab(true)}return}
+  bk.oven.done[id]=Date.now();bkSave();bakeTab(true);
+  if(ovenOwn()){bk.done[id]=bk.oven.done[id];bkSave();sendBake('done',id)}
+};
+$('ovencard').onchange=e=>{
+  const id=e.target.dataset&&e.target.dataset.ot;if(!id||!e.target.value||!bk.oven)return;
+  const o=bk.oven,[hh,mm]=e.target.value.split(':').map(Number),t=new Date(id==='fridge'?o.fridge:o.done[id]);t.setHours(hh,mm,0,0);
+  if(t.getTime()>Date.now()+10*60e3)t.setDate(t.getDate()-1);
+  if(id==='fridge')o.fridge=t.getTime();else o.done[id]=t.getTime();
+  bkSave();e.target.blur();bakeTab(true);
+};
 $('baknow').onclick=e=>{
   const d=e.target.closest('[data-bd]');if(d){$('baksteps').onclick({target:d});scrollTo(0,0)}
-  if(e.target.closest('#bknew')){bk.done={};bk.amt={};bk.box={};delete bk.bsum;delete bk.mixAt;bkSave();if(run)renderRun();bakeTab(true);scrollTo(0,0)}
+  if(e.target.closest('#bknew')){
+    if(!bk.oven&&bk.done.bulk&&!bk.done.fridge&&Date.now()-bk.done.bulk<36*3600e3)bk.oven={fridge:bk.done.bulk+35*60e3,mix:bk.done.mix||null,done:{}};bk.done={};bk.amt={};bk.box={};['bsum','mixAt','by','fr','aliq'].forEach(k=>delete bk[k]);bkSave();if(run)renderRun();bakeTab(true);scrollTo(0,0)}
 };
 $('baksteps').onclick=e=>{
   const d=e.target.closest('[data-bd]'),u=e.target.closest('[data-bu]');
-  if(d){const id=d.dataset.bd;bk.done[id]=Date.now();bkSave();bakeTab(true);sendBake('done',id)}
-  if(u){const id=u.dataset.bu,at=bk.done[id];delete bk.done[id];bkSave();bakeTab(true);sendBake('undo',id,at)}
+  if(d){const id=d.dataset.bd;bk.done[id]=Date.now();if(id==='fridge')bk.oven={fridge:bk.done[id],mix:bk.done.mix||null,done:{}};bkSave();bakeTab(true);sendBake('done',id)}
+  if(u){const id=u.dataset.bu,at=bk.done[id];delete bk.done[id];if(id==='fridge'&&bk.oven&&bk.oven.fridge===at)delete bk.oven;bkSave();bakeTab(true);sendBake('undo',id,at)}
 };
 $('baksteps').onchange=e=>{
   const id=e.target.dataset&&e.target.dataset.bt;if(!id||!e.target.value)return;
   const [hh,mm]=e.target.value.split(':').map(Number),t=new Date(bk.done[id]);t.setHours(hh,mm,0,0);
   if(t.getTime()>Date.now()+10*60e3)t.setDate(t.getDate()-1);
+  if(id==='fridge'&&bk.oven&&bk.oven.fridge===bk.done[id])bk.oven.fridge=t.getTime();
   bk.done[id]=t.getTime();bkSave();e.target.blur();bakeTab(true);sendBake('time',id);
 };
 $('baksteps').addEventListener('input',e=>{
@@ -2826,7 +2877,7 @@ $('bakmix').onchange=e=>{const v=e.target.value;if(!v)delete bk.mixAt;else bk.mi
 $('bakfr').onchange=e=>{const v=e.target.value;if(!v)delete bk.fr;else bk.fr=timeAt(v);bkSave();bakeTab(true);if(run)renderRun()};
 $('bakaut').onchange=e=>{const v=e.target.value;bk.autPick=v==='auto'?'auto':Number(v)||0;if(v!=='auto')bk.aut=Number(v)||0;bkSave();bakeTab(true);if(run)renderRun()};
 document.body.classList.toggle('pro',bk.exp==='pro');
-$('bakreset').onclick=()=>{if(confirm('Start over? This clears the step times.')){bk.done={};bk.amt={};bk.box={};delete bk.bsum;bkSave();bakeTab()}};
+$('bakreset').onclick=()=>{if(confirm('Start over? This clears the step times.')){bk.done={};bk.amt={};bk.box={};['bsum','mixAt','by','fr','aliq'].forEach(k=>delete bk[k]);bkSave();bakeTab()}};
 function ago(s){if(s<90)return Math.round(s)+' s ago';if(s<5400)return Math.round(s/60)+' min ago';return (s/3600).toFixed(1)+' h ago'}
 async function load(){
   try{
