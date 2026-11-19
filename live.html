@@ -865,6 +865,7 @@ function breadClock(s,fz,ps){
   const autoM=[60,30].find(m=>now+m*60e3<=ready+5*60e3)??(now+30*60e3<=latest-15*60e3?30:0);
   const isAuto=bk.autPick==null||bk.autPick==='auto';
   if(isAuto&&!(bk.done&&(bk.done.aut||bk.done.mix))&&autoM!==(bk.aut||0)){bk.aut=autoM;bkSave()}
+  if(isAuto&&!autoM&&!(bk.done&&bk.done.mix)&&gusEnd<Infinity&&/^Mix the dough now/.test(next))next+=': flour, water and Gus together. No autolyse today: Gus is only at his best until ~'+clock(gusEnd)
   // Autolyse: flour and water start that long before Gus goes in.
   const aut=bk.aut>0?bk.aut*60e3:0,autDone=bk.done&&bk.done.aut&&now-bk.done.aut<8*H?bk.done.aut:null;
   let a0=ready-aut;
