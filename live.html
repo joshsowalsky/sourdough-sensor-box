@@ -2387,7 +2387,7 @@ function bakeTab(force){
   // Next: what to do now, how soon, the amounts, and its Done button. Bulk has
   // its own card. A bake left on the counter (or finished) offers a new one.
   {const el=$('baknow'),ts=Object.values(bk.done).filter(Boolean),last=ts.length?Math.max(...ts):0;
-   const stale=last&&((!bk.done.fridge&&now-last>10*3600e3)||(bk.done.fridge&&now-bk.done.fridge>3600e3));
+   const stale=last&&((!bk.done.fridge&&now-last>(bk.done.mix&&!bk.done.bulk?30:10)*3600e3)||(bk.done.fridge&&now-bk.done.fridge>3600e3));
    const lbl='<div class="note" style="text-transform:uppercase;letter-spacing:.04em">Next</div>';
    let h='';
    if(stale)h=lbl+'<div style="font-size:1.25rem;font-weight:700;line-height:1.25;margin:2px 0 4px">Start today\u2019s bake</div><div class="note">The last bake stopped at \u201c'+(lastDone?lastDone.t:'')+'\u201d ('+dayOf(last)+clock(last)+').</div><button id="bknew" style="margin-top:8px">Start today\u2019s bake</button>';
@@ -2881,6 +2881,10 @@ bkRoll();
 // Fix-times link: ?set=shape@17:40,fridge@17:45 sets those step times (the
 // last time it was that o'clock). They go on the bake in progress only if it
 // was mixed before them; a fridge time also moves the oven card's loaf.
+// ?unset=bulk,shape,fridge clears those steps; "oven" clears the oven card.
+{const q=new URLSearchParams(location.search),un=q.get('unset');
+  if(un){un.split(',').forEach(x=>{x=x.trim();if(x==='oven')delete bk.oven;else delete bk.done[x]});
+    bkSave();q.delete('unset');history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:''));setTab('bake')}}
 {const q=new URLSearchParams(location.search),set=q.get('set');
   if(set){
     set.split(',').forEach(x=>{const m=/^(\w+)@(\d\d?):(\d\d)$/.exec(x.trim());if(!m)return;
