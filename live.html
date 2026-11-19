@@ -2820,6 +2820,17 @@ $('tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){setTab(b.data
     const al=parseFloat(q.get('aliq'));if(al>0&&al<1000)bk.aliq=al;else delete bk.aliq;
     bkSave();q.delete('aliq');q.delete('bake');q.delete('loaves');q.delete('aut');q.delete('by');q.delete('fr');
     history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:''));setTab('bake')}}
+// Fix-times link: ?set=shape@17:40,fridge@17:45 sets those step times (the
+// last time it was that o'clock). They go on the bake in progress only if it
+// was mixed before them; a fridge time also moves the oven card's loaf.
+{const q=new URLSearchParams(location.search),set=q.get('set');
+  if(set){
+    set.split(',').forEach(x=>{const m=/^(\w+)@(\d\d?):(\d\d)$/.exec(x.trim());if(!m)return;
+      const d=new Date();d.setHours(+m[2],+m[3],0,0);if(d.getTime()>Date.now()+10*60e3)d.setDate(d.getDate()-1);
+      const t=d.getTime(),own=bk.done.mix&&bk.done.mix<t;
+      if(m[1]==='fridge'){if(bk.oven&&(!own||bk.oven.fridge===bk.done.fridge))bk.oven.fridge=t;else if(!bk.oven)bk.oven={fridge:t,mix:own?bk.done.mix:null,done:{}}}
+      if(own)bk.done[m[1]]=t});
+    bkSave();q.delete('set');history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:''));setTab('bake')}}
 function setView(simple,save){
   document.body.classList.toggle('simple',simple);$('viewbtn').classList.toggle('on',simple);
   if(save)store.set('view',simple?'simple':'full');
