@@ -2306,6 +2306,7 @@ function bulkReport(T){
     (bk.done.fridge>end?' Then '+hm((bk.done.fridge-end)/3600e3)+' on the counter before the fridge (pre-shape and shape usually take about 1 h), still fermenting, so about '+Math.round(100*(bk.done.fridge-T.mix)/3600e3/est)+'% of the bulk estimate in all.':'')+'</div>';
 }
 function bakeTab(force){
+  if(bkRoll()&&run)renderRun();
   const g=bakeGus();
   // Don't redraw under a box being typed in (the minute refresh); a tap on
   // Done or Undo always redraws, even though the tapped button has focus.
@@ -2433,7 +2434,7 @@ function ovenCard(){
 }
 // The oven events go to the PC's log only while this loaf's dough is the
 // current bake (no newer mix), so a new dough's log isn't mixed up with it.
-const ovenOwn=()=>bk.oven&&(!bk.done.mix||bk.done.mix<=bk.oven.fridge);
+const ovenOwn=()=>bk.oven&&!Object.entries(bk.done).some(([k,v])=>v&&v>bk.oven.fridge&&!OVEN_IDS.includes(k));
 // The oven clocks, every second: minutes since Start preheat (hot at 45) or
 // since it went in (lid off at 20, crust at 40-45).
 function ovenTick(){
@@ -2820,6 +2821,12 @@ $('tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){setTab(b.data
     const al=parseFloat(q.get('aliq'));if(al>0&&al<1000)bk.aliq=al;else delete bk.aliq;
     bkSave();q.delete('aliq');q.delete('bake');q.delete('loaves');q.delete('aut');q.delete('by');q.delete('fr');
     history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:''));setTab('bake')}}
+function bkRoll(){
+  const f=bk.done&&bk.done.fridge;if(!f||Date.now()-f<3600e3)return false;
+  if(!bk.oven||bk.oven.fridge<f)bk.oven={fridge:f,mix:bk.done.mix||null,done:{}};
+  bk.done={};bk.amt={};bk.box={};['bsum','mixAt','by','fr','aliq'].forEach(k=>delete bk[k]);bkSave();return true;
+}
+bkRoll();
 // Fix-times link: ?set=shape@17:40,fridge@17:45 sets those step times (the
 // last time it was that o'clock). They go on the bake in progress only if it
 // was mixed before them; a fridge time also moves the oven card's loaf.
@@ -2827,7 +2834,7 @@ $('tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){setTab(b.data
   if(set){
     set.split(',').forEach(x=>{const m=/^(\w+)@(\d\d?):(\d\d)$/.exec(x.trim());if(!m)return;
       const d=new Date();d.setHours(+m[2],+m[3],0,0);if(d.getTime()>Date.now()+10*60e3)d.setDate(d.getDate()-1);
-      const t=d.getTime(),own=bk.done.mix&&bk.done.mix<t;
+      const t=d.getTime(),own=['shape','fridge','bulk'].includes(m[1])?bk.done.mix&&bk.done.mix<t:!bk.done.mix||bk.done.mix<t;
       if(m[1]==='fridge'){if(bk.oven&&(!own||bk.oven.fridge===bk.done.fridge))bk.oven.fridge=t;else if(!bk.oven)bk.oven={fridge:t,mix:own?bk.done.mix:null,done:{}}}
       if(own)bk.done[m[1]]=t});
     bkSave();q.delete('set');history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:''));setTab('bake')}}
@@ -2842,7 +2849,7 @@ $('ovencard').onclick=e=>{
   const b=e.target.closest('[data-ov]');if(!b||!bk.oven)return;const id=b.dataset.ov;
   if(id==='gone'){if(confirm('Remove the loaf from the oven card?')){delete bk.oven;bkSave();bakeTab(true)}return}
   bk.oven.done[id]=Date.now();bkSave();bakeTab(true);
-  if(ovenOwn()){bk.done[id]=bk.oven.done[id];bkSave();sendBake('done',id)}
+  if(ovenOwn())sendBake('done',id,bk.oven.done[id]);
 };
 $('ovencard').onchange=e=>{
   const id=e.target.dataset&&e.target.dataset.ot;if(!id||!e.target.value||!bk.oven)return;
