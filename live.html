@@ -120,7 +120,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div id="bulkboxslot" class="note" style="margin-top:8px"></div></div>
   <div class="card"><div class="label">Is Gus ready?</div><div id="bakegus" class="small" style="color:var(--fg);font-size:.95rem">Loading…</div></div>
   <div class="card"><div class="label">Steps · mix today, bake tomorrow</div>
-    <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><label class="note">Autolyse <select id="bakaut"><option value="0">none</option><option value="30">30 min</option><option value="60">1 h</option><option value="120">2 h</option></select></label><label class="note">Folds done by <input id="bakby" type="time" class="g" style="width:7em"></label><label class="note">In the fridge by <input id="bakfr" type="time" class="g" style="width:7em"></label><label class="note">Aliquot <input id="bakaliq" type="number" inputmode="decimal" min="0" step="1" class="g" style="width:4.5em"> g in <select id="bakaliqcup"></select></label><button class="chip" id="bakreset">Start over</button></div>
+    <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><label class="note">Autolyse <select id="bakaut"><option value="0">none</option><option value="30">30 min</option><option value="60">1 h</option><option value="120">2 h</option></select></label><label class="note">Mix at <input id="bakmix" type="time" class="g" style="width:7em"></label><label class="note">Folds done by <input id="bakby" type="time" class="g" style="width:7em"></label><label class="note">In the fridge by <input id="bakfr" type="time" class="g" style="width:7em"></label><label class="note">Aliquot <input id="bakaliq" type="number" inputmode="decimal" min="0" step="1" class="g" style="width:4.5em"> g in <select id="bakaliqcup"></select></label><button class="chip" id="bakreset">Start over</button></div>
     <div class="note" id="bakrecipe" style="margin-top:6px"></div>
     <div class="note" id="bakbox" style="margin-top:8px"></div>
     <div id="baksteps" style="margin-top:8px"></div>
@@ -746,7 +746,7 @@ function fridgeForecast(s,fz,pb){
     '<div class="note xtra" style="margin-top:4px"><span style="color:var(--chart-d)">╍</span> his rise (a guess) <span style="color:var(--muted);opacity:.6">█</span> fridge <span style="color:var(--accent);opacity:.6">█</span> likely peak window │ now. Nothing measures him until he’s out. Then put the box on him and tap Starter in with the same '+esc(run.feed_g)+', and the live forecast takes over.</div>'};
 }
 // The fridge forecast's chart: his rise from the feed to past the peak, by clock time.
-let fzChart=null;
+let fzChart=null,bcPlan=null;
 function drawFridgeChart(){
   const c=$('fzchart'),Z=fzChart;if(!c||!Z)return;
   const dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;
@@ -835,11 +835,19 @@ function breadClock(s,fz,ps){
     // Paused (box lifted): if this feed peaked before the pause and is still
     // within its use window, the dough can go now.
     const segs=feedSegs(),k=segs.length?feedKpis(segs[segs.length-1]):null,pk=k&&k.peakH!=null&&k.peak>=1.3?s.fed+k.peakH*H:null;
-    if(pk&&pk<=ps&&now-pk<USE_H*warmBy(roomF)*H&&onHand>=need){next='Mix the dough now (peaked '+clock(pk)+')';ready=now}
+    if(pk&&pk<=ps&&now-pk<USE_H*warmBy(roomF)*H&&onHand>=n*GUS_MIN+GUS_KEEP){next='Mix the dough now (peaked '+clock(pk)+')';ready=now}
     else{next=feed.replace(/^f/,'F');ready=now+hrs(r)*H}}
-  else if(peakT&&peakT>now){if(onHand>=need){next='Wait for his peak, then mix';ready=peakT}else{next='Let him peak, then '+feed+' for the bake';ready=peakT+hrs(r)*H}}
-  else if(peakT&&now-peakT<USE_H*H&&onHand>=need){next='Mix the dough now';ready=now}
+  else if(peakT&&peakT>now){if(onHand>=n*GUS_MIN+GUS_KEEP){next='Wait for his peak, then mix';ready=peakT}else{next='Let him peak, then '+feed+' for the bake';ready=peakT+hrs(r)*H}}
+  else if(peakT&&now-peakT<USE_H*H&&onHand>=n*GUS_MIN+GUS_KEEP){next='Mix the dough now';ready=now}
   else{next=feed.replace(/^f/,'F')+' now';ready=now+hrs(r)*H}
+  const want=bk.mixAt&&bk.mixAt>now&&!fz?bk.mixAt:null;
+  if(want&&want>ready){
+    const useEnd=peakT?peakT+USE_H*warmBy(roomF)*H:null;
+    if(/^(Mix the dough now|Wait for his peak, then mix)/.test(next))
+      next=useEnd&&want>useEnd?(peakT>now?'At his peak (~'+clock(peakT)+') put Gus in the fridge':'Put Gus in the fridge now')+'; take him out and mix at '+clock(want)
+        :'Mix at '+clock(want)+(peakT>now?' (he peaks ~'+clock(peakT)+')':'');
+    ready=want;
+  }
   // Folds done by (Bake tab): Gus goes in no later than the folds allow,
   // even if he hasn't peaked; the salt and 4 folds follow the Bake tab's steps.
   const span=['salt','f1','f2','f3','f4'].reduce((m,id)=>m+BAKE_STEPS.find(q=>q.id===id).after[1],0)*60e3;
@@ -857,10 +865,11 @@ function breadClock(s,fz,ps){
   const fEnd=ready+span,fLate=by&&fEnd>by+5*60e3;
   if(aut)next=next.replace(/^Mix the dough now/,autDone?'Add Gus at '+clock(ready):'Autolyse now; Gus goes in at '+clock(ready));
   const t=breadTimes(ready,roomF);
+  bcPlan={mix:ready,aut:aut?a0:null,next};
   const when=x=>(new Date(x).toDateString()===new Date().toDateString()?'':new Date(x).toLocaleDateString([],{weekday:'short'})+' ')+clock(x);
   const away=(t.out-now)/H,aw=away<36?Math.round(away)+' h':(away/24).toFixed(1)+' days';
   const row=(w,x,c)=>'<div class="bc'+(c?' '+c:'')+'"><span class="w">'+w+'</span><span>'+x+'</span></div>';
-  return '<div class="label">Bread clock · '+(n===1?'1 loaf':g1(n)+' loaves')+', starting now</div>'+
+  return '<div class="label" style="display:flex;justify-content:space-between;align-items:center">Bread clock · '+(n===1?'1 loaf':g1(n)+' loaves')+'<button class="chip" onclick="setTab(\'bake\');scrollTo(0,0)">Steps \u2192</button></div>'+
     row('Start',next+'.')+
     (aut?row(autDone?'Done '+clock(a0):a0-now<15*60e3?'Now':'~'+when(a0),'Autolyse: flour + water ('+(bk.aut<60?bk.aut+' min':bk.aut/60+' h')+')',autDone?'':a0-now<15*60e3?'big':''):'')+
     row(ready-now<15*60e3?'Now':'~'+when(ready),(aut?'Add Gus':'Mix')+'; bulk starts',(!aut||autDone)&&ready-now<15*60e3?'big':'')+
@@ -913,7 +922,7 @@ function renderRun(){
   $('verdict').className='verdict '+cls;$('verdict').hidden=false;
   fzChart=null;$('fridgestate').hidden=!fz;$('fridgestate').innerHTML=fz?fridgeState(s,fz).html:'';drawFridgeChart();
   const fzFc=!!fz&&/Rise forecast/.test($('fridgestate').innerHTML);
-  {let bc='';try{bc=started||fzFc?'':breadClock(s,fz,ps)}catch(e){console.error(e)}$('breadclock').hidden=!bc;$('breadclock').innerHTML=bc}
+  {let bc='';bcPlan=null;try{bc=started||fzFc?'':breadClock(s,fz,ps)}catch(e){console.error(e)}$('breadclock').hidden=!bc;$('breadclock').innerHTML=bc}
   nextOn=!started&&!fzFc&&(ps||cls==='feed'||cls==='near'||/At its peak/.test(head));nextWarm=/no rise|dead/i.test(head);
   if(nextOn)refreshNext();else $('nextstep').textContent=started?'':fzFc?'Nothing to do while he\u2019s in the fridge: the rise forecast above says when to take him out.':/class="w">Now</.test($('breadclock').innerHTML)?'':cls==='good'?'Use it any time now; feed again once it peaks.':'Nothing to do yet.';$('verdicthead').textContent=head;$('verdictnote').textContent=note;
   const ol=!started&&!ps&&(cls==='ok'||cls==='good')?peakOutlook():null;$('outlook').hidden=!ol;$('outlook').innerHTML=ol||'';if(ol)$('outlook').style.marginTop='6px';
@@ -2046,12 +2055,12 @@ function coldProof(T){
   return {long,tot,max:long?16:36};
 }
 function bakeTimes(){
-  const T={},W={},now=Date.now(),F=bakeF(),bh=bulkHours(F);
+  const T={},W={},now=Date.now(),F=bakeF(),bh=bulkHours(F),fresh=bcPlan&&!Object.values(bk.done).some(Boolean);
   let prev=0;
   for(const st of bakeSteps()){
     let t=bk.done[st.id];
     if(!t){
-      if(!st.after&&!st.bulk&&!st.heat)t=now;
+      if(!st.after&&!st.bulk&&!st.heat)t=fresh?(st.id==='aut'?bcPlan.aut??bcPlan.mix-bk.aut*60e3:bcPlan.mix):now;
       else if(st.bulk){
         const b=bakePlan();
         if(b&&b.bulk_due){t=new Date(b.bulk_due).getTime();W.bulk=[new Date(b.bulk_check).getTime(),new Date(b.bulk_late).getTime()]}
@@ -2309,6 +2318,7 @@ function bakeTab(force){
   if(document.activeElement!==$('bakby'))$('bakby').value=bk.by&&bk.by>Date.now()-12*3600e3?new Date(bk.by).toTimeString().slice(0,5):'';
   if(document.activeElement!==$('bakaliq'))$('bakaliq').value=bk.aliq>0?bk.aliq:'';
   {const s=$('bakaliqcup'),l=aliqCups(),c=aliqCup();s.replaceChildren(...l.map(([n])=>opt(n)));if(c)s.value=c[0];s.disabled=!l.length}
+  if(document.activeElement!==$('bakmix'))$('bakmix').value=bk.mixAt&&bk.mixAt>Date.now()-3600e3&&!bk.done.mix?new Date(bk.mixAt).toTimeString().slice(0,5):'';
   if(document.activeElement!==$('bakfr'))$('bakfr').value=bk.fr&&bk.fr>Date.now()-12*3600e3?new Date(bk.fr).toTimeString().slice(0,5):'';
   bakeSummary();
   // In the fridge by: say plainly whether this plan makes it, and what has
@@ -2326,7 +2336,8 @@ function bakeTab(force){
   const hm=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
   const dayOf=t=>new Date(t).toDateString()===new Date().toDateString()?'':new Date(t).toLocaleDateString([],{weekday:'short'})+' ';
   const lastDone=[...SS].reverse().find(st=>bk.done[st.id]);
-  $('baksteps').innerHTML=bulkBar(T,bh,pro)+SS.map(st=>{
+  const fresh=bcPlan&&!Object.values(bk.done).some(Boolean);
+  $('baksteps').innerHTML=(fresh?'<div style="font-size:1rem;margin:2px 0 8px;color:var(--fg)"><b>From Gus:</b> '+bcPlan.next+'.</div>':'')+bulkBar(T,bh,pro)+SS.map(st=>{
     const d=bk.done[st.id],isNext=next&&st.id===next.id;
     // The oven steps stay "running" until the next one is tapped.
     const run_=d&&(st.id==='heat'&&!bk.done.bake?'Preheating':st.id==='bake'&&!bk.done.cool?'In the oven':''),
@@ -2386,7 +2397,7 @@ function stepWhen(st,isNext,T,W,now,dayOf){
     return '<span style="color:var(--accent)">Check the bowl now</span><br><span class="rng">'+(m>1?'likely ready ~'+clock(t)+' (in '+inT+')':'it should be about ready')+'</span>'}
   const pm=x=>new Date(x).getHours()>=12,rng=w?'<br><span class="rng">'+(pm(w[0])===pm(w[1])&&!dayOf(w[0])===!dayOf(w[1])?dayOf(w[0])+clock(w[0]).replace(/\s?[AP]M$/i,''):dayOf(w[0])+clock(w[0]))+'–'+clock(w[1])+'</span>':'';
   if(!isNext)return '~'+dayOf(t)+clock(t)+rng;
-  if(!w)return t<=now+60e3?'Now':'~'+dayOf(t)+clock(t);
+  if(!w){if(t<=now+60e3)return 'Now';const m=Math.round((t-now)/60e3);return '~'+dayOf(t)+clock(t)+'<br><span class="rng">in '+(m>=60?Math.floor(m/60)+' h '+(m%60)+' min':m+' min')+'</span>'}
   if(now<w[0])return '~'+dayOf(t)+clock(t)+rng;
   if(now<=w[1])return 'Now<br><span class="rng">until '+clock(w[1])+'</span>';
   return '<span style="color:var(--warn)">Late</span><br><span class="rng">was due by '+clock(w[1])+'</span>';
@@ -2779,6 +2790,7 @@ $('bakby').onchange=e=>{const v=e.target.value;if(!v)delete bk.by;else bk.by=tim
 $('bakaliq').onchange=e=>{const v=parseFloat(e.target.value);if(v>0&&v<1000)bk.aliq=v;else delete bk.aliq;bkSave();bakeTab(true)};
 $('bakaliqcup').onchange=e=>{bk.aliqCup=e.target.value;bkSave();bakeTab(true)};
 // In the fridge by: bulk has to end, and the loaf be shaped, before then.
+$('bakmix').onchange=e=>{const v=e.target.value;if(!v)delete bk.mixAt;else bk.mixAt=timeAt(v);bkSave();if(run)renderRun();bakeTab(true)};
 $('bakfr').onchange=e=>{const v=e.target.value;if(!v)delete bk.fr;else bk.fr=timeAt(v);bkSave();bakeTab(true);if(run)renderRun()};
 $('bakaut').onchange=e=>{bk.aut=Number(e.target.value)||0;bkSave();bakeTab(true);if(run)renderRun()};
 document.body.classList.toggle('pro',bk.exp==='pro');
