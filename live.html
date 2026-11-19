@@ -2088,6 +2088,7 @@ function bakeTimes(){
         // Each step's window counts from when the one before it was done
         // (or is expected), so a late step moves everything after it.
         const base=T[st.after[0]];t=base+st.after[1]*60e3;W[st.id]=[base+st.after[2]*60e3,base+st.after[3]*60e3];
+        if(st.id==='mix'&&bkGus&&bkGus.end&&bkGus.end<W.mix[1]){W.mix[1]=Math.max(W.mix[0],bkGus.end);W.mixGus=true;t=Math.min(t,W.mix[1])}
       }
       t=Math.max(t,now,prev);
     }
@@ -2114,7 +2115,7 @@ function bakeGus(){
   }
   else{const fc=fcCompute();if(fc&&!fc.pending&&!fc.finished)peakT=cur.fed+fc.live.T*3600e3}
   const end=peakT&&(topEnd||peakT)+useH*3600e3;
-  bkGus={x:cur.last,past:past?(now-(topEnd||peakT))/3600e3:null};
+  bkGus={x:cur.last,past:past?(now-(topEnd||peakT))/3600e3:null,end:end||null};
   const topTxt=past?(topEnd-peakT>20*60e3?'At its top ('+cur.peak.toFixed(1)+'x) from '+clock(peakT)+' to '+clock(topEnd)+'.':'Peaked at '+clock(peakT)+' ('+cur.peak.toFixed(1)+'x).'):'';
   const [st0,fl0,wa0]=(run.feed_g||'').split(':').map(Number),have=Math.max(0,(st0+fl0+(wa0||0)||0)-JAR_LOSS);
   const spare=have-GUS_KEEP,per=Math.min(GUS_PER_LOAF,Math.floor(spare/bk.loaves/5)*5);
@@ -2392,8 +2393,9 @@ function bakeTab(force){
    else if(next&&!(bk.done.mix&&!bk.done.bulk)){
      const t=T[next.id],m=Math.round((t-now)/60e3),keys=stepIng(next);
      const when=m<=1?'<span style="color:var(--accent)">Now</span>':'in '+(m>=60?Math.floor(m/60)+' h '+(m%60)+' min':m+' min');
+     const w=W[next.id],by=w?(now>w[1]?'<span style="color:var(--warn);font-weight:600">Late: do it now.</span>':'No later than <b style="color:var(--fg)">'+clock(w[1])+'</b>'+(next.id==='mix'&&W.mixGus?' (Gus is past his best after that)':'')+'.'):'';
      h=lbl+'<div style="font-size:1.25rem;font-weight:700;line-height:1.2">'+next.t+'</div>'+
-       '<div style="font-size:2rem;font-weight:800;line-height:1.15">'+when+'</div>'+(m>1?'<div class="note">~'+dayOf(t)+clock(t)+'</div>':'')+
+       '<div style="font-size:2rem;font-weight:800;line-height:1.15">'+when+'</div>'+(m>1?'<div class="note">~'+dayOf(t)+clock(t)+'</div>':'')+(by?'<div class="note">'+by+'</div>':'')+
        (keys?ingList(keys.map(k=>[amt(k),ING[k].name])):'')+(next.s?'<div style="color:var(--fg)">'+next.s+'</div>':'')+
        (fresh&&bcPlan?'<div class="note" style="margin-top:4px">'+bcPlan.next+'.</div>':'')+
        '<button data-bd="'+next.id+'" style="margin-top:8px">'+(next.btn||'Done')+'</button>';
