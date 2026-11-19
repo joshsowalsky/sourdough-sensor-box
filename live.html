@@ -2914,9 +2914,13 @@ $('baknow').onclick=e=>{
   if(e.target.closest('#bknew')){
     if(!bk.oven&&bk.done.bulk&&!bk.done.fridge&&Date.now()-bk.done.bulk<36*3600e3)bk.oven={fridge:bk.done.bulk+35*60e3,mix:bk.done.mix||null,done:{}};bk.done={};bk.amt={};bk.box={};['bsum','mixAt','by','fr','aliq'].forEach(k=>delete bk[k]);bkSave();if(run)renderRun();bakeTab(true);scrollTo(0,0)}
 };
+let bkTap={};
 $('baksteps').onclick=e=>{
   const d=e.target.closest('[data-bd]'),u=e.target.closest('[data-bu]');
-  if(d){const id=d.dataset.bd;bk.done[id]=Date.now();if(id==='fridge')bk.oven={fridge:bk.done[id],mix:bk.done.mix||null,done:{}};bkSave();bakeTab(true);sendBake('done',id)}
+  // The Undo chip lands where Done was: a double tap undid "End bulk" three
+  // times on 2026-11-19. Undo ignores taps in the first 4 s after the Done.
+  if(u&&bkTap.id===u.dataset.bu&&Date.now()-bkTap.at<4000)return;
+  if(d){const id=d.dataset.bd;bk.done[id]=Date.now();bkTap={id,at:Date.now()};if(id==='fridge')bk.oven={fridge:bk.done[id],mix:bk.done.mix||null,done:{}};bkSave();bakeTab(true);sendBake('done',id)}
   if(u){const id=u.dataset.bu,at=bk.done[id];delete bk.done[id];if(id==='fridge'&&bk.oven&&bk.oven.fridge===at)delete bk.oven;bkSave();bakeTab(true);sendBake('undo',id,at)}
 };
 $('baksteps').onchange=e=>{
