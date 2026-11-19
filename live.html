@@ -248,6 +248,7 @@ const URL_='https://api.github.com/repos/joshsowalsky/sourdough-sensor-box/conte
 // page: a one-time link with #pausekey=<topic> saves it in this browser. With
 // no key here, the button falls back to the PC's LAN address (home Wi-Fi only).
 const CTL='http://192.168.1.238:8766';
+(()=>{const m=location.hash.match(/pushtopic=([\w-]+)/);if(m){try{localStorage.setItem('pushtopic',m[1])}catch(e){}history.replaceState(null,'',location.pathname+location.search)}})();
 (()=>{const m=location.hash.match(/pausekey=([\w-]+)/);if(m){try{localStorage.setItem('pausekey',m[1])}catch(e){}history.replaceState(null,'',location.pathname+location.search)}})();
 let ctlNow=null;  // {c:'pause'|'resume'|'calibrate'|'start',at:ms} from a button press in this page
 // Kept across a reload for 10 minutes: run.json can lag the button by a few
@@ -2403,10 +2404,59 @@ function bakeTab(force){
    el.hidden=!h;el.innerHTML=h}
   ovenCard();
   ovenTick();
+  bkPushSync();
+}
+// Step reminders come from this phone, not the PC: each upcoming step is a
+// push scheduled on ntfy for its time, under a fixed id, so a Done, an undo or
+// a time fix moves it. ntfy.sh can't cancel a scheduled push (tested
+// 2026-11-19: deleted ones still arrived), but it does replace one with the
+// same id, so a push no longer wanted becomes a silent one, then is cleared.
+// The topic is a key like the pause key: set by a #pushtopic= link, never here.
+function bkWanted(){
+  const want={},now=Date.now(),d=bk.done,first=d.aut||d.mix;
+  const add=(id,at,title,msg,prio)=>{if(at>now+45e3&&at<now+70*3600e3)want[id]={at:Math.round(at/1e3),title,msg,prio:prio||'high'}};
+  if(first&&!d.fridge){
+    const k='sd'+Math.round(first/6e4).toString(36),{T,W}=bakeTimes();
+    for(const st of bakeSteps()){
+      if(d[st.id]||!st.after||!d[st.after[0]]||st.id==='boxon')continue;
+      const base=d[st.after[0]],due=base+st.after[1]*60e3,late=st.id==='mix'&&W.mixGus?W.mix[1]:base+st.after[3]*60e3,tip=st.s?st.s+' ':'';
+      if(st.id!=='fridge')add(k+st.id,due,st.t+' now',tip+'Any time until '+clock(late)+'. Tap Done after.');
+      add(k+st.id+'L',late,st.t+': still to do',st.id==='mix'?'Gus is past his best after this: add him now.':tip+'Late is fine. The next step counts from when you tap Done.');
+    }
+    if(d.mix&&!d.bulk&&T.bulk)add(k+'bulk',W.bulk?W.bulk[0]:T.bulk,'Check the dough','Up 50-75%, domed, bubbly and jiggly? Then end bulk and pre-shape.');
+  }
+  const o=bk.oven;
+  if(o&&o.done){
+    const k='so'+Math.round(o.fridge/6e4).toString(36),h=o.done.heat,b=o.done.bake;
+    if(h&&!b)add(k+'hot',h+45*60e3,"The oven's hot",'Turn the loaf out, score it, into the pot, lid on, 475°F. Tap It\u2019s in the oven.');
+    if(b&&!o.done.cool){add(k+'lid',b+20*60e3,'Lid off now','20-25 min more, until deep brown.');
+      add(k+'crust',b+40*60e3,'Check the crust','Deep brown all over? Take it out and tap It\u2019s out of the oven.')}
+  }
+  return want;
+}
+let bkPushBusy=false;
+async function bkPushSync(){
+  const topic=store.get('pushtopic');if(!topic||bkPushBusy)return;
+  let had={};try{had=JSON.parse(store.get('bakepush')||'{}')}catch(e){}
+  const want=bkWanted(),now=Math.round(Date.now()/1e3),u='https://ntfy.sh/'+topic+'/';
+  const post=(id,q,body)=>fetch(u+id+'?'+new URLSearchParams({tags:'bread',click:location.origin+location.pathname,...q}),{method:'POST',body}).then(r=>{if(!r.ok)throw new Error(r.status)});
+  bkPushBusy=true;
+  try{
+    // ntfy wants at least ~30 s of delay (12 s is "too small").
+    for(const id of Object.keys(had)){
+      if(want[id])continue;
+      try{if(had[id]>now+5){await post(id,{at:now+35,title:'Already done',priority:'min'},'Nothing to do.');
+        setTimeout(()=>fetch(u+id+'/delete').catch(()=>{}),60e3)}
+        delete had[id]}catch(e){}
+    }
+    for(const [id,w] of Object.entries(want)){
+      if(had[id]&&Math.abs(had[id]-w.at)<120)continue;
+      try{await post(id,{at:w.at,title:w.title,priority:w.prio},w.msg);had[id]=w.at}catch(e){}
+    }
+  }finally{bkPushBusy=false;store.set('bakepush',JSON.stringify(had))}
 }
 // Oven: the loaf in the fridge, from the fridge to the cooling rack. Its own
 // card, so today's dough can start while yesterday's loaf waits to bake.
-// The PC's bake log only hears about it while it's still the current bake.
 const OVEN=[{id:'heat',t:'Preheat',btn:'Start preheat',s:'500°F, Dutch oven in (lid on), 45\u201360 min.'},
   {id:'bake',t:'Bake',btn:'It\u2019s in the oven',s:'Straight from the fridge: turn out onto parchment, score, into the Dutch oven, lid on. 475°F: 20 min lid on, then 20\u201325 min lid off.'},
   {id:'cool',t:'Cool, then cut',btn:'It\u2019s out of the oven',s:'At least 1 h on a rack. It\u2019s still cooking inside.'}];
