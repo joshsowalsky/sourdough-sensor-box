@@ -2767,7 +2767,7 @@ function cupTab(){
   if(document.activeElement!==$('cuptare'))$('cuptare').value=cup.tare??'';
   $('cupname').disabled=cup.run;$('cupstep').closest('label').hidden=cup.run;  // the empty weight can be typed mid-run: it only changes the scale numbers shown
   const pts=cup.pts,ml=cupNext(),last=pts[pts.length-1],noTare=cup.tare==null;
-  const pour='pour in a little '+(pts.length===1?'water with a splash of milk':'more water')+' (any amount; smaller pours give a finer table)';
+  const pour='pour in a little '+(pts.length===1?'water clouded with a pinch of flour (or a splash of milk)':'more water')+' (any amount; smaller pours give a finer table)';
   let h='';
   if(cup.wait==='fail')h='<span style="color:var(--warn)">Couldn’t reach the PC. Try again.</span><br>';
   const done=!cup.run&&pts.length&&cupFit(pts);
@@ -2778,7 +2778,7 @@ function cupTab(){
   else if(cup.phase==='on')h+='<b>Box on.</b> Hold still… '+cd(cup.onAt+CUP_SETTLE_MS);
   else if(cup.wait==='retry')h+='Measuring again… keep the box still on the cup.';
   else if(!pts.length)h+=cup.wait==='start'?'Starting…':'Put the box on the <b>empty</b> cup.';
-  else if(cupSee())h+='<span style="color:var(--warn)">That pour didn’t bring the level up: the sensor sees through clear water. Stir in more milk, then lift the box and put it back on.</span>';
+  else if(cupSee())h+='<span style="color:var(--warn)">That pour didn’t bring the level up: the sensor sees through clear water. Stir in a pinch more flour (or milk), then tap <b>Measure again</b>.</span>';
   else if(cup.odd)h+='<span style="color:var(--warn)"><b>Not saved:</b> the box read '+cup.odd[0]+' cm, about '+cup.odd[1]+' cm was expected.</span> Is it sitting flat on the cup? Tap <b>Measure again</b>. If it reads the same again, it\u2019s kept.';
   else if(cup.poured!=null)h+='<b>'+cup.poured+' g saved.</b> Now put the box back on the cup. It measures by itself.';
   else{const go='P'+pour.slice(1)+', then type what the scale says ↓'+(pts.length>2?' Near the top? Stop about 1 cm below the rim and tap Cup’s full instead.':'');
@@ -2786,7 +2786,7 @@ function cupTab(){
   $('cupnext').innerHTML=h;
   $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name||noTare;$('cupgo').textContent=done?'Add readings':pts.length?'Continue':'Start';$('cupgo').className=done?'chip':'';
   $('cupredo').hidden=!cup.run&&!pts.length;
-  $('cupretry').hidden=!(cup.run&&cup.odd);
+  $('cupretry').hidden=!(cup.run&&(cup.odd||cupSee()));
   $('cupundo').hidden=$('cupdone').hidden=!cup.run;$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start over for a new one
   const pouring=cup.run&&pts.length&&cup.poured==null&&!cup.odd&&cup.phase!=='on'&&!cupSee();
   $('cuppourrow').style.display=pouring?'flex':'none';
