@@ -146,8 +146,9 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div class="row" style="margin-top:6px"><label class="note">Empty cup <input id="cuptare" type="number" inputmode="decimal" min="0" step="0.1" class="g"> g</label><label class="note">Pour about <input id="cupstep" type="number" inputmode="decimal" min="1" step="5" class="g"> g at a time (any amount: smaller = finer)</label></div>
     <div id="cupnext" style="margin-top:10px;font-size:1.02rem;color:var(--fg)"></div>
     <div class="row" id="cuppourrow" style="margin-top:8px;gap:8px;align-items:center;display:none;padding:10px 12px;border:2px solid var(--accent);border-radius:10px;font-size:1.1rem"><span style="font-size:1.6rem;line-height:1;color:var(--accent)">→</span><span>Scale says</span><input id="cuppour" type="number" inputmode="decimal" step="0.1" class="g" style="font-size:1.1rem;width:5em"><span>g</span><button id="cuppourgo">Save amount</button></div>
-    <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button id="cupretry">Measure again</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupredo">Erase &amp; redo</button><button class="chip" id="cupdone">Cup’s full</button></div>
+    <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button id="cupretry">Measure again</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupdone">Cup’s full</button></div>
     <div id="cuppts" class="small" style="margin-top:10px;font-variant-numeric:tabular-nums"></div>
+    <button class="chip" id="cupredo" style="margin-top:14px;color:var(--warn);border-color:var(--warn)">Erase all readings, start over</button>
     </div>
     <div class="note" style="margin-top:8px"><a href="http://192.168.1.135" target="_blank" rel="noopener">The box’s live reading</a> (home Wi-Fi only)</div>
   </div>
