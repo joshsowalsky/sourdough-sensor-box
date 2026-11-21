@@ -2787,7 +2787,8 @@ function cupTab(){
   $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name||noTare;$('cupgo').textContent=done?'Add readings':pts.length?'Continue':'Start';$('cupgo').className=done?'chip':'';
   $('cupredo').hidden=!cup.run&&!pts.length;
   $('cupretry').hidden=!(cup.run&&(cup.odd||cupSee()));
-  $('cupundo').hidden=$('cupdone').hidden=!cup.run;$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start over for a new one
+  $('cupundo').hidden=$('cupdone').hidden=!cup.run;$('cupundo').disabled=cup.poured==null&&pts.length<2;
+  $('cupundo').textContent=cup.poured!=null?'Change amount':'Undo last';  // the empty reading stays: Start over for a new one
   const pouring=cup.run&&pts.length&&cup.poured==null&&!cup.odd&&cup.phase!=='on'&&!cupSee();
   $('cuppourrow').style.display=pouring?'flex':'none';
   if(pouring&&$('cuppour').dataset.for!==String(ml)){$('cuppour').dataset.for=String(ml);$('cuppour').value=''}
@@ -2846,7 +2847,10 @@ $('cupgo').onclick=()=>cupStart(cup.pts.length>0);
 // Start over: the readings so far are dropped, and it starts from the empty cup.
 $('cupredo').onclick=()=>{if(confirm('Erase all '+cup.pts.length+' readings for '+cup.name+' and measure it again from empty? Other cups are not touched. Empty the cup, put it on the scale and the box on it first.'))cupStart(false)};
 $('cupretry').onclick=async()=>{if(await cupSend({retry:true})){cup.odd=null;cup.phase='';cup.wait='retry';cupSave();cupTab()}};
-$('cupundo').onclick=async()=>{if(await cupSend({undo:true})){cup.pts=cup.pts.slice(0,-1);cup.wait=null;cupSave();cupTab()}};
+$('cupundo').onclick=async()=>{
+  if(cup.poured!=null){if(await cupSend({poured:null})){cup.poured=null;cup.wait=null;cupSave();cupTab();$('cuppour').focus()}return}
+  const l=cup.pts[cup.pts.length-1];if(!l||!confirm('Delete the last reading ('+cupG(l[0])+' g, '+l[1]+' cm)? Only that one.'))return;
+  if(await cupSend({undo:true})){cup.pts=cup.pts.slice(0,-1);cup.wait=null;cupSave();cupTab()}};
 function cupPourLabel(){$('cuppourgo').textContent='Save amount'}
 $('cuppour').addEventListener('input',cupPourLabel);
 // Done pouring: remember what the scale says; the reading saved when the box goes back on gets it.
