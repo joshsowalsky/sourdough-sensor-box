@@ -140,10 +140,10 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
 </section>
 <section id="cuptab" class="keep">
   <div class="card"><div class="label">Cup shape</div>
-    <div class="row" style="margin-top:6px"><label class="note">Cup <input id="cupname" list="cupnames" autocomplete="off" style="width:11em"></label><datalist id="cupnames"></datalist><label class="note">Empty cup <input id="cuptare" type="number" inputmode="decimal" min="0" step="0.1" class="g"> g</label><label class="note">Each pour <input id="cupstep" type="number" inputmode="decimal" min="1" step="5" class="g"> g</label></div>
+    <div class="row" style="margin-top:6px"><label class="note">Cup <select id="cupsel" style="max-width:13em"></select></label><input id="cupname" autocomplete="off" placeholder="New cup’s name" style="width:11em" hidden><label class="note">Empty cup <input id="cuptare" type="number" inputmode="decimal" min="0" step="0.1" class="g"> g</label><label class="note">Each pour <input id="cupstep" type="number" inputmode="decimal" min="1" step="5" class="g"> g</label></div>
     <div id="cupnext" style="margin-top:10px;font-size:1.02rem;color:var(--fg)"></div>
     <div class="row" id="cuppourrow" style="margin-top:8px;gap:8px;align-items:center;display:none;padding:10px 12px;border:2px solid var(--accent);border-radius:10px;font-size:1.1rem"><span style="font-size:1.6rem;line-height:1;color:var(--accent)">→</span><span>Scale says</span><input id="cuppour" type="number" inputmode="decimal" step="0.1" class="g" style="font-size:1.1rem;width:5em"><span>g</span><button id="cuppourgo">Got it</button></div>
-    <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupredo">Start over</button><button class="chip" id="cupdone">Cup’s full</button></div>
+    <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupredo">Erase &amp; redo</button><button class="chip" id="cupdone">Cup’s full</button></div>
     <div id="cuppts" class="small" style="margin-top:10px;font-variant-numeric:tabular-nums"></div>
     <div class="note" style="margin-top:8px"><a href="http://192.168.1.135" target="_blank" rel="noopener">The box’s live reading</a> (home Wi-Fi only)</div>
   </div>
@@ -2741,12 +2741,16 @@ function cupShape(pts){
 }
 function cupTab(){
   if(cup.odd&&cup.odd[0]==='flat')cup.odd=null;  // the box on the counter is just "off"
-  const names=new Set([...JARS,...Object.keys(appColl('jars')),...Object.keys((run&&run.cups)||{})]);
-  $('cupnames').innerHTML='';names.forEach(n=>$('cupnames').appendChild(opt(n)));
-  if(document.activeElement!==$('cupname'))$('cupname').value=cup.name;
+  // A picker, not a text box: the measured cups (with their reading counts),
+  // then the jars, then New cup (which shows the name box).
+  const cups=(run&&run.cups)||{},names=[...new Set([...Object.keys(cups),...JARS,...Object.keys(appColl('jars'))])];
+  const isNew=!cup.name||!names.includes(cup.name),nPts=n=>((cups[n]&&cups[n].points)||[]).length;
+  $('cupsel').replaceChildren(...names.map(n=>opt(n,nPts(n)?n+' ('+nPts(n)+' readings)':n)),opt('new','New cup…'));
+  $('cupsel').value=isNew?'new':cup.name;$('cupname').hidden=!isNew;
+  if(document.activeElement!==$('cupname'))$('cupname').value=isNew?cup.name:'';
   if(document.activeElement!==$('cupstep'))$('cupstep').value=cup.step;
   if(document.activeElement!==$('cuptare'))$('cuptare').value=cup.tare??'';
-  $('cupname').disabled=$('cupstep').disabled=cup.run;  // the empty weight can be typed mid-run: it only changes the scale numbers shown
+  $('cupsel').disabled=$('cupname').disabled=$('cupstep').disabled=cup.run;  // the empty weight can be typed mid-run: it only changes the scale numbers shown
   const pts=cup.pts,ml=cupNext(),last=pts[pts.length-1],noTare=cup.tare==null;
   const pour=(pts.length===1?'add water with a splash of milk':'add water')+' until the scale reads <b>'+cupG(ml)+' g</b>';
   let h='';
@@ -2820,7 +2824,7 @@ async function cupStart(resume){
 }
 $('cupgo').onclick=()=>cupStart(cup.pts.length>0);
 // Start over: the readings so far are dropped, and it starts from the empty cup.
-$('cupredo').onclick=()=>{if(confirm('Start over? The readings so far are cleared. Empty the cup, put it on the scale and the box on it first.'))cupStart(false)};
+$('cupredo').onclick=()=>{if(confirm('Erase all '+cup.pts.length+' readings for '+cup.name+' and measure it again from empty? Other cups are not touched. Empty the cup, put it on the scale and the box on it first.'))cupStart(false)};
 $('cupundo').onclick=async()=>{if(await cupSend({undo:true})){cup.pts=cup.pts.slice(0,-1);cup.wait=null;cupSave();cupTab()}};
 // Got it (the scale hit the target) or Fix (it didn't: the number typed).
 function cupPourLabel(){const i=$('cuppour');$('cuppourgo').textContent=Number(i.value)===cupG(Number(i.dataset.for))?'Got it':'Fix'}
@@ -2833,11 +2837,14 @@ $('cuppourgo').onclick=async()=>{
   if(await cupSend({poured:Math.round((v-(cup.tare||0))*10)/10})){cup.poured=v;$('cuppour').blur();cupSave();cupTab()}};
 // Only for the end: tapping it after a pour stops the run (the box measures by itself).
 $('cupdone').onclick=async()=>{if(!confirm('Finished? Only when the water is near the top.'))return;if(await cupSend({done:true})){cup.run=false;cup.endedAt=Date.now();cup.wait=null;cupStop();cupSave();cupTab()}};
-$('cupname').onchange=e=>{
-  const n=e.target.value.split(/\s+/).join(' ').trim().slice(0,60);if(n===cup.name)return;
+// Switching cups only changes which table this tab shows: none is erased.
+$('cupsel').onchange=e=>{const v=e.target.value;if(v==='new'){cupPick('');$('cupname').hidden=false;$('cupname').focus()}else cupPick(v)};
+$('cupname').onchange=e=>cupPick(e.target.value);
+function cupPick(v){
+  const n=v.split(/\s+/).join(' ').trim().slice(0,60);if(n===cup.name)return;
   const r=run&&run.cups&&run.cups[n];
   cup={...cup,name:n,pts:r&&Array.isArray(r.points)?r.points:[],tare:r&&r.tare_g!=null?r.tare_g:null,wait:null};cupSave();cupTab();
-};
+}
 $('cuptare').onchange=e=>{const v=e.target.value===''?null:Number(e.target.value);if(v==null||(v>=0&&v<=5000)){cup.tare=v==null?null:Math.round(v*10)/10;cupSave()}cupTab()};
 $('cupstep').onchange=e=>{const v=Number(e.target.value);if(v>0&&v<=500){cup.step=v;cupSave()}cupTab()};
 if(cup.run)cupPoll();
