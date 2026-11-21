@@ -139,12 +139,16 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div class="note" id="slbasis" style="margin-top:6px"></div></div>
 </section>
 <section id="cuptab" class="keep">
-  <div class="card"><div class="label">Cup shape</div>
-    <div class="row" style="margin-top:6px"><label class="note">Cup <select id="cupsel" style="max-width:13em"></select></label><input id="cupname" autocomplete="off" placeholder="New cup’s name" style="width:11em" hidden><label class="note">Empty cup <input id="cuptare" type="number" inputmode="decimal" min="0" step="0.1" class="g"> g</label><label class="note">Each pour <input id="cupstep" type="number" inputmode="decimal" min="1" step="5" class="g"> g</label></div>
+  <div class="card"><div class="label">Cups</div>
+    <div id="cuplist"></div>
+    <div id="cupedit">
+    <div class="row" style="margin-top:6px;gap:8px;align-items:center"><button class="chip" id="cupback">‹ All cups</button><b id="cuptitle" style="font-size:1.1rem"></b><input id="cupname" autocomplete="off" placeholder="Name this cup" style="width:11em" hidden></div>
+    <div class="row" style="margin-top:6px"><label class="note">Empty cup <input id="cuptare" type="number" inputmode="decimal" min="0" step="0.1" class="g"> g</label><label class="note">Each pour <input id="cupstep" type="number" inputmode="decimal" min="1" step="5" class="g"> g</label></div>
     <div id="cupnext" style="margin-top:10px;font-size:1.02rem;color:var(--fg)"></div>
     <div class="row" id="cuppourrow" style="margin-top:8px;gap:8px;align-items:center;display:none;padding:10px 12px;border:2px solid var(--accent);border-radius:10px;font-size:1.1rem"><span style="font-size:1.6rem;line-height:1;color:var(--accent)">→</span><span>Scale says</span><input id="cuppour" type="number" inputmode="decimal" step="0.1" class="g" style="font-size:1.1rem;width:5em"><span>g</span><button id="cuppourgo">Got it</button></div>
     <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupredo">Erase &amp; redo</button><button class="chip" id="cupdone">Cup’s full</button></div>
     <div id="cuppts" class="small" style="margin-top:10px;font-variant-numeric:tabular-nums"></div>
+    </div>
     <div class="note" style="margin-top:8px"><a href="http://192.168.1.135" target="_blank" rel="noopener">The box’s live reading</a> (home Wi-Fi only)</div>
   </div>
 </section>
@@ -560,7 +564,7 @@ async function loadRun(){
     if(!got.length)return;
     const j=got.reduce((a,b)=>new Date(b.updated)>new Date(a.updated)?b:a);
     if(run&&new Date(j.updated)<new Date(run.updated))return;
-    run=j;migrateJars();renderRun();cupAdopt();
+    run=j;migrateJars();renderRun();cupAdopt();if(document.querySelector('main').classList.contains('tab-cup'))cupTab();
     // Until run.json shows the button just pressed, look again every 20 s.
     if(ctlNow&&Date.now()-ctlNow.at<10*60e3&&!(new Date(j.updated).getTime()>=ctlNow.at-60e3))setTimeout(loadRun,20e3);
   }catch(e){}
@@ -2692,6 +2696,7 @@ function slTyped(k){
 const CUP_SETTLE_MS=7000;  // tof_logger.CUP_STEADY_N readings a second apart, and the trip
 let cup={name:'',step:30,tare:null,pts:[],run:false,since:null,wait:null,phase:'',onAt:0};
 try{cup={...cup,...JSON.parse(store.get('cup')||'{}'),wait:null}}catch(e){}
+let cupList=!cup.run;  // the Cup tab opens on the list of cups
 const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,tare:cup.tare,pts:cup.pts,run:cup.run,since:cup.since,phase:cup.phase,onAt:cup.onAt,poured:cup.poured,endedAt:cup.endedAt,odd:cup.odd}));
 // The PC is mid-calibration (run.json pause.cupcal): pick it up as it is, with
 // the readings and what the scale said at Done, on this phone or any other.
@@ -2741,21 +2746,32 @@ function cupShape(pts){
 }
 function cupTab(){
   if(cup.odd&&cup.odd[0]==='flat')cup.odd=null;  // the box on the counter is just "off"
-  // A picker, not a text box: the measured cups (with their reading counts),
-  // then the jars, then New cup (which shows the name box).
-  const cups=(run&&run.cups)||{},names=[...new Set([...Object.keys(cups),...JARS,...Object.keys(appColl('jars'))])];
-  const isNew=!cup.name||!names.includes(cup.name),nPts=n=>((cups[n]&&cups[n].points)||[]).length;
-  $('cupsel').replaceChildren(...names.map(n=>opt(n,nPts(n)?n+' ('+nPts(n)+' readings)':n)),opt('new','New cup…'));
-  $('cupsel').value=isNew?'new':cup.name;$('cupname').hidden=!isNew;
+  // Two views: the list of measured cups (+ Add a cup), and one cup.
+  const list=cupList&&!cup.run;
+  $('cuplist').hidden=!list;$('cupedit').hidden=list;
+  if(list){
+    const cups=Object.entries((run&&run.cups)||{}).filter(([,c])=>(c.points||[]).length);
+    $('cuplist').innerHTML=(run?'':'<div class="note">Loading…</div>')+cups.map(([n,c])=>{const ok=cupFit(c.points);
+      return '<button class="cuprow" data-cup="'+esc(n)+'" style="display:block;width:100%;text-align:left;margin-top:8px;padding:10px 12px">'+
+        '<b>'+esc(n)+'</b> '+(ok?'<span style="color:var(--ok)">✓ Calibrated</span>':'<span class="note">not finished</span>')+
+        '<div class="note" style="margin-top:4px">'+(cupShape(c.points)||c.points.length+' readings')+'</div></button>'}).join('')+
+      (run&&!cups.length?'<div class="note">No cups measured yet.</div>':'')+
+      '<button id="cupadd" style="margin-top:10px">+ Add a cup</button>'+
+      '<div class="note" style="margin-top:6px">Calibrated cups are the choices for the dough cup on the Bake tab.</div>';
+    return}
+  const isNew=!cup.run&&!cup.pts.length;
+  $('cuptitle').textContent=isNew?'':cup.name;$('cupname').hidden=!isNew;$('cupback').hidden=cup.run;
   if(document.activeElement!==$('cupname'))$('cupname').value=isNew?cup.name:'';
   if(document.activeElement!==$('cupstep'))$('cupstep').value=cup.step;
   if(document.activeElement!==$('cuptare'))$('cuptare').value=cup.tare??'';
-  $('cupsel').disabled=$('cupname').disabled=$('cupstep').disabled=cup.run;  // the empty weight can be typed mid-run: it only changes the scale numbers shown
+  $('cupname').disabled=$('cupstep').disabled=cup.run;  // the empty weight can be typed mid-run: it only changes the scale numbers shown
   const pts=cup.pts,ml=cupNext(),last=pts[pts.length-1],noTare=cup.tare==null;
   const pour=(pts.length===1?'add water with a splash of milk':'add water')+' until the scale reads <b>'+cupG(ml)+' g</b>';
   let h='';
   if(cup.wait==='fail')h='<span style="color:var(--warn)">Couldn’t reach the PC. Try again.</span><br>';
+  const done=!cup.run&&pts.length&&cupFit(pts);
   if(!cup.name)h+='Name the cup.';
+  else if(done)h+='<b style="color:var(--ok)">✓ Calibrated.</b> Saved on the PC. Pick it as the dough cup on the Bake tab.';
   else if(!cup.run&&pts.length)h+=pts.length+' readings saved, the last with the scale at '+cupG(last[0])+' g. To keep going, put the box back on the cup and tap <b>Continue</b>.';
   else if(!cup.run)h+=noTare?'Put the empty cup on the scale (don’t zero it) and type what it weighs.':'Box on the <b>empty</b> cup, then Start.';
   else if(cup.phase==='on')h+='<b>Box on.</b> Hold still… '+cd(cup.onAt+CUP_SETTLE_MS);
@@ -2766,7 +2782,7 @@ function cupTab(){
   else{const go='A'+pour.slice(1)+'. Don’t worry about being exact. If the scale says something else, change the number below and tap <b>Fix</b> ↓'+(pts.length>2?' Near the top? Stop about 1 cm below the rim and tap Cup’s full instead.':'');
     h+=cup.phase==='off'?'<b>Box is off.</b> '+go:'<b>Saved ✓ '+(last[0]?cupG(last[0])+' g':'empty cup')+'.</b> Take the box off and set it on the counter. '+go}
   $('cupnext').innerHTML=h;
-  $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name||noTare;$('cupgo').textContent=pts.length?'Continue':'Start';
+  $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name||noTare;$('cupgo').textContent=done?'Add readings':pts.length?'Continue':'Start';$('cupgo').className=done?'chip':'';
   $('cupredo').hidden=!cup.run&&!pts.length;
   $('cupundo').hidden=$('cupdone').hidden=!cup.run;$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start over for a new one
   const pouring=cup.run&&pts.length&&cup.poured==null&&!cup.odd&&cup.phase!=='on'&&!cupSee();
@@ -2837,8 +2853,12 @@ $('cuppourgo').onclick=async()=>{
   if(await cupSend({poured:Math.round((v-(cup.tare||0))*10)/10})){cup.poured=v;$('cuppour').blur();cupSave();cupTab()}};
 // Only for the end: tapping it after a pour stops the run (the box measures by itself).
 $('cupdone').onclick=async()=>{if(!confirm('Finished? Only when the water is near the top.'))return;if(await cupSend({done:true})){cup.run=false;cup.endedAt=Date.now();cup.wait=null;cupStop();cupSave();cupTab()}};
-// Switching cups only changes which table this tab shows: none is erased.
-$('cupsel').onchange=e=>{const v=e.target.value;if(v==='new'){cupPick('');$('cupname').hidden=false;$('cupname').focus()}else cupPick(v)};
+// Opening a cup only changes which table this tab shows: none is erased.
+
+$('cuplist').onclick=e=>{const r=e.target.closest('[data-cup]');
+  if(r){cupList=false;cupPick(r.dataset.cup);cupTab();return}
+  if(e.target.closest('#cupadd')){cupList=false;cupPick('');cupTab();$('cupname').focus()}};
+$('cupback').onclick=()=>{cupList=true;cupTab()};
 $('cupname').onchange=e=>cupPick(e.target.value);
 function cupPick(v){
   const n=v.split(/\s+/).join(' ').trim().slice(0,60);if(n===cup.name)return;
