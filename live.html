@@ -146,7 +146,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div class="row" style="margin-top:6px"><label class="note">Empty cup <input id="cuptare" type="number" inputmode="decimal" min="0" step="0.1" class="g"> g</label><label class="note">Pour about <input id="cupstep" type="number" inputmode="decimal" min="1" step="5" class="g"> g at a time (any amount: smaller = finer)</label></div>
     <div id="cupnext" style="margin-top:10px;font-size:1.02rem;color:var(--fg)"></div>
     <div class="row" id="cuppourrow" style="margin-top:8px;gap:8px;align-items:center;display:none;padding:10px 12px;border:2px solid var(--accent);border-radius:10px;font-size:1.1rem"><span style="font-size:1.6rem;line-height:1;color:var(--accent)">→</span><span>Scale says</span><input id="cuppour" type="number" inputmode="decimal" step="0.1" class="g" style="font-size:1.1rem;width:5em"><span>g</span><button id="cuppourgo">Save amount</button></div>
-    <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button id="cupretry">Measure again</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupdone">Cup’s full</button></div>
+    <div class="row" style="margin-top:10px;gap:8px"><button id="cupgo">Measure</button><button id="cupretry">Measure again</button><button class="chip" id="cupundo">Undo last</button><button class="chip" id="cupputback" hidden></button><button class="chip" id="cupdone">Cup’s full</button></div>
     <div id="cuppts" class="small" style="margin-top:10px;font-variant-numeric:tabular-nums"></div>
     <button class="chip" id="cupredo" style="margin-top:14px;color:var(--warn);border-color:var(--warn)">Erase all readings, start over</button>
     </div>
@@ -2698,6 +2698,7 @@ function slTyped(k){
 const CUP_SETTLE_MS=7000;  // tof_logger.CUP_STEADY_N readings a second apart, and the trip
 let cup={name:'',step:10,tare:null,pts:[],run:false,since:null,wait:null,phase:'',onAt:0};
 try{cup={...cup,...JSON.parse(store.get('cup')||'{}'),wait:null}}catch(e){}
+let cupUndone=null;  // the reading Undo last just deleted, for Put back
 let cupList=!cup.run;  // the Cup tab opens on the list of cups
 const cupSave=()=>store.set('cup',JSON.stringify({name:cup.name,step:cup.step,tare:cup.tare,pts:cup.pts,run:cup.run,since:cup.since,phase:cup.phase,onAt:cup.onAt,poured:cup.poured,endedAt:cup.endedAt,odd:cup.odd}));
 // The PC is mid-calibration (run.json pause.cupcal): pick it up as it is, with
@@ -2790,6 +2791,7 @@ function cupTab(){
   $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name||noTare;$('cupgo').textContent=done?'Add readings':pts.length?'Continue':'Start';$('cupgo').className=done?'chip':'';
   $('cupredo').hidden=!cup.run&&!pts.length;
   $('cupretry').hidden=!(cup.run&&(cup.odd||cupSee()));
+  const ub=cupUndone&&!pts.some(q=>q[0]===cupUndone[0]);$('cupputback').hidden=!(cup.run&&ub);if(ub)$('cupputback').textContent='Put back '+cupG(cupUndone[0])+' g';
   $('cupundo').hidden=$('cupdone').hidden=!cup.run;$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start over for a new one
   const pouring=cup.run&&pts.length&&!cup.odd&&cup.phase!=='on'&&!cupSee()&&(cup.poured!=null||!cupFull());
   $('cuppourrow').style.display=pouring?'flex':'none';
@@ -2860,7 +2862,10 @@ $('cuppts').onclick=async e=>{
 $('cupretry').onclick=async()=>{if(await cupSend({retry:true})){cup.odd=null;cup.phase='';cup.wait='retry';cupSave();cupTab()}};
 $('cupundo').onclick=async()=>{
   const l=cup.pts[cup.pts.length-1];if(!l||!confirm('Delete the last reading ('+cupG(l[0])+' g, '+l[1]+' cm)? Only that one.'))return;
-  if(await cupSend({undo:true})){cup.pts=cup.pts.slice(0,-1);cup.wait=null;cupSave();cupTab()}};
+  if(await cupSend({undo:true})){cupUndone=l;cup.pts=cup.pts.slice(0,-1);cup.wait=null;cupSave();cupTab()}};
+// Put back: the reading Undo last deleted, as it was (until another undo).
+$('cupputback').onclick=async()=>{const l=cupUndone;if(!l)return;
+  if(await cupSend({restore:[l[0],l[1],l[2]||0]})){cup.pts=[...cup.pts.filter(q=>q[0]!==l[0]),l].sort((a,b)=>a[0]-b[0]);cupUndone=null;cupSave();cupTab()}};
 function cupPourLabel(){const p=cup.poured,v=Number($('cuppour').value);$('cuppourgo').textContent=p==null?'Save amount':v===p?'Saved \u2713':'Update amount'}
 $('cuppour').addEventListener('input',cupPourLabel);
 // Done pouring: remember what the scale says; the reading saved when the box goes back on gets it.
