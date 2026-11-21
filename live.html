@@ -2282,8 +2282,9 @@ function bulkChart(dg,top){
   const on=new Date(dg.on).getTime(),now=Date.now(),base=dg.base_cm,depth=dg.depth_cm;
   // Off the dough (the box lifted for a fold, or on the counter) reads near the
   // top: skip those, and anything below the empty cup.
-  // The PC sends the settled readings with the plan (dg.series: time, cm up).
-  const pts=dg.series?dg.series.map(([t,r])=>({t:new Date(t).getTime(),v:100*r/depth})):(run.points||[]).map(p=>({t:new Date(p.t).getTime(),d:p.d})).filter(p=>p.t>=on&&p.d!=null&&p.d>CUP_FLAT_CM+0.4&&p.d<=dg.empty_cm+1&&Math.abs(base-p.d)<depth*1.5)
+  // The PC sends the settled readings with the plan: dg.pct_series (time, % up,
+  // by the cup's volume table when it has one), or dg.series (time, cm up).
+  const pts=dg.pct_series?dg.pct_series.map(([t,v])=>({t:new Date(t).getTime(),v})):dg.series?dg.series.map(([t,r])=>({t:new Date(t).getTime(),v:100*r/depth})):(run.points||[]).map(p=>({t:new Date(p.t).getTime(),d:p.d})).filter(p=>p.t>=on&&p.d!=null&&p.d>CUP_FLAT_CM+0.4&&p.d<=dg.empty_cm+1&&Math.abs(base-p.d)<depth*1.5)
     .map(p=>({t:p.t,v:100*(base-p.d)/depth}));
   pts.sort((a,b)=>a.t-b.t);
   const L=34,R=8,T=6,B=18,W=w-L-R,Hh=h-T-B,span=Math.max(3600e3,now-on),x=t=>L+W*(t-on)/span,y=v=>T+Hh*(1-Math.max(-10,Math.min(top,v))/top);
@@ -2538,7 +2539,7 @@ async function sendBake(kind,id,at){
   const ev={step:id,kind,at:at||bk.done[id]||Date.now(),fed:run?new Date(run.fed_at).getTime():null,temp:+bakeF().toFixed(1)};
   if(BAKE_ING[id])ev.amt=Object.fromEntries(BAKE_ING[id].map(k=>[k,+(+amt(k)).toFixed(1)]));
   if(id==='aut'&&bk.aut>0)ev.mins=bk.aut;
-  if(id==='boxon'&&kind==='done'){const c=aliqCup();if(c&&!(bk.box&&bk.box.tub&&bk.box.tub.cm!=null))ev.empty_cm=c[1]}  // the PC pushes "Add Gus now" when it's up
+  if(id==='boxon'&&kind==='done'){const c=aliqCup();if(c&&!(bk.box&&bk.box.tub&&bk.box.tub.cm!=null)){ev.empty_cm=c[1];ev.cup=c[0]}}  // the PC pushes "Add Gus now" when it's up
   if(id==='mix'&&bkGus){if(bkGus.x!=null)ev.x=+bkGus.x.toFixed(2);if(bkGus.past!=null)ev.past=+bkGus.past.toFixed(2)}
   try{
     const r=await fetch('https://ntfy.sh/'+key,{method:'POST',body:'bake '+JSON.stringify(ev)});
