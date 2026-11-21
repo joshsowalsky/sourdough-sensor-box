@@ -2765,9 +2765,9 @@ function cupTab(){
   if(document.activeElement!==$('cupname'))$('cupname').value=isNew?cup.name:'';
   if(document.activeElement!==$('cupstep'))$('cupstep').value=cup.step;
   if(document.activeElement!==$('cuptare'))$('cuptare').value=cup.tare??'';
-  $('cupname').disabled=$('cupstep').disabled=cup.run;  // the empty weight can be typed mid-run: it only changes the scale numbers shown
+  $('cupname').disabled=cup.run;$('cupstep').closest('label').hidden=cup.run;  // the empty weight can be typed mid-run: it only changes the scale numbers shown
   const pts=cup.pts,ml=cupNext(),last=pts[pts.length-1],noTare=cup.tare==null;
-  const pour=(pts.length===1?'add water with a splash of milk':'add water')+' until the scale reads <b>'+cupG(ml)+' g</b>';
+  const pour='pour in a little '+(pts.length===1?'water with a splash of milk':'more water')+' (any amount; smaller pours give a finer table)';
   let h='';
   if(cup.wait==='fail')h='<span style="color:var(--warn)">Couldn’t reach the PC. Try again.</span><br>';
   const done=!cup.run&&pts.length&&cupFit(pts);
@@ -2780,7 +2780,7 @@ function cupTab(){
   else if(cupSee())h+='<span style="color:var(--warn)">That pour didn’t bring the level up: the sensor sees through clear water. Stir in more milk, then lift the box and put it back on.</span>';
   else if(cup.odd)h+='<span style="color:var(--warn)"><b>Not saved:</b> the box read '+cup.odd[0]+' cm, about '+cup.odd[1]+' cm was expected.</span> Is it sitting flat on the cup? Lift it and set it back on. If it reads the same again, it\u2019s kept.';
   else if(cup.poured!=null)h+='<b>Got it, '+cup.poured+' g.</b> Now put the box back on the cup. It measures by itself.';
-  else{const go='A'+pour.slice(1)+'. Don’t worry about being exact. If the scale says something else, change the number below and tap <b>Fix</b> ↓'+(pts.length>2?' Near the top? Stop about 1 cm below the rim and tap Cup’s full instead.':'');
+  else{const go='P'+pour.slice(1)+', then type what the scale says ↓'+(pts.length>2?' Near the top? Stop about 1 cm below the rim and tap Cup’s full instead.':'');
     h+=cup.phase==='off'?'<b>Box is off.</b> '+go:'<b>Saved ✓ '+(last[0]?cupG(last[0])+' g':'empty cup')+'.</b> Take the box off and set it on the counter. '+go}
   $('cupnext').innerHTML=h;
   $('cupgo').hidden=cup.run;$('cupgo').disabled=!cup.name||noTare;$('cupgo').textContent=done?'Add readings':pts.length?'Continue':'Start';$('cupgo').className=done?'chip':'';
@@ -2788,7 +2788,7 @@ function cupTab(){
   $('cupundo').hidden=$('cupdone').hidden=!cup.run;$('cupundo').disabled=pts.length<2;  // the empty reading stays: Start over for a new one
   const pouring=cup.run&&pts.length&&cup.poured==null&&!cup.odd&&cup.phase!=='on'&&!cupSee();
   $('cuppourrow').style.display=pouring?'flex':'none';
-  if(pouring&&$('cuppour').dataset.for!==String(ml)){$('cuppour').dataset.for=String(ml);$('cuppour').value=cupG(ml)}
+  if(pouring&&$('cuppour').dataset.for!==String(ml)){$('cuppour').dataset.for=String(ml);$('cuppour').value=''}
   cupPourLabel();
   $('cuppts').innerHTML=cupShape(pts)+pts.map((q,i)=>{
     let t=cupG(q[0])+' g'+(q[0]?'':' (empty)')+' · '+q[1].toFixed(2)+' cm';
@@ -2844,7 +2844,7 @@ $('cupgo').onclick=()=>cupStart(cup.pts.length>0);
 $('cupredo').onclick=()=>{if(confirm('Erase all '+cup.pts.length+' readings for '+cup.name+' and measure it again from empty? Other cups are not touched. Empty the cup, put it on the scale and the box on it first.'))cupStart(false)};
 $('cupundo').onclick=async()=>{if(await cupSend({undo:true})){cup.pts=cup.pts.slice(0,-1);cup.wait=null;cupSave();cupTab()}};
 // Got it (the scale hit the target) or Fix (it didn't: the number typed).
-function cupPourLabel(){const i=$('cuppour');$('cuppourgo').textContent=Number(i.value)===cupG(Number(i.dataset.for))?'Got it':'Fix'}
+function cupPourLabel(){$('cuppourgo').textContent='Got it'}
 $('cuppour').addEventListener('input',cupPourLabel);
 // Done pouring: remember what the scale says; the reading saved when the box goes back on gets it.
 $('cuppourgo').onclick=async()=>{
