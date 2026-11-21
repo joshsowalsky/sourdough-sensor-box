@@ -2797,6 +2797,8 @@ function cupTab(){
     let t=cupG(q[0])+' g'+(q[0]?'':' (empty)')+' · '+q[1].toFixed(2)+' cm';
     if(i){const d=pts[i-1][1]-q[1],v=q[0]-pts[i-1][0];
       t+=d>=0.1&&v>0?' · up '+(10*d).toFixed(1)+' mm · '+Math.round(v/d)+' mL/cm':' · <span style="color:var(--warn)">didn’t go up</span>'}
+    // A typo in the grams is fixed on the reading itself.
+    if(q[0])t+=' <button class="chip" data-fix="'+q[0]+'" style="min-height:26px;padding:1px 8px;margin:2px 0">Fix g</button>';
     return t;
   }).reverse().join('<br>');
 }
@@ -2846,6 +2848,13 @@ async function cupStart(resume){
 $('cupgo').onclick=()=>cupStart(cup.pts.length>0);
 // Start over: the readings so far are dropped, and it starts from the empty cup.
 $('cupredo').onclick=()=>{if(confirm('Erase all '+cup.pts.length+' readings for '+cup.name+' and measure it again from empty? Other cups are not touched. Empty the cup, put it on the scale and the box on it first.'))cupStart(false)};
+$('cuppts').onclick=async e=>{
+  const b=e.target.closest('[data-fix]');if(!b)return;
+  const ml=Number(b.dataset.fix),i=cup.pts.findIndex(q=>q[0]===ml);if(i<1)return;
+  const a=prompt('What did the scale really say for this reading (g)?',cupG(ml));if(a==null||a.trim()==='')return;
+  const to=Math.round((Number(a)-(cup.tare||0))*10)/10,lo=cup.pts[i-1][0],hi=cup.pts[i+1]?cup.pts[i+1][0]:Infinity;
+  if(!(to>lo&&to<hi)){alert('It has to be between the readings either side ('+cupG(lo)+(hi<Infinity?' and '+cupG(hi):'')+' g).');return}
+  if(await cupSend({fix:{ml,to}})){cup.pts[i][0]=to;cupSave();cupTab()}};
 $('cupretry').onclick=async()=>{if(await cupSend({retry:true})){cup.odd=null;cup.phase='';cup.wait='retry';cupSave();cupTab()}};
 $('cupundo').onclick=async()=>{
   if(cup.poured!=null){if(await cupSend({poured:null})){cup.poured=null;cup.wait=null;cupSave();cupTab();$('cuppour').focus()}return}
