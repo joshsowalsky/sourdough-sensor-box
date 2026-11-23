@@ -2365,8 +2365,26 @@ function bulkReport(T){
     (bk.done.fridge>end?' Then '+hm((bk.done.fridge-end)/3600e3)+' on the counter before the fridge (pre-shape and shape usually take about 1 h), still fermenting, so about '+Math.round(100*(bk.done.fridge-T.mix)/3600e3/est)+'% of the bulk estimate in all.':'')+'</div>';
 }
 let bkSetupFor=null;  // whether the mix was done when Recipe and times last opened or closed itself
+// A Done button on a step's notification tells the PC, not this page: take
+// those steps from the PC's bake (run.bake.done), except ones undone here
+// since (bk.ua: when each was undone; .all: Start over).
+function bkAdopt(){
+  const b=run&&run.bake;if(!b||!b.done)return false;
+  const ua=bk.ua||{},newer=(s,t)=>t>Math.max(ua[s]||0,ua.all||0),mixT=Date.parse(b.mix);let ch=false;
+  if(!bk.done.mix){
+    if(!(newer('mix',mixT)&&mixT>(bk.oven?bk.oven.fridge:0)&&Date.now()-mixT<12*3600e3&&!b.done.fridge))return false;
+    bk.done.mix=mixT;ch=true;
+  }else if(Math.abs(mixT-bk.done.mix)>=10*60e3)return false;
+  for(const [s,iso] of Object.entries(b.done)){
+    const t=Date.parse(iso);if(bk.done[s]||!newer(s,t))continue;
+    bk.done[s]=t;ch=true;
+    if(s==='fridge'&&!(bk.oven&&bk.oven.fridge>=t))bk.oven={fridge:t,mix:bk.done.mix||null,done:{}};
+  }
+  if(ch)bkSave();return ch;
+}
 function bakeTab(force){
   if(bkRoll()&&run)renderRun();
+  bkAdopt();
   const g=bakeGus();
   // Don't redraw under a box being typed in (the minute refresh); a tap on
   // Done or Undo always redraws, even though the tapped button has focus.
@@ -2472,16 +2490,19 @@ function bakeTab(force){
 // The topic is a key like the pause key: set by a #pushtopic= link, never here.
 function bkWanted(){
   const want={},now=Date.now(),d=bk.done,first=d.aut||d.mix;
-  const add=(id,at,title,msg,prio)=>{if(at>now+45e3&&at<now+70*3600e3)want[id]={at:Math.round(at/1e3),title,msg,prio:prio||'high'}};
+  const add=(id,at,title,msg,prio,act)=>{if(at>now+45e3&&at<now+70*3600e3)want[id]={at:Math.round(at/1e3),title,msg,prio:prio||'high',act}};
+  const PC_STEPS=['mix','salt','f1','f2','f3','f4','bulk','pre','shape','fridge'];
   if(first&&!d.fridge){
-    const k='sd'+Math.round(first/6e4).toString(36),{T,W}=bakeTimes();
+    const k='sd'+Math.round(first/6e4).toString(36),{T,W}=bakeTimes(),bb=(bakePlan()||{}).by_button||[];
     for(const st of bakeSteps()){
-      if(d[st.id]||!st.after||!d[st.after[0]]||st.id==='boxon')continue;
+      // After a step done from a notification's button the PC sends the next push.
+      if(d[st.id]||!st.after||!d[st.after[0]]||st.id==='boxon'||bb.includes(st.after[0]))continue;
       const base=d[st.after[0]],due=base+st.after[1]*60e3,late=st.id==='mix'&&W.mixGus?W.mix[1]:base+st.after[3]*60e3,tip=st.s?st.s+' ':'';
-      if(st.id!=='fridge')add(k+st.id,due,st.t+' now',tip+'Any time until '+clock(late)+'. Tap Done after.');
-      add(k+st.id+'L',late,st.t+': still to do',st.id==='mix'?'Gus is past his best after this: add him now.':tip+'Late is fine. The next step counts from when you tap Done.');
+      const act=PC_STEPS.includes(st.id)?{s:st.id,l:st.btn||'Done'}:null;
+      if(st.id!=='fridge')add(k+st.id,due,st.t+' now',tip+'Any time until '+clock(late)+'. Tap Done after.','high',act);
+      add(k+st.id+'L',late,st.t+': still to do',st.id==='mix'?'Gus is past his best after this: add him now.':tip+'Late is fine. The next step counts from when you tap Done.','high',act);
     }
-    if(d.mix&&!d.bulk&&T.bulk)add(k+'bulk',W.bulk?W.bulk[0]:T.bulk,'Check the dough','Up 50-75%, domed, bubbly and jiggly? Then end bulk and pre-shape.');
+    if(d.mix&&!d.bulk&&T.bulk)add(k+'bulk',W.bulk?W.bulk[0]:T.bulk,'Check the dough','Up 50-75%, domed, bubbly and jiggly? Then end bulk and pre-shape.','high',{s:'bulk',l:'Done: it\u2019s pre-shaped'});
   }
   const o=bk.oven;
   if(o&&o.done){
@@ -2495,7 +2516,9 @@ function bkWanted(){
 let bkPushBusy=false;
 async function bkPushSync(){
   const topic=store.get('pushtopic');if(!topic||bkPushBusy)return;
-  let had={};try{had=JSON.parse(store.get('bakepush')||'{}')}catch(e){}
+  let had={};try{had=JSON.parse(store.get('bakepush2')||'{}')}catch(e){}
+  // The button posts "bake {step, done, now}" to the PC's control topic.
+  const key=store.get('pausekey'),acts=a=>a&&key?{actions:JSON.stringify([{action:'http',label:a.l,url:'https://ntfy.sh/'+key,method:'POST',body:'bake '+JSON.stringify({step:a.s,kind:'done',at:'now'}),clear:true}])}:{};
   const want=bkWanted(),now=Math.round(Date.now()/1e3),u='https://ntfy.sh/'+topic+'/';
   const post=(id,q,body)=>fetch(u+id+'?'+new URLSearchParams({tags:'bread',click:location.origin+location.pathname,...q}),{method:'POST',body}).then(r=>{if(!r.ok)throw new Error(r.status)});
   bkPushBusy=true;
@@ -2509,9 +2532,9 @@ async function bkPushSync(){
     }
     for(const [id,w] of Object.entries(want)){
       if(had[id]&&Math.abs(had[id]-w.at)<120)continue;
-      try{await post(id,{at:w.at,title:w.title,priority:w.prio},w.msg);had[id]=w.at}catch(e){}
+      try{await post(id,{at:w.at,title:w.title,priority:w.prio,...acts(w.act)},w.msg);had[id]=w.at}catch(e){}
     }
-  }finally{bkPushBusy=false;store.set('bakepush',JSON.stringify(had))}
+  }finally{bkPushBusy=false;store.set('bakepush2',JSON.stringify(had))}
 }
 // Oven: the loaf in the fridge, from the fridge to the cooling rack. Its own
 // card, so today's dough can start while yesterday's loaf waits to bake.
@@ -2966,7 +2989,7 @@ $('tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){setTab(b.data
 // so a reload doesn't start over again.
 {const q=new URLSearchParams(location.search);
   if(q.get('bake')==='new'){
-    bk={...bk,done:{},amt:{},box:{}};delete bk.bsum;delete bk.by;delete bk.fr;
+    bk={...bk,done:{},amt:{},box:{},ua:{all:Date.now()}};delete bk.bsum;delete bk.by;delete bk.fr;
     const fr=/^(\d\d):(\d\d)$/.exec(q.get('fr')||'');
     if(fr){const d=new Date();d.setHours(+fr[1],+fr[2],0,0);if(d.getTime()<Date.now()-3600e3)d.setDate(d.getDate()+1);bk.fr=d.getTime()}
     const n=parseFloat(q.get('loaves'));if(n>0&&n<=10)bk.loaves=n;
@@ -3029,7 +3052,7 @@ $('baksteps').onclick=e=>{
   // times on 2026-11-19. Undo ignores taps in the first 4 s after the Done.
   if(u&&bkTap.id===u.dataset.bu&&Date.now()-bkTap.at<4000)return;
   if(d){const id=d.dataset.bd;bk.done[id]=Date.now();bkTap={id,at:Date.now()};if(id==='fridge')bk.oven={fridge:bk.done[id],mix:bk.done.mix||null,done:{}};bkSave();bakeTab(true);sendBake('done',id)}
-  if(u){const id=u.dataset.bu,at=bk.done[id];delete bk.done[id];if(id==='fridge'&&bk.oven&&bk.oven.fridge===at)delete bk.oven;bkSave();bakeTab(true);sendBake('undo',id,at)}
+  if(u){const id=u.dataset.bu,at=bk.done[id];delete bk.done[id];bk.ua={...bk.ua,[id]:Date.now()};if(id==='fridge'&&bk.oven&&bk.oven.fridge===at)delete bk.oven;bkSave();bakeTab(true);sendBake('undo',id,at)}
 };
 $('baksteps').onchange=e=>{
   const id=e.target.dataset&&e.target.dataset.bt;if(!id||!e.target.value)return;
@@ -3058,7 +3081,7 @@ $('bakmix').onchange=e=>{const v=e.target.value;if(!v)delete bk.mixAt;else bk.mi
 $('bakfr').onchange=e=>{const v=e.target.value;if(!v)delete bk.fr;else bk.fr=timeAt(v);bkSave();bakeTab(true);if(run)renderRun()};
 $('bakaut').onchange=e=>{const v=e.target.value;bk.autPick=v==='auto'?'auto':Number(v)||0;if(v!=='auto')bk.aut=Number(v)||0;bkSave();bakeTab(true);if(run)renderRun()};
 document.body.classList.toggle('pro',bk.exp==='pro');
-$('bakreset').onclick=()=>{if(confirm('Start over? This clears the step times.')){bk.done={};bk.amt={};bk.box={};['bsum','mixAt','by','fr','aliq'].forEach(k=>delete bk[k]);bkSave();bakeTab()}};
+$('bakreset').onclick=()=>{if(confirm('Start over? This clears the step times.')){bk.done={};bk.ua={all:Date.now()};bk.amt={};bk.box={};['bsum','mixAt','by','fr','aliq'].forEach(k=>delete bk[k]);bkSave();bakeTab()}};
 function ago(s){if(s<90)return Math.round(s)+' s ago';if(s<5400)return Math.round(s/60)+' min ago';return (s/3600).toFixed(1)+' h ago'}
 async function load(){
   try{
