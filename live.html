@@ -1755,10 +1755,23 @@ const fedAs=k=>{const [st,fl,wa]=(k.feed_g||'').split(':').map(Number);return (s
 const READY_H=8,READY_RUNS=2;
 const paceH=k=>READY_H/stdFactor(k);
 const READY_SPEED=READY_H/(Math.log2(STD_DIL)+PLAN_LAG);
+// Feeds in a row that doubled on pace, counting back from the newest. A fridge
+// stay of up to a week carries the count over (the feed after it still has to
+// keep the pace, like any other); a longer one starts it over. The running
+// feed counts once it has doubled; a past feed that missed ends the count.
+const FRIDGE_KEEP_H=7*24;
+function readyStreak(good){
+  const ks=feedSegs(true).map(feedKpis);let n=0;
+  for(let i=ks.length-1;i>=0;i--){
+    if(i<ks.length-1&&(ks[i+1].fed-ks[i].fed)/3600e3>FRIDGE_KEEP_H)break;
+    if(good(ks[i]))n++;else if(i<ks.length-1&&ks[i].peak!=null)break;
+  }
+  return n;
+}
 function readiness(){
   const ks=feedSegs().map(feedKpis);if(!ks.length)return;
   const good=k=>k.dblH!=null&&k.dblH*stdFactor(k)<=READY_H;
-  let streak=0;for(let i=ks.length-1;i>=0;i--){const cur=i===ks.length-1;if(good(ks[i]))streak++;else if(!cur&&ks[i].peak!=null)break}
+  const streak=readyStreak(good);
   const cur=ks[ks.length-1],curH=(Date.now()-cur.fed)/3600e3;
   // Healthy pace for a feed: the hours a ready starter takes to double at
   // that ratio and temperature (READY_H for the standard feed, sooner for
@@ -2138,7 +2151,7 @@ function bakeGus(){
   if(!run)return null;
   const segs=feedSegs(),ks=segs.map(feedKpis);if(!ks.length)return null;
   const good=k=>k.dblH!=null&&k.dblH*stdFactor(k)<=READY_H,now=Date.now();
-  let streak=0;for(let i=ks.length-1;i>=0;i--){const c=i===ks.length-1;if(good(ks[i]))streak++;else if(!c)break}
+  const streak=readyStreak(good);
   const cur=ks[ks.length-1],missed=cur.dblH!=null?!good(cur):now>=cur.fed+paceH(cur)*3600e3;
   const F=bakeF(),useH=USE_H*warmBy(F),ps=pausedSince();
   const past=cur.peak!=null&&cur.last!=null&&cur.peak-cur.last>=0.1&&cur.peak>=1.3;
