@@ -2209,7 +2209,8 @@ function bakeGus(){
 // mixing. The PC pauses Gus's tracking, since the box is off his jar.
 function boxUI(){
   const b=bk.box||{},el=$('bakbox'),btn=(a,t)=>' <button class="chip" data-box="'+a+'">'+t+'</button>';
-  if(bk.aliq>0&&aliqCup()){el.innerHTML=b.on?'Box on the aliquot since '+clock(b.on)+' \u2713':'';return}
+  const dg=(bakePlan()||{}).dough;
+  if((bk.aliq>0&&aliqCup())||(dg&&dg.cup)){el.innerHTML=b.on?'Box on the '+(dg&&dg.cup?esc(dg.cup):'aliquot')+' since '+clock(b.on)+' \u2713':'';return}
   if(bk.done.bulk&&!b.on){el.innerHTML='';return}
   const tb=b.tub;
   let h='<b style="color:var(--fg)">Sensor box on the dough</b> (optional)<span class="wordy">: measures the rise. Use a straight-sided tub with the box looking down through a hole in the lid. Gus’s tracking pauses while the box is off his jar.</span><br>';
@@ -2270,7 +2271,7 @@ function bulkBar(T,bh,pro){
   if(!bk.done.mix||bk.done.bulk)return '';
   const {p,due,win}=bulkNow(T,bh),pc=v=>Math.max(0,Math.min(100,v*100));
   const said=(BULK_NOW.find(([lim])=>p<lim)||BULK_NOW[4])[1];
-  return '<div class="bulkbar"><b>Bulk</b> · '+Math.round(pc(p))+'% · ends ~'+clock(due)+
+  return '<div class="bulkbar"><b>Bulk</b> · by the clock, ends ~'+clock(due)+
     '<div class="pbar"><u style="left:'+pc(win[0])+'%;width:'+(pc(win[1])-pc(win[0]))+'%"></u><i style="width:'+pc(p)+'%"></i></div>'+
     (pro?'':'<span class="note">'+said+'</span>')+'</div>';
 }
@@ -2392,7 +2393,10 @@ function bakeTab(force){
   // A step's done time from before the step ahead of it is left over from an
   // earlier bake (no Start over): drop it, so this bake's times flow on. The
   // dough box's tub and "on" times from before this bake go too.
-  {let prev=0,drop=false;bakeSteps().forEach(st=>{const d=bk.done[st.id];if(!d)return;
+  {let prev=0,drop=false;
+   // (a stale autolyse counts as none: done at the mix, so it isn't "next")
+   if(bk.done.mix)for(const [s,t] of Object.entries(bk.done))if(t&&t<bk.done.mix-12*3600e3){if(s==='aut')bk.done.aut=bk.done.mix;else delete bk.done[s];drop=true}
+   bakeSteps().forEach(st=>{const d=bk.done[st.id];if(!d)return;
     if(d<prev){delete bk.done[st.id];drop=true}else prev=d});
    const ts=Object.values(bk.done).filter(Boolean),first=ts.length?Math.min(...ts):Date.now()-24*3600e3,b=bk.box||{};
    if((b.on&&b.on<first-3600e3)||(b.tub&&b.tub.at<first-3600e3)){bk.box={};drop=true}
