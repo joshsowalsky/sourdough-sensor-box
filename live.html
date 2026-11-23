@@ -2497,10 +2497,12 @@ function bkWanted(){
   const add=(id,at,title,msg,prio,act)=>{if(at>now+45e3&&at<now+70*3600e3)want[id]={at:Math.round(at/1e3),title,msg,prio:prio||'high',act}};
   const PC_STEPS=['mix','salt','f1','f2','f3','f4','bulk','pre','shape','fridge'];
   if(first&&!d.fridge){
-    const k='sd'+Math.round(first/6e4).toString(36),{T,W}=bakeTimes(),bb=(bakePlan()||{}).by_button||[];
+    const k='sd'+Math.round(first/6e4).toString(36),{T,W}=bakeTimes(),bb=(bakePlan()||{}).by_button||[],pcSends=!!store.get('pausekey')&&!!bakePlan();
     for(const st of bakeSteps()){
       // After a step done from a notification's button the PC sends the next push.
       if(d[st.id]||!st.after||!d[st.after[0]]||st.id==='boxon'||bb.includes(st.after[0]))continue;
+      // With the control key the PC hears every Done, so it sends these (again every 5 min until Done).
+      if(pcSends&&['salt','f1','f2','f3','f4','shape','fridge'].includes(st.id))continue;
       const base=d[st.after[0]],due=base+st.after[1]*60e3,late=st.id==='mix'&&W.mixGus?W.mix[1]:base+st.after[3]*60e3,tip=st.s?st.s+' ':'';
       const act=PC_STEPS.includes(st.id)?{s:st.id,l:st.btn||'Done'}:null;
       if(st.id!=='fridge')add(k+st.id,due,st.t+' now',tip+'Any time until '+clock(late)+'. Tap Done after.','high',act);
