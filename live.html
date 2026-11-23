@@ -181,6 +181,7 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
 <label class="note" style="display:block;margin-top:6px">Jar <select id="rvesselsel" class="wide-in"></select></label>
 <input id="rvessel" type="text" maxlength="60" class="wide-in" hidden placeholder="New jar, e.g. Weck 500 mL">
 <label class="note" id="rvesselgl" hidden style="display:block;margin-top:4px">Empty weight <input id="rvesselg" type="number" inputmode="decimal" min="0" step="any" class="g"> g <span class="sub">(optional: the clean, empty jar on the scale)</span></label>
+<div class="note" id="rjarfit" style="margin-top:2px" hidden></div>
 <div class="note" id="rjarnote" style="margin-top:2px"></div>
 <label class="note" id="rjarkeepl" style="display:block;margin-top:4px" hidden><input type="checkbox" id="rjarkeep" checked> Remember it as this jar's empty reading (untick for this feed only)</label>
 <details class="note" style="margin-top:4px"><summary>Your jars</summary><div class="sub">Saved on the PC and backed up to git, so every device sees the same list.</div><table id="rjars" class="ktab small"></table></details>
@@ -355,6 +356,36 @@ function jarTable(){
     const e=m.get(n)||{name:n,feeds:0,empty:null,at:null};if(e.empty==null)e.empty=+p[1];m.set(n,e)});
   return [...m.values()];
 }
+// What a jar holds: the most fed starter that can triple and still peak 1 cm
+// under the rim (closer, the box reads the rim, not the starter). From the
+// cup's water fit (Cup tab), else the grams per cm of past feeds in it (feeds
+// 8 mm+ deep: readings are in mm), else the catalog. null: nothing to go on.
+const JAR_RISE=3;
+function jarFits(name){
+  if(!run||!name)return null;
+  const top=CUP_FLAT_CM+1,c=run.cups&&run.cups[name],F=c&&cupFit(c.points);
+  if(F){const v=F.vol(top);return v>0?v/JAR_RISE:null}
+  let g=0,h=0,e=null;
+  [...(run.history||[]),run].forEach(r=>{
+    if(r.vessel!==name)return;const em=emptyOf(r);if(!em)return;e=em;
+    const fed=Date.parse(r.fed_at),pts=despike((r.points||[]).map(p=>({t:Date.parse(p.t),d:p.d})).filter(p=>p.t>=fed&&p.d>CUP_FLAT_CM+0.4&&p.d<=em+1));
+    if(pts.length<5)return;
+    const dep=em-fedLevel(pts,fed,600e3),fg=(r.feed_g||'').split(':').reduce((a,b)=>a+Number(b),0);
+    if(dep>=0.8&&fg>0){g+=fg;h+=dep}
+  });
+  const k=Object.keys(CM_PER_10G).find(k=>name.toLowerCase().includes(k));
+  const gcm=h?g/h:k?10/CM_PER_10G[k]:null;
+  return e&&gcm&&e>top?gcm*(e-top)/JAR_RISE:null;
+}
+const fitsG=x=>Math.max(10,Math.floor(x/10)*10);
+// Under the jar picker: does this feed fit the jar picked?
+function jarFitNote(){
+  const n=$('rjarfit');if(!n)return;const v=$('rvesselsel').value,f=v&&v!=='new'?jarFits(v):null;
+  if(!f){n.hidden=true;return}
+  const tot=gVals().reduce((a,b)=>a+(b>0?b:0),0);n.hidden=false;
+  n.innerHTML=tot>f*1.05?'<span style="color:var(--warn)">\u26a0 '+Math.round(tot)+' g is a lot for this jar: it holds about '+fitsG(f)+' g with room to triple. If it rises well it can reach the rim.</span>'
+    :'Holds about '+fitsG(f)+' g with room to triple'+(tot>0?' (this feed: '+Math.round(tot)+' g) \u2713':'')+'.';
+}
 let calNow=null,calDrop=false;  // empty reading taken in this pause, and whether it was discarded
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
 function fillJars(cur){
@@ -363,11 +394,11 @@ function fillJars(cur){
   const aj=appColl('jars'),hid=[...saved('hiddenjars'),...Object.keys(aj).filter(n=>aj[n].hidden)],s=$('rvesselsel');
   const l=[...new Set([...JARS,...(run.history||[]).map(r=>r.vessel),run.vessel,...Object.keys(aj),...Object.keys(run.cups||{}),...saved('jars'),cur].filter(Boolean))].filter(v=>v===cur||!hid.includes(v));
   const jt=new Map(jarTable().filter(j=>l.includes(j.name)).map(j=>[j.name,j]));
-  s.replaceChildren(...l.map(v=>opt(v,jt.get(v)?.empty?v+' ✓':v)),opt('new','+ Add a jar…'));s.value=cur||l[0];showJar();
+  s.replaceChildren(...l.map(v=>{const f=jarFits(v);return opt(v,(jt.get(v)?.empty?v+' ✓':v)+(f?' \u00b7 up to '+fitsG(f)+' g':''))}),opt('new','+ Add a jar…'));s.value=cur||l[0];showJar();
   const day=t=>new Date(t).toLocaleDateString([],{month:'short',day:'numeric'});
   const rows=l.map(v=>jt.get(v)||{name:v,feeds:0,empty:null,at:null});
   // Three narrow columns so it fits a phone: Remove sits under the name.
-  $('rjars').innerHTML='<tr><th>Jar</th><th>Empty weight</th><th>Box reading</th></tr>'+rows.map(j=>'<tr><td>'+esc(j.name)+'<div class="sub">'+j.feeds+' feed'+(j.feeds===1?'':'s')+'</div>'+jarBtn('hide:'+encodeURIComponent(j.name),'Remove')+'</td><td>'+
+  $('rjars').innerHTML='<tr><th>Jar</th><th>Empty weight</th><th>Box reading</th></tr>'+rows.map(j=>'<tr><td>'+esc(j.name)+'<div class="sub">'+j.feeds+' feed'+(j.feeds===1?'':'s')+(jarFits(j.name)?' \u00b7 holds ~'+fitsG(jarFits(j.name))+' g':'')+'</div>'+jarBtn('hide:'+encodeURIComponent(j.name),'Remove')+'</td><td>'+
     (jarEdit===j.name?'<input id="jarwt" type="number" inputmode="decimal" min="0" max="5000" step="0.1" class="g" style="margin-left:0;width:4em" value="'+(aj[j.name]&&aj[j.name].empty_g||'')+'"> g<br>'+jarBtn('wtsave:'+encodeURIComponent(j.name),'Save')+'<br>'+jarBtn('wtcancel','Cancel')
       :aj[j.name]&&aj[j.name].empty_g?gfmt(aj[j.name].empty_g)+'<br>'+jarBtn('wt:'+encodeURIComponent(j.name),'Edit'):jarBtn('wt:'+encodeURIComponent(j.name),'Add'))+'</td><td>'+
     (j.empty?j.empty.toFixed(1)+' cm<div class="sub">'+(j.at?day(j.at):'Cup tab')+'</div>':'<span class="sub">not yet</span>')+'</td></tr>').join('');
@@ -398,7 +429,7 @@ const showJar=()=>{
     t+='<div style="margin-top:4px">'+(known?'If the jar or box changed: put the box on the jar, empty and clean, and tap Recalibrate.':'Put the box on the jar, empty and clean, and tap Calibrate.')+'</div>'+jarBtn('cal',known?'Recalibrate':'Calibrate');
   }
   if(isNew)t+=jarBtn('cancel','Cancel');
-  n.innerHTML=t;
+  n.innerHTML=t;jarFitNote();
 };
 function jarAct(act){
   // Weight: the row's cell turns into a number field in grams (the list opens
@@ -448,7 +479,7 @@ let gusTyped=false;
 const typedIds=new Set();
 // Never rewrites the box you're typing in: doing that on a phone ate the "." of 2.5.
 const gNum=id=>Number(String($(id).value).replace(',','.').trim());
-const setGrams=([s,f,w])=>{[['rg_s',s],['rg_f',f],['rg_w',w]].forEach(([id,v])=>{if(document.activeElement!==$(id)&&!typedIds.has(id))$(id).value=v??''});showFlour();if($('rglock').checked)setLock(true)};
+const setGrams=([s,f,w])=>{[['rg_s',s],['rg_f',f],['rg_w',w]].forEach(([id,v])=>{if(document.activeElement!==$(id)&&!typedIds.has(id))$(id).value=v??''});showFlour();if($('rglock').checked)setLock(true);if(run)jarFitNote()};
 // Lock ratio: type what actually went in (a gram or two extra flour) and the
 // other two follow at the same ratio, so nothing has to be fished out. The
 // note says how much more of each to add, from the grams when it was locked.
@@ -2758,7 +2789,7 @@ function cupTab(){
     $('cuplist').innerHTML=(run?'':'<div class="note">Loading…</div>')+cups.map(([n,c])=>{const ok=cupFit(c.points);
       return '<button class="cuprow" data-cup="'+esc(n)+'" style="display:block;width:100%;text-align:left;margin-top:8px;padding:10px 12px">'+
         '<b>'+esc(n)+'</b> '+(ok?'<span style="color:var(--ok)">✓ Calibrated</span>':'<span class="note">not finished</span>')+
-        '<div class="note" style="margin-top:4px">'+(cupShape(c.points)||c.points.length+' readings')+'</div></button>'}).join('')+
+        '<div class="note" style="margin-top:4px">'+(cupShape(c.points)||c.points.length+' readings')+'</div>'+(ok&&jarFits(n)?'<div class="note">Starter: holds about '+fitsG(jarFits(n))+' g with room to triple</div>':'')+'</button>'}).join('')+
       (run&&!cups.length?'<div class="note">No cups measured yet.</div>':'')+
       '<button id="cupadd" style="margin-top:10px">+ Add a cup</button>'+
       '<div class="note" style="margin-top:6px">Calibrated cups are the choices for the dough cup on the Bake tab.</div>';
@@ -3089,7 +3120,7 @@ try{const h=JSON.parse(store.get('exhave')||'null');if(h&&h.g)$('exhave').value=
 document.querySelectorAll('#planmodes .chip').forEach(x=>x.onclick=()=>{const m=x.dataset.pm;
   keep.on=m==='keep';$('keepon').checked=keep.on;$('keepbox').hidden=!keep.on;store.set('keep',JSON.stringify(keep));
   $('bakeon').checked=m==='bake';readBake()});['bakeloaves','bakeper','bakekeep'].forEach(id=>$(id).oninput=readBake);
-['rg_s','rg_f','rg_w'].forEach(id=>$(id).addEventListener('input',()=>{recipeTouched=true;typedIds.add(id);gusTyped=id==='rg_s'?gNum(id)>0:gusTyped;keepPick();lockFollow(id);if(run)renderPlan();showFlour()}));
+['rg_s','rg_f','rg_w'].forEach(id=>$(id).addEventListener('input',()=>{recipeTouched=true;typedIds.add(id);gusTyped=id==='rg_s'?gNum(id)>0:gusTyped;keepPick();lockFollow(id);if(run)renderPlan();showFlour();jarFitNote()}));
 $('rglock').onchange=e=>{e.target.checked?store.set('glock','1'):store.del('glock');setLock(e.target.checked);if(run)renderPlan()};
 if(store.get('glock'))$('rglock').checked=true;  // remembered; locks on the grams once they're filled in
 $('rflourmix').onchange=$('rflour').oninput=()=>{showFlour();refreshNext()};
