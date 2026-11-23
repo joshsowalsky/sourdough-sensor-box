@@ -40,6 +40,9 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 /* Tabs: Starter (everything else) and Bake (#baketab). */
 main.tab-bake>:not(.keep){display:none!important}
 main:not(.tab-bake)>#baketab{display:none!important}
+main.tab-oven>:not(.keep){display:none!important}
+main:not(.tab-oven)>#oventab{display:none!important}
+#oventab{display:flex;flex-direction:column;gap:14px}
 main.tab-hist>:not(.keep){display:none!important}
 main:not(.tab-hist)>#histtab{display:none!important}
 main.tab-sl>:not(.keep){display:none!important}
@@ -108,10 +111,9 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
 </style></head><body><main>
 <h1 class="keep">Sourdough Live</h1>
 <div class="status keep"><span class="dot" id="dot"></span><span id="status">Loading…</span></div>
-<div class="row keep" id="tabs" style="gap:6px"><button class="chip" data-tab="starter">Starter</button><button class="chip" data-tab="bake">Bake</button><button class="chip" data-tab="hist">History</button><button class="chip" data-tab="sl">Sliders</button><button class="chip" data-tab="cup">Cup</button><button class="chip" id="viewbtn" style="margin-left:auto">Simple</button></div>
+<div class="row keep" id="tabs" style="gap:6px"><button class="chip" data-tab="starter">Starter</button><button class="chip" data-tab="bake">Mix</button><button class="chip" data-tab="oven">Bake</button><button class="chip" data-tab="hist">History</button><button class="chip" data-tab="sl">Sliders</button><button class="chip" data-tab="cup">Cup</button><button class="chip" id="viewbtn" style="margin-left:auto">Simple</button></div>
 <section id="baketab" class="keep">
   <div class="card" id="baknow" hidden></div>
-  <div class="card" id="ovencard" hidden></div>
   <div class="card" id="bulkcard" hidden><div class="label" id="bulklabel">Bulk rise</div>
     <div id="bulknext" style="margin:6px 0 10px"></div>
     <div id="bulkhead" style="margin-top:4px"></div>
@@ -122,13 +124,17 @@ body:not(.ready) main .card,body:not(.ready) main .grid,body:not(.ready) main>.n
     <div id="bulkboxslot" class="note" style="margin-top:8px"></div></div>
   <div class="card"><div class="label">Is Gus ready?</div><div id="bakegus" class="small" style="color:var(--fg);font-size:.95rem">Loading…</div></div>
   <div class="card"><div class="label">Steps · mix to fridge</div>
-    <div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><label class="note">Autolyse <select id="bakaut"><option value="auto">Auto</option><option value="0">none</option><option value="30">30 min</option><option value="60">1 h</option><option value="120">2 h</option></select></label><label class="note">Mix at <input id="bakmix" type="time" class="g" style="width:7em"></label><label class="note">Folds done by <input id="bakby" type="time" class="g" style="width:7em"></label><label class="note">In the fridge by <input id="bakfr" type="time" class="g" style="width:7em"></label><label class="note">Aliquot <input id="bakaliq" type="number" inputmode="decimal" min="0" step="1" class="g" style="width:4.5em"> g in <select id="bakaliqcup"></select></label><button class="chip" id="bakreset">Start over</button></div>
-    <div class="note" id="bakrecipe" style="margin-top:6px"></div>
+    <details id="baksetup" open><summary class="note">Recipe and times</summary><div class="row" style="margin-top:6px"><label class="note">Loaves <input id="bakn" type="number" inputmode="decimal" min="0.5" step="0.5" class="g"></label><label class="note">Autolyse <select id="bakaut"><option value="auto">Auto</option><option value="0">none</option><option value="30">30 min</option><option value="60">1 h</option><option value="120">2 h</option></select></label><label class="note">Mix at <input id="bakmix" type="time" class="g" style="width:7em"></label><label class="note">Folds done by <input id="bakby" type="time" class="g" style="width:7em"></label><label class="note">In the fridge by <input id="bakfr" type="time" class="g" style="width:7em"></label><label class="note">Aliquot <input id="bakaliq" type="number" inputmode="decimal" min="0" step="1" class="g" style="width:4.5em"> g in <select id="bakaliqcup"></select></label><button class="chip" id="bakreset">Start over</button></div>
+    <div class="note" id="bakrecipe" style="margin-top:6px"></div></details>
     <div class="note" id="bakbox" style="margin-top:8px"></div>
     <div id="baksteps" style="margin-top:8px"></div>
     <div class="note wordy" style="margin-top:6px">Tap Done as you finish each step. Each step shows its usual time and the window around it, counted from when you did the step before, so if one runs late the rest move with it. The end of bulk counts from the mix and follows the temperature instead. Your phone gets a reminder for each step from the salt to the fridge, and for the oven (hot, lid off, crust). Tap a done time to fix it. Times are a guide: the dough decides, especially when the bulk rise ends.</div>
     <div class="note" id="baksync" style="margin-top:4px"></div></div>
-  <div class="card bknow wordy"><div class="label">Good to know</div><div id="bakknow" class="small" style="color:var(--fg);font-size:.92rem"></div></div>
+  <details class="card bknow wordy"><summary class="label">Good to know</summary><div id="bakknow" class="small" style="color:var(--fg);font-size:.92rem"></div></details>
+</section>
+<section id="oventab" class="keep">
+  <div class="card" id="ovencard" hidden></div>
+  <div class="card" id="ovenempty"><div class="label">Bake</div><div class="small" style="color:var(--fg);margin-top:4px">Nothing to bake yet. Once you tap <b>Into the fridge</b> on the Mix tab, the oven steps show up here.</div></div>
 </section>
 <section id="sltab" class="keep">
   <div class="card"><div class="label">Feed with sliders</div>
@@ -898,12 +904,12 @@ function breadClock(s,fz,ps){
   if(fr&&ready>frLate&&frLate>=now&&(!late||frLate<late)){ready=frLate;next=next.replace(/, by .* at the latest$/,'')+', by '+clock(frLate)+' at the latest'}
   // The latest Gus can go in: his best window (when the plan is to use
   // this peak), folds-by and fridge-by.
-  const gusEnd=peakT&&/^(Mix|Wait for his peak)/.test(next)?peakT+USE_H*warmBy(roomF)*H:Infinity;
+  const gusEnd=peakT&&/^(Mix|Wait for his peak)/.test(next)?(bkGus&&bkGus.end||peakT+USE_H*warmBy(roomF)*H):Infinity;
   const latest=Math.min(gusEnd,late!=null&&late>=now?late:Infinity,frLate!=null&&frLate>=now?frLate:Infinity);
   const autoM=[60,30].find(m=>now+m*60e3<=ready+5*60e3)??(now+30*60e3<=latest-15*60e3?30:0);
   const isAuto=bk.autPick==null||bk.autPick==='auto';
   if(isAuto&&!(bk.done&&(bk.done.aut||bk.done.mix))&&autoM!==(bk.aut||0)){bk.aut=autoM;bkSave()}
-  if(isAuto&&!autoM&&!(bk.done&&bk.done.mix)&&gusEnd<Infinity&&/^Mix the dough now/.test(next))next+=': flour, water and Gus together. No autolyse today: Gus is only at his best until ~'+clock(gusEnd)
+  if(isAuto&&!autoM&&!(bk.done&&bk.done.mix)&&gusEnd<Infinity&&/^Mix the dough now/.test(next))next+=': flour, water and Gus together. No autolyse today, so Gus goes in near his peak'
   // Autolyse: flour and water start that long before Gus goes in.
   const aut=bk.aut>0?bk.aut*60e3:0,autDone=bk.done&&bk.done.aut&&now-bk.done.aut<8*H?bk.done.aut:null;
   let a0=ready-aut;
@@ -2274,7 +2280,8 @@ function bulkBar(T,bh,pro){
 // controls move into it, so bulk has one place.
 function bulkCard(){
   const c=$('bulkcard'),on=bk.done.mix&&!bk.done.bulk;
-  c.hidden=!on;$('bakegus').closest('.card').hidden=!!on;
+  c.hidden=!on;$('bakegus').closest('.card').hidden=!!bk.done.mix;
+  if(bkSetupFor!==!!bk.done.mix){bkSetupFor=!!bk.done.mix;$('baksetup').open=!bk.done.mix}
   const box=$('bakbox');
   if(on&&box.parentElement!==$('bulkboxslot'))$('bulkboxslot').appendChild(box);
   if(!on){if(box.parentElement!==$('baksteps').parentElement)$('baksteps').before(box);return}
@@ -2357,6 +2364,7 @@ function bulkReport(T){
     // It keeps fermenting until it's cold: the counter time after bulk counts.
     (bk.done.fridge>end?' Then '+hm((bk.done.fridge-end)/3600e3)+' on the counter before the fridge (pre-shape and shape usually take about 1 h), still fermenting, so about '+Math.round(100*(bk.done.fridge-T.mix)/3600e3/est)+'% of the bulk estimate in all.':'')+'</div>';
 }
+let bkSetupFor=null;  // whether the mix was done when Recipe and times last opened or closed itself
 function bakeTab(force){
   if(bkRoll()&&run)renderRun();
   const g=bakeGus();
@@ -2403,7 +2411,7 @@ function bakeTab(force){
   const dayOf=t=>new Date(t).toDateString()===new Date().toDateString()?'':new Date(t).toLocaleDateString([],{weekday:'short'})+' ';
   const lastDone=[...SS].reverse().find(st=>bk.done[st.id]);
   const fresh=bcPlan&&!Object.values(bk.done).some(Boolean);
-  $('baksteps').innerHTML=(fresh?'<div style="font-size:1rem;margin:2px 0 8px;color:var(--fg)"><b>From Gus:</b> '+bcPlan.next+'.</div>':'')+bulkBar(T,bh,pro)+SS.map(st=>{
+  $('baksteps').innerHTML=bulkBar(T,bh,pro)+SS.map(st=>{
     const d=bk.done[st.id],isNext=next&&st.id===next.id;
     // The oven steps stay "running" until the next one is tapped.
     const run_=d&&(st.id==='heat'&&!bk.done.bake?'Preheating':st.id==='bake'&&!bk.done.cool?'In the oven':''),
@@ -2510,7 +2518,8 @@ async function bkPushSync(){
 const OVEN=[{id:'heat',t:'Preheat',btn:'Start preheat',s:'500°F, Dutch oven in (lid on), 45\u201360 min.'},
   {id:'bake',t:'Bake',btn:'It\u2019s in the oven',s:'Straight from the fridge: turn out onto parchment, score, into the Dutch oven, lid on. 475°F: 20 min lid on, then 20\u201325 min lid off.'},
   {id:'cool',t:'Cool, then cut',btn:'It\u2019s out of the oven',s:'At least 1 h on a rack. It\u2019s still cooking inside.'}];
-function ovenCard(){
+function ovenCard(){ovenCard0();$('ovenempty').hidden=!$('ovencard').hidden}
+function ovenCard0(){
   const el=$('ovencard'),o=bk.oven,now=Date.now(),H=3600e3;
   if(!o||(o.done.cool&&now-o.done.cool>2*H)){el.hidden=true;el.innerHTML='';return}
   const dOf=t=>new Date(t).toDateString()===new Date().toDateString()?'':new Date(t).toLocaleDateString([],{weekday:'short'})+' ';
@@ -2939,10 +2948,11 @@ function setTab(t){
   document.querySelector('main').classList.toggle('tab-cup',t==='cup');
   document.querySelector('main').classList.toggle('tab-sl',t==='sl');
   document.querySelector('main').classList.toggle('tab-bake',t==='bake');
+  document.querySelector('main').classList.toggle('tab-oven',t==='oven');
   document.querySelector('main').classList.toggle('tab-hist',t==='hist');
   document.querySelectorAll('#tabs [data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
   store.set('tab',t);
-  if(t==='bake')bakeTab();else if(t==='sl'){if(run)slTab()}else if(t==='cup')cupTab();else render();  // charts drawn while hidden have no width
+  if(t==='bake'||t==='oven')bakeTab();else if(t==='sl'){if(run)slTab()}else if(t==='cup')cupTab();else render();  // charts drawn while hidden have no width
 }
 $('slrows').addEventListener('input',e=>{const k=e.target.id&&e.target.id.startsWith('sl_')&&e.target.id.slice(3);if(k)slInput(k)});
 $('slrows').addEventListener('change',e=>{const id=e.target.id||'';if(id.startsWith('sl_')){e.target.blur();slTab()}else if(id.startsWith('sli_'))slTyped(id.slice(4))});
