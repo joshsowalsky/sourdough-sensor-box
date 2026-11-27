@@ -62,7 +62,7 @@ try:
 except Exception as e:
     note("Distance sensor not ready:", e)
 
-from adafruit_ds248x import Adafruit_DS248x
+from adafruit_ds248x import Adafruit_DS248x  # noqa: E402 - kept where it was in the old CircuitPython version
 ds = None
 rom = None
 last_try = -10
