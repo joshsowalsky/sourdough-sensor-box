@@ -209,7 +209,7 @@ void serviceProbe() {
   } else if (converting && now - tempLastStart >= 800) {
     stage("probe read");
     converting = false;
-    uint8_t s[9];
+    uint8_t s[9] = {};  // zeroed so the CRC check never reads garbage
     bool ok = ds.OneWireReset();
     if (ok) {
       matchRom();

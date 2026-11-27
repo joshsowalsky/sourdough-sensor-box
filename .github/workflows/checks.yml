@@ -1,0 +1,76 @@
+name: Checks
+
+# Repo-wide, so no project prefix in the name.
+#
+# Mechanical checks on every pull request, for repos that don't have their own
+# CI. Each job looks for its kind of file and passes quietly when there is none.
+#   secrets: gitleaks over the PR's commits (a leaked token stays in history)
+#   python:  ruff, with the repo's ruff.toml if it has one
+#   c++:     cppcheck over Arduino / C / C++ sources
+#
+# Installed from ~/.claude/review-kit on Josh's PC (install.py). Tool versions
+# are pinned: an unpinned linter turns someone else's release into a red build
+# on a branch that changed nothing.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GITLEAKS_VERSION: "8.21.2"
+  RUFF_VERSION: "0.15.8"
+
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks over this PR's commits
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          curl -sSL --retry 3 \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar xz gitleaks
+          ./gitleaks git --log-opts="origin/${BASE_REF}..HEAD" --redact --verbose .
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ruff
+        run: |
+          set -euo pipefail
+          if [ -z "$(git ls-files '*.py')" ]; then
+            echo "No Python files."
+            exit 0
+          fi
+          pip install --quiet "ruff==${RUFF_VERSION}"
+          ruff check --output-format=github .
+
+  cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: cppcheck
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(git ls-files '*.ino' '*.c' '*.cpp' '*.h')
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No C/C++ files."
+            exit 0
+          fi
+          sudo apt-get install -y -qq cppcheck > /dev/null
+          cppcheck --version
+          # Arduino sketches are C++ with board macros cppcheck doesn't know;
+          # blank the attribute macros rather than suppress whole checks.
+          cppcheck --language=c++ --std=c++17 --enable=warning,performance,portability \
+            --inline-suppr --error-exitcode=1 --quiet \
+            -DARDUINO=10819 -DPROGMEM= -DRTC_NOINIT_ATTR= -DIRAM_ATTR= \
+            --suppress=missingInclude --suppress=missingIncludeSystem \
+            "${files[@]}"

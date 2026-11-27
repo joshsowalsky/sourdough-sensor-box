@@ -1,0 +1,111 @@
+name: Claude Review
+
+# Repo-wide, so no project prefix in the name.
+#
+# AI code review on every pull request: scored categories, then what each
+# issue is and how to fix it, how to test the change, what it does, and other
+# feedback. One comment per push, so the PR shows the review history.
+#
+# Installed from ~/.claude/review-kit on Josh's PC (install.py). Change the
+# copy there and re-install, rather than editing repos one by one.
+#
+# One-time setup per repo:
+#   1. Install the Claude GitHub App on the repo: https://github.com/apps/claude
+#   2. Add ONE Actions secret (Settings > Secrets and variables > Actions):
+#      CLAUDE_CODE_OAUTH_TOKEN, from `claude setup-token` (uses the Claude plan),
+#      or ANTHROPIC_API_KEY, from console.anthropic.com (billed per review).
+#
+# Pull requests from forks are skipped by the action, so a stranger's PR on a
+# public repo can't spend the token.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# A new push makes the review of the previous one moot.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          # Whichever secret exists is used; the other is empty.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The reviewer reads and comments; it can't edit, commit or push.
+          claude_args: >-
+            --permission-mode default
+            --allowedTools "Read,Grep,Glob,Write,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*)"
+          prompt: |
+            You are the code reviewer for ${{ github.repository }}, pull request #${{ github.event.pull_request.number }}.
+
+            Read the PR description (`gh pr view ${{ github.event.pull_request.number }}`), the diff
+            (`gh pr diff ${{ github.event.pull_request.number }}`), and as much of the surrounding code as you
+            need to judge it. The repo's CLAUDE.md and REVIEW.md, where they exist, are this repo's rules:
+            breaking one is a compliance violation.
+
+            Score eight categories from 0 to 10:
+            - Syntax Errors: code that won't parse, compile or load.
+            - Code Smells: duplication, dead code, misleading names, needless complexity, magic numbers.
+            - Compliance Violations: the repo's own rules (CLAUDE.md, REVIEW.md); docs or tests not updated
+              with the behaviour they describe.
+            - Bugs: wrong results, crashes, unhandled errors, races, resource leaks.
+            - Logical Errors: code that runs but does the wrong thing: off-by-one, inverted conditions, wrong
+              units, a case not handled, a claim in a comment the code doesn't keep.
+            - Performance Bottlenecks: work that grows badly, blocking calls in loops, wasted memory or
+              network, on the hardware it runs on (microcontrollers included).
+            - Indent Inconsistencies: formatting that differs from the file around it.
+            - Security Vulnerabilities: secrets, tokens, passwords or private data (names, addresses, phone
+              numbers, order numbers, private topic names) in the code or history of a public repo; injection;
+              unchecked downloads or updates; overly broad permissions.
+
+            10 means no issues. Any real issue in a category keeps it below 10: roughly -1 for minor, -3 for
+            moderate, -5 or more for serious. Judge what this PR changes or breaks. Problems that were already
+            there before this PR go under Additional Feedback and cost no points. Don't invent issues to look
+            thorough, and don't pass what you couldn't check: say what you couldn't verify.
+
+            Write the review to review.md, then post it with
+            `gh pr comment ${{ github.event.pull_request.number }} --body-file review.md`.
+            Use exactly this structure:
+
+            ## Code review overview
+            - Syntax Errors - Score - N/10
+            - Code Smells - Score - N/10
+            - Compliance Violations - Score - N/10
+            - Bugs - Score - N/10
+            - Logical Errors - Score - N/10
+            - Performance Bottlenecks - Score - N/10
+            - Indent Inconsistencies - Score - N/10
+            - Security Vulnerabilities - Score - N/10
+
+            Then a `### <Category>` section for each, in the same order: `Score - N/10`, then either
+            "No issues found." or a numbered list where each item gives `path:line`, what is wrong, why it
+            matters, and the fix.
+
+            ## Testing Steps
+            Concrete steps to check the change works, including anything CI can't do (real hardware, a real
+            account, a scheduled task at home).
+
+            ## Code Explanation
+            What the change does, in plain language.
+
+            ## Additional Feedback
+            Suggestions that cost no points, and pre-existing problems you noticed.
+
+            End with exactly one of these as the last line:
+            Verdict: PASS (all 10/10)
+            Verdict: CHANGES NEEDED (N issues)
